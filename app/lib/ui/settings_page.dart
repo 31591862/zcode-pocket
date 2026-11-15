@@ -203,7 +203,7 @@ class SettingsPage extends StatelessWidget {
             ),
             // 应用内更新（in-app-update-1）：入口行（检查更新+开关收在
             // 二级动作——开关单独一行，避免一级页过长）。iOS 无侧装更新
-            // （结构性，supportsSelfUpdate）两行整体隐藏（ios-adaptation-1）。
+            // （结构性，supportsSelfUpdate）两行整体隐藏（早前批次）。
             if (ZpCapabilities.supportsSelfUpdate) ...[
               ListTile(
                 leading: const Icon(Icons.system_update_outlined, size: 20),

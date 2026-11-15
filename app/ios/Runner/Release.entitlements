@@ -8,5 +8,9 @@
 	<array>
 		<string>$(AppIdentifierPrefix)dev.zcodeapp.zcodePocket</string>
 	</array>
+	<!-- 同 DebugProfile.entitlements（早前批次 ：Time Sensitive
+	     Notifications，审批提醒 timeSensitive 呈现的配套能力）。 -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
 </dict>
 </plist>

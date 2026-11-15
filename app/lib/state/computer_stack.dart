@@ -339,7 +339,7 @@ class ComputerStack extends ChangeNotifier {
   /// channelActive）已有 sanitize，sessions 这一路此前原样进预渲，dormant
   /// 模型把已结束回合渲染成"运行中"。落盘保留原值（真实数据到达自然
   /// 覆盖），仅读取侧清洗为 idle；running 行的 pendingInteraction 一并
-  /// 清空（陈旧交互提示在预渲窗口是死按钮）。与 2026-10-27 用户⑨
+  /// 清空（陈旧交互提示在预渲窗口是死按钮）。与 2026-10-27 用户
   /// "running/waiting 清洗、不冒充当前仍运行"契约对齐。
   static List<Map<String, dynamic>> _sanitizePreviewSessions(
     List<Map<String, dynamic>> sessions,
@@ -570,7 +570,7 @@ class ComputerStack extends ChangeNotifier {
   void reportViewState({String? taskId}) =>
       _workspaceController.reportViewState(taskId: taskId);
 
-  /// 会话子代理列表（2026-10-26 批④拍板⑥）：活跃工作区会话传输上的
+  /// 会话子代理列表（2026-10-26 批④拍板）：活跃工作区会话传输上的
   /// listSessionSubagents 透传（官方 zcodeAgentService 对位）。
   Future<Map<String, dynamic>> sessionSubagents(
     String sessionId, {
@@ -703,6 +703,21 @@ class ComputerStack extends ChangeNotifier {
   Future<dynamic> deleteArchivedTasks(List<String> taskIds) =>
       _taskCatalog.deleteArchivedTasks(taskIds);
 
+  /// ③ 会话永久删除两阶段（早前批次，官方 previewArchivedTaskDeletion/
+  /// permanentlyDeleteArchivedTask）。
+  Future<dynamic> previewArchivedTaskDeletion(String taskId) =>
+      _taskCatalog.previewArchivedTaskDeletion(taskId);
+
+  Future<dynamic> permanentlyDeleteArchivedTask(
+    String taskId, {
+    required String revision,
+    required String operationId,
+  }) => _taskCatalog.permanentlyDeleteArchivedTask(
+        taskId,
+        revision: revision,
+        operationId: operationId,
+      );
+
   /// 取消归档（撤销入口，snackbar 撤销用）。
   Future<dynamic> unarchiveTask(String taskId) =>
       _taskCatalog.unarchiveTask(taskId);
@@ -828,7 +843,7 @@ class ComputerStack extends ChangeNotifier {
   Future<void> suspendConversationSubscriptions() =>
       _conversationRegistry.suspendForBackground();
 
-  /// 1.0.1 真机验收⑩：保活分支后台再退订 tasks-index（5s notify 帧=
+  /// 1.0.1 真机验收：保活分支后台再退订 tasks-index（5s notify 帧=
   /// 驻留后剩余推帧大头），数据保留，回前台重订阅增量补齐。
   Future<void> pauseTasksIndexForBackground() =>
       _workspaceController.pauseTasksIndexForBackground();

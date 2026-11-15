@@ -589,7 +589,7 @@ class ToolCallTileState extends State<ToolCallTile> {
             // 自相矛盾）+运行中吸底+上滚冻结；③取值链 error.message →
             // outputPreview（replayable 档不流 output.text）→ output.text
             // → bash display.output；④全空出「没有输出。」占位（官方
-            // execute.tsx:319）；⑤SelectableText=官方错误复制钮的手机等价。
+            // execute.tsx:319）；SelectableText=官方错误复制钮的手机等价。
             // 命令回显维持不回（2026-10-22 拍板，4a/4b 复核维持）。
             child: _open
                 ? Container(

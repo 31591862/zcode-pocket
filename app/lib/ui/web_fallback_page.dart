@@ -88,7 +88,7 @@ class _WebFallbackPageState extends State<WebFallbackPage> {
             // 下一次导航（刷新/点链接触发 onPageStarted）为止。
           },
           onWebResourceError: (e) {
-            // 取消导航过滤平台化（ios-adaptation-3，对齐 login_page）：
+            // 取消导航过滤平台化（早前批次，对齐 login_page）：
             // Android ERR_ABORTED(-1)/iOS NSURLErrorCancelled(-999) 都是
             // 跨域重定向常态；子资源错误一律不拦。纯函数见
             // core/webview_errors.dart。

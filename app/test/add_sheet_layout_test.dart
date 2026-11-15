@@ -35,8 +35,10 @@ Future<void> _sheetEntriesVisible(WidgetTester tester, double w) async {
 
   // 三个带 key 的入口 + 三个按文字定位的入口都在树上且已布局。
   for (final f in [
+    find.byKey(const ValueKey('add-photo')),
     find.byKey(const ValueKey('add-attachment')),
     find.byKey(const ValueKey('add-voice')),
+    find.text('照片'),
     find.text('添加上下文'),
     find.text('选择能力'),
     find.text('选择技能'),
@@ -50,6 +52,7 @@ Future<void> _sheetEntriesVisible(WidgetTester tester, double w) async {
 
   // 核心断言：每个入口都完整落在屏内（右缘不再截断）。
   for (final f in [
+    find.byKey(const ValueKey('add-photo')),
     find.byKey(const ValueKey('add-attachment')),
     find.byKey(const ValueKey('add-voice')),
   ]) {
@@ -73,10 +76,10 @@ void main() {
   setUpAll(() => debugVoiceRecognitionAvailable = true);
   tearDownAll(() => debugVoiceRecognitionAvailable = null);
 
-  testWidgets('360dp 屏 5 个入口全部完整可见，无溢出', (tester) async {
+  testWidgets('360dp 屏 6 个入口全部完整可见，无溢出', (tester) async {
     await _sheetEntriesVisible(tester, 360);
-    // Wrap 布置（5 项=3+2 两行；收集产物已迁产物下载页）——
-    // 360 档形态锁。
+    // Wrap 布置（早前批次 起照片入口在场=6 项=3×2 两行满格；
+    // 收集产物已迁产物下载页）——360 档形态锁。
     final wrap = tester.renderObject<RenderWrap>(find.byType(Wrap).first);
     expect(wrap.computeMinIntrinsicWidth(300), lessThanOrEqualTo(360));
   });

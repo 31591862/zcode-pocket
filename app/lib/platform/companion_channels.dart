@@ -1,4 +1,4 @@
-// 自研 companion/* 平台通道注册表（ios-adaptation-1 平台缝）。
+// 自研 companion/* 平台通道注册表（早前批次 平台缝）。
 //
 // 单一事实源：Dart 侧全部自研通道名 + 双平台实现状态。
 // channel_contract_test 据此做双向静态契约：
@@ -51,7 +51,7 @@ const kCompanionChannels = <CompanionChannel>[
     name: 'companion/notify',
     androidOwner: 'MainActivity.kt + ForegroundService.kt',
     iosPlan: CompanionIosPlan.swift,
-    iosNote: 'E 批：UNUserNotificationCenter 本地通知/权限/跳系统设置；'
+    iosNote: '已交付：本通道只承载 Android 特有语义降级（FGS 三方法 no-op 成功/manufacturer=Apple/设置跳转/insets=0——本地通知本体由 flutter_local_notifications Darwin 直做，见 notification_service）；'
         'startForeground/stopForeground/updateForeground 等 FGS 语义在 iOS '
         'no-op（supportsBackgroundKeepAlive=false，前台+对账档）',
   ),
@@ -59,7 +59,7 @@ const kCompanionChannels = <CompanionChannel>[
     name: 'companion/sys_asr',
     androidOwner: 'SystemAsrPlugin.kt',
     iosPlan: CompanionIosPlan.swift,
-    iosNote: 'H 批：SFSpeechRecognizer+AVAudioEngine，保持 isAvailable/'
+    iosNote: '已交付：SFSpeechRecognizer+AVAudioEngine，保持 isAvailable/'
         'start/stop/cancel/event 协议形态（1 分钟识别上限、音频会话中断处理）；'
         'Info.plist 需 NSSpeechRecognitionUsageDescription',
   ),
@@ -67,7 +67,7 @@ const kCompanionChannels = <CompanionChannel>[
     name: 'companion/app_lock',
     androidOwner: 'AppLockPlugin.kt',
     iosPlan: CompanionIosPlan.swift,
-    iosNote: 'G 批：LAContext.evaluatePolicy（deviceOwnerAuthentication）'
+    iosNote: '已交付：LAContext.evaluatePolicy（deviceOwnerAuthentication）'
         '对位 requestSystemUnlock；setSecureFlag 降级为切换器遮罩或 no-op'
         '（supportsSecureFlag=false）',
   ),
@@ -75,41 +75,43 @@ const kCompanionChannels = <CompanionChannel>[
     name: 'companion/share',
     androidOwner: 'MainActivity.kt',
     iosPlan: CompanionIosPlan.swift,
-    iosNote: 'D 批：UIActivityViewController（iPhone 模态；iPad 需 '
+    iosNote: '已交付：UIActivityViewController（iPhone 模态；iPad 需 '
         'popoverPresentationController 指定 sourceView——设备族若含 iPad 再议）',
   ),
   CompanionChannel(
     name: 'companion/appinfo',
     androidOwner: 'MainActivity.kt',
     iosPlan: CompanionIosPlan.swift,
-    iosNote: 'D 批：NSBundle（CFBundleShortVersionString/CFBundleVersion）',
+    iosNote: '已交付：NSBundle（CFBundleShortVersionString/CFBundleVersion）；后增 excludeFromiCloudBackup（目录整树出 iCloud 备份，Android 由 allowBackup=false 全局排除无对位）',
   ),
   CompanionChannel(
     name: 'companion/timezone',
     androidOwner: 'MainActivity.kt',
     iosPlan: CompanionIosPlan.swift,
-    iosNote: 'D 批：TimeZone.current.identifier',
+    iosNote: '已交付：TimeZone.current.identifier',
   ),
   CompanionChannel(
     name: 'companion/battery',
     androidOwner: 'MainActivity.kt',
     iosPlan: CompanionIosPlan.swift,
-    iosNote: 'D 批：UIDevice（batteryLevel/batteryState）；电压/温度 iOS '
+    iosNote: '已交付：UIDevice（batteryLevel/batteryState）；电压/温度 iOS '
         '不可得返回 -1（battery_journal 已有 -1 守卫）',
   ),
   CompanionChannel(
     name: 'companion/surface',
     androidOwner: 'MainActivity.kt',
     iosPlan: CompanionIosPlan.notApplicable,
-    iosNote: 'F 批：Activity.recreate 无 iOS 等价（华为扫码黑屏专治），'
+    iosNote: '已交付：Activity.recreate 无 iOS 等价（华为扫码黑屏专治），'
         'recreate 返回 false/no-op；帧看门狗按平台关闭（main.dart）',
   ),
   CompanionChannel(
     name: 'companion/test',
     androidOwner: 'MainActivity.kt',
     iosPlan: CompanionIosPlan.swift,
-    iosNote: 'I 批：launchOptions/UIApplicationShortcutItem 对位长按图标'
-        '快捷入口；getLaunchArgs 自动化缝按需（iOS 集成测试形态另定）',
+    iosNote: '已交付：TestChannel.swift——'
+        'getLaunchArgs 消费型+SceneDelegate 冷/热双路（shortcutItem 暂存/'
+        '推送）；动作值对齐 shortcuts.xml（new_task/last_session）；'
+        '模拟器自动化缝（pairingUrl 注入）iOS 不提供、字段恒空',
   ),
   CompanionChannel(
     name: 'companion/update',

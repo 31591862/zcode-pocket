@@ -1571,7 +1571,7 @@ class _AutoResolutionCountdownState extends State<_AutoResolutionCountdown> {
 }
 
 
-/// E 批（2026-11-08 拍板③）：Hook 审核入口卡（安全专用——不落通用
+/// （2026-11-08 拍板③）：Hook 审核入口卡（安全专用——不落通用
 /// 提问渲染；点开 WorkspaceHookReviewPage 逐项审核）。
 class _HookReviewEntryCard extends StatelessWidget {
   final Map<String, dynamic> interaction;

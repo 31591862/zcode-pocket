@@ -70,7 +70,7 @@ class _RunningPulseDotState extends State<RunningPulseDot>
 /// 用于运行中工具的名称行与「正在思考」标题（官方同款语义：转圈
 /// loader 长期占用渲染资源，运行态保留文案扫光）。
 ///
-/// 质感修订（2026-10-22 真机反馈⑦"不明显"）：渐变域从 1 倍文本宽改为
+/// 质感修订（2026-10-22 真机反馈"不明显"）：渐变域从 1 倍文本宽改为
 /// 官方 3 倍——暗带宽度≈整窗，视觉是整段文字的软暗波次第掠过（原窄带
 /// 只是局部闪烁，几乎不可见）。
 class ShimmerText extends StatefulWidget {

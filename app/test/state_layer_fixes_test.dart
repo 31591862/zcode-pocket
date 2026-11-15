@@ -200,6 +200,9 @@ class _NullBackend implements NotificationBackend {
   Future<bool> requestPermission() async => true;
 
   @override
+  Future<bool?> checkPermission() async => null;
+
+  @override
   Future<void> show(
     int id,
     String title,

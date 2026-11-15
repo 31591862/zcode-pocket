@@ -90,8 +90,8 @@ String deriveAccountId(String jwt, {String? identity}) {
 
 class AccountStore {
   AccountStore({FlutterSecureStorage? storage})
-    // iOS Keychain 定档（ios-adaptation-3）：first_unlock_this_device=
-    // 首次解锁后即可读（E 批前台通知等场景不因锁屏读挂）+ 条目不随
+    // iOS Keychain 定档（早前批次）：first_unlock_this_device=
+    // 首次解锁后即可读（前台通知等场景不因锁屏读挂）+ 条目不随
     // iCloud/迁移备份恢复到其他设备——对齐 Android allowBackup=false
     // 隐私口径。aOptions 缺省=Android 行为零变化。
     : _storage = storage ??

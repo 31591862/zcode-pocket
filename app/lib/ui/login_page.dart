@@ -236,7 +236,7 @@ class _LoginPageState extends State<LoginPage> {
               'resource-error: ${e.errorCode} ${e.description} '
               'main=${e.isForMainFrame} url=${e.url}',
             );
-            // 取消导航过滤平台化（ios-adaptation-3）：Android ERR_ABORTED
+            // 取消导航过滤平台化（早前批次）：Android ERR_ABORTED
             // (-1)/iOS NSURLErrorCancelled(-999) 都是 OAuth 跨域重定向
             // 常态，不过滤会把进行中的授权流程整页换成错误视图；子资源
             // 错误一律不拦（WKWebView 上报更频繁）。真实失败（DNS/TLS
@@ -436,7 +436,7 @@ class _LoginPageState extends State<LoginPage> {
       _poll?.cancel();
       _diag('extract: done, halting webview then pop');
       if (!mounted) return;
-      // ⑤黑屏根因链（两轮真机日志收口）：pop 时 WebView
+      // 黑屏根因链（两轮真机日志收口）：pop 时 WebView
       // PlatformView 的销毁若发生在"空白页尚未合成上屏"的渲染过渡态，
       // 部分设备整屏发黑（app 后端日志一切正常——纯渲染层）。修=双保障：
       // ①about:blank 停页（WebView 静止）+250ms（导航提交）；②

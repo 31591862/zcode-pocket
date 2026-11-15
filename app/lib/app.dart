@@ -48,7 +48,7 @@ class _ZcodeCompanionAppState extends State<ZcodeCompanionApp>
   // 应用内更新（in-app-update-1）：启动 30s 后静默检查一次（24h 节流
   // 在 UiPrefs；失败无感；弹窗走 navigatorKey）。Timer 挂 State——widget
   // 测试树销毁时必须取消（pending timer 断言）。iOS 无侧装更新
-  // （supportsSelfUpdate=false，结构性）不排定时器（ios-adaptation-1）。
+  // （supportsSelfUpdate=false，结构性）不排定时器（早前批次）。
   if (ZpCapabilities.supportsSelfUpdate) {
     _updateCheckTimer = Timer(const Duration(seconds: 30), () {
       final ctx = updateNavigatorKey.currentContext;

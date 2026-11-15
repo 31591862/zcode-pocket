@@ -1,4 +1,4 @@
-// E 批（2026-11-08 拍板③）+ 对抗审查返工（同日五路审查）：
+// （2026-11-08 拍板③）+ 对抗审查返工（同日五路审查）：
 // ①选择=纯本地（toggleWorkspaceHookReviewItem 是写配置+作废审核代的
 // 命令，不是选择态同步——误用会导致信任所选必被 superseded 拒绝，已撤）；
 // ②respond 须查 ACK status（业务拒绝 status:'failed'+reasonCode 不是
@@ -6,7 +6,7 @@
 // ③deadlineAt 在 payload 顶层（官方禁该类交互带 autoResolution）；
 // ④trustState 官方闭集词表（workspace-hook-review.ts:9-17）+默认勾选
 // ={pending_trust,revoked,stale_digest}（=官方 pendingCount 口径）；
-// ⑤选择门控只按官方 trust_selected 语义（只要求 items 子集）——editable
+// 选择门控只按官方 trust_selected 语义（只要求 items 子集）——editable
 // 只约束「写配置」（toggle 命令），不约束信任勾选；不可写盘项加小字标注。
 import 'package:flutter/material.dart' hide Text;
 

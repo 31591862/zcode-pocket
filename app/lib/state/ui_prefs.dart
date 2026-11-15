@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -11,8 +12,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// read/write 等工具活动，仅保留思考条与正文。
 class UiPrefs extends ChangeNotifier {
   UiPrefs({FlutterSecureStorage? storage})
-    // iOS Keychain 定档（ios-adaptation-3）：first_unlock_this_device=
-    // 首次解锁后即可读（E 批前台通知等场景不因锁屏读挂）+ 条目不随
+    // iOS Keychain 定档（早前批次）：first_unlock_this_device=
+    // 首次解锁后即可读（前台通知等场景不因锁屏读挂）+ 条目不随
     // iCloud/迁移备份恢复到其他设备——对齐 Android allowBackup=false
     // 隐私口径。aOptions 缺省=Android 行为零变化。
     : _storage = storage ??
@@ -77,6 +78,13 @@ class UiPrefs extends ChangeNotifier {
   static const _keyAppLockSecureFlag = 'ui.appLockSecureFlag';
   static const _keyAppLockPinSalt = 'ui.appLockPinSalt';
   static const _keyAppLockPinHash = 'ui.appLockPinHash';
+
+  /// （早前批次，对抗审查混搭形态根治）：PIN 材料单键 JSON 存储
+  ///（{salt,hash} 一次写入≈原子）。旧两键分写存在「新盐+旧哈希」混搭
+  /// 窗口——静态健康检查通过但新旧 PIN 验算全败，mode=pin 冷启动即
+  /// 整 app 锁死。读取：单键在场且可解析则以它为准；仅当单键缺席才回
+  /// 落旧两键（并即迁移：写单键+清旧键）。
+  static const _keyAppLockPinMaterial = 'ui.appLockPinMaterial';
 
   /// 应用内更新（in-app-update-1）：开关（默认开）+上次自动检查时刻
   /// （epoch 毫秒；24h 节流静默检查）。
@@ -159,15 +167,19 @@ class UiPrefs extends ChangeNotifier {
   /// （2026-10-24 修复批）：偏好写失败哨兵——统一 write/delete+catch+
   /// 留痕（此前 12 处 catch(_){} 静默回跳，偏好写失败零信号；内存值仍
   /// 生效，仅本次会话丢失持久化）。
-  Future<void> _persist(String key, String? value) async {
+  /// 返回 false=写/删失败（异常吞掉但上浮成败——发布预审：调用方须据
+  /// 此决定是否删旧键，防「材料写失败+旧键删除成功」把唯一副本删光）。
+  Future<bool> _persist(String key, String? value) async {
     try {
       if (value == null) {
         await _storage.delete(key: key);
       } else {
         await _storage.write(key: key, value: value);
       }
+      return true;
     } catch (e) {
       debugPrint('[prefs] write-fail key=$key: $e');
+      return false;
     }
   }
 
@@ -216,6 +228,9 @@ class UiPrefs extends ChangeNotifier {
         _storage.read(key: _keyAppLockPinHash), // 25
         _storage.read(key: _keyUpdateInAppEnabled), // 26
         _storage.read(key: _keyUpdateLastCheckAt), // 27
+        // 单键材料：必须排在既有键之后（reads 按位置索引——插在
+        // 中间会让 26/27 错位读到材料键，更新开关/时间戳被破坏）。
+        _storage.read(key: _keyAppLockPinMaterial), // 28
       ];
       final reads = await Future.wait(
         readFutures.map(
@@ -256,8 +271,44 @@ class UiPrefs extends ChangeNotifier {
       }
       // 缺省 true（防泄露默认开）；显式 'false' 才关。
       _appLockSecureFlag = reads[23] != 'false';
-      _appLockPinSalt = (reads[24] ?? '').isNotEmpty ? reads[24] : null;
-      _appLockPinHash = (reads[25] ?? '').isNotEmpty ? reads[25] : null;
+      {
+        // 单键 JSON 优先；仅单键缺席才回落旧两键并异步迁移。
+        var migrated = false;
+        final material = reads[28];
+        if (material != null && material.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(material);
+            if (decoded is Map) {
+              final saltV = '${decoded['salt'] ?? ''}';
+              final hashV = '${decoded['hash'] ?? ''}';
+              if (saltV.isNotEmpty && hashV.isNotEmpty) {
+                _appLockPinSalt = saltV;
+                _appLockPinHash = hashV;
+              }
+            }
+          } catch (_) {
+            // 单键损坏：按缺失处理（回落旧两键）。
+          }
+        }
+        if (_appLockPinSalt == null || _appLockPinHash == null) {
+          final oldSalt = (reads[24] ?? '').isNotEmpty ? reads[24] : null;
+          final oldHash = (reads[25] ?? '').isNotEmpty ? reads[25] : null;
+          if (oldSalt != null && oldHash != null) {
+            _appLockPinSalt = oldSalt;
+            _appLockPinHash = oldHash;
+            migrated = true; // 旧两键成对在场 → 迁移到单键
+          }
+        }
+        if (migrated) {
+          // 迁移半途失败=新旧并存，读路径永远单键优先，无害。
+          unawaited(
+            _migratePinMaterialToSingleKey(
+              _appLockPinSalt!,
+              _appLockPinHash!,
+            ),
+          );
+        }
+      }
       // 更新开关缺省 true；显式 'false' 才关。
       _updateInAppEnabled = reads[26] != 'false';
       _updateLastCheckAt = int.tryParse(reads[27] ?? '') ?? 0;
@@ -456,12 +507,33 @@ class UiPrefs extends ChangeNotifier {
   }
 
   /// PIN 盐+哈希成对写入（调用方：settings_security_page 设置流程）。
+  /// 单键 JSON 一次写入（消除两键分写的混搭窗口）；旧键顺手清除
+  ///（失败无害——读路径单键优先）。
   Future<void> setAppLockPin(String saltHex, String hashHex) async {
     _appLockPinSalt = saltHex;
     _appLockPinHash = hashHex;
     notifyListeners();
-    await _persist(_keyAppLockPinSalt, saltHex);
-    await _persist(_keyAppLockPinHash, hashHex);
+    // 材料写成功才清旧键——写失败时保留旧对兜底（读路径单键缺席回落
+    // 旧键，冷启动用户至少能用旧 PIN，而非应用锁静默失效）。
+    final ok = await _persist(
+      _keyAppLockPinMaterial,
+      jsonEncode({'salt': saltHex, 'hash': hashHex}),
+    );
+    if (ok) {
+      await _persist(_keyAppLockPinSalt, null);
+      await _persist(_keyAppLockPinHash, null);
+    }
+  }
+
+  Future<void> _migratePinMaterialToSingleKey(String salt, String hash) async {
+    final ok = await _persist(
+      _keyAppLockPinMaterial,
+      jsonEncode({'salt': salt, 'hash': hash}),
+    );
+    if (ok) {
+      await _persist(_keyAppLockPinSalt, null);
+      await _persist(_keyAppLockPinHash, null);
+    }
   }
 
   // ---- 应用内更新（in-app-update-1）----
@@ -475,7 +547,7 @@ class UiPrefs extends ChangeNotifier {
   @visibleForTesting
   void debugMarkLoadedForTest() => _loadedFlag = true;
 
-  /// 内存就绪（demo 模式，ios-adaptation-3）：不触碰存储——默认值即
+  /// 内存就绪（demo 模式，早前批次）：不触碰存储——默认值即
   /// 最终值，置就绪**并通知**（AppLockGate 冷启动门闩放行）。
   ///
   /// 背景：demo 注入路径跳过 load()，而 AppLockGate 在 asserts 环境
@@ -511,6 +583,7 @@ class UiPrefs extends ChangeNotifier {
     _appLockPinSalt = null;
     _appLockPinHash = null;
     notifyListeners();
+    await _persist(_keyAppLockPinMaterial, null);
     await _persist(_keyAppLockPinSalt, null);
     await _persist(_keyAppLockPinHash, null);
   }

@@ -1,4 +1,4 @@
-// demo 全树冒烟（ios-adaptation-4 配套）：与 integration_test/
+// demo 全树冒烟（早前批次 配套）：与 integration_test/
 // ios_smoke_test.dart 同链路的本地快速车道（widget 环境+手机画布）——
 // CI 集成问题先在此秒级复现，不烧 macOS 额度。
 //
@@ -8,7 +8,7 @@
 // 画布钉手机逻辑尺寸（402×874≈iPhone 16 Pro）：widget 测试默认
 // 800×600 落宽屏档（≥600dp 双栏）——手机语义必须显式设表面。
 // teardown：拆树+DemoAppState.dispose（订阅/注册表/桥的拆除链，
-// ios-adaptation-3 补全）满足 testWidgets 的 pending-timer 不变量。
+// 早前批次 补全）满足 testWidgets 的 pending-timer 不变量。
 import 'package:flutter/material.dart' as material;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcode_pocket/app.dart';
@@ -85,7 +85,7 @@ void main() {
 
     // ③ 审批卡在场（静态 pendingInteractions 的 Bash 权限）→ 允许 → 卡收口。
     // （running 会话的输入区是 stop-button 分支——send-button 仅非运行
-    // 态构建，发送旅程换已完成会话，见 ⑤。）
+    // 态构建，发送旅程换已完成会话，见。）
     expect(
       await _wait(
         tester,
@@ -115,7 +115,7 @@ void main() {
       reason: '返回未回到首页',
     );
 
-    // ⑤ 发送消息 → 流式重放（用户消息上屏→打字机→审批→完成）。
+    // 发送消息 → 流式重放（用户消息上屏→打字机→审批→完成）。
     const secondTaskTitle = '修复 #142 安卓返回键无法收起抽屉菜单';
     expect(
       await _wait(
@@ -165,7 +165,7 @@ void main() {
       reason: '流式收尾总结未上屏',
     );
 
-    // ⑤ 加号面板开合（附件入口在场——iOS file_picker 的触发点同路径）。
+    // 加号面板开合（附件入口在场——iOS file_picker 的触发点同路径）。
     await tester.tap(find.byKey(material.ValueKey('add-trigger')));
     expect(
       await _wait(
@@ -179,7 +179,7 @@ void main() {
       reason: '加号面板未打开（附件入口不在场）',
     );
 
-    // ⑥ 关面板（弹层在栈顶，pop 先关面板）→ 返回首页（系统返回语义）。
+    // 关面板（弹层在栈顶，pop 先关面板）→ 返回首页（系统返回语义）。
     await tester.binding.handlePopRoute();
     expect(
       await _wait(

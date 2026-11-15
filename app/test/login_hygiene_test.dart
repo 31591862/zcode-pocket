@@ -197,7 +197,7 @@ void main() {
         reason: '非 JSON 编码形态回落旧剥壳逻辑（个别通道原样返回兜底）');
   });
 
-  // iOS WKWebView 形态（ios-adaptation-3 钉死）：runJavaScriptReturningResult
+  // iOS WKWebView 形态（早前批次 钉死）：runJavaScriptReturningResult
   // 对字符串按原样（非 JSON 编码）返回的概率形态——现有回落分支天然
   // 覆盖，此处钉住防未来重构破坏。
   test('WebView 返回值解码：WKWebView 原样形态（无外层引号）', () {

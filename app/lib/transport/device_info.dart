@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart';
 /// honestly so the desktop can show the real connected client.
 /// 项目已更名 ZCode Pocket，旧标识失真——官方桌面
 /// 端对该串只做展示（refs webRemoteControlDeviceGroups.ts，无白名单
-/// 匹配），随开源批一并更名。
+/// 匹配），随开源并更名。
 const companionAppName = 'zcode-pocket';
 
 /// Real runtime platform (android / web / windows / ...), defaults to `web`

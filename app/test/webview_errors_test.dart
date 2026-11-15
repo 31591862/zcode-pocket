@@ -1,4 +1,4 @@
-// WebView 取消导航过滤（ios-adaptation-3，C 批）：跨平台错误码矩阵钉死
+// WebView 取消导航过滤（早前批次）：跨平台错误码矩阵钉死
 // ——Android ERR_ABORTED(-1) 与 iOS NSURLErrorCancelled(-999) 都是 OAuth
 // 跨域重定向常态，不得升级为页面错误态；子资源错误一律不拦。
 import 'package:flutter_test/flutter_test.dart';

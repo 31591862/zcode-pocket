@@ -12,7 +12,7 @@ import 'package:flutter/services.dart'
 
 import '../core/theme.dart';
 
-/// 一键复制小按钮（2026-10-23 用户反馈批⑧）：桌面端消息行/代码块
+/// 一键复制小按钮（2026-10-23 用户反馈批）：桌面端消息行/代码块
 /// 右上角都有复制（官方 CopyRowAction ConversationRowView.tsx:182 /
 /// CodeBlockCopyButton code-block.tsx:454），官方手机远控形态=常显
 /// action bar（compactForRemoteControl 分支）。点击→图标换对勾

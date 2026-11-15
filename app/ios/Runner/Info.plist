@@ -26,12 +26,18 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<!-- 权限描述（ios-adaptation-2 B 批）：先中文写死（自用/TestFlight 主语言）；
-	     InfoPlist.strings 双语随 I 批打磨补。缺描述=权限弹窗直接被系统拒。 -->
+	<!-- 权限描述（早前批次）：先中文写死（自用/TestFlight 主语言）；
+InfoPlist.strings 双语随 早前批次 补齐。缺描述=权限弹窗直接被系统拒。 -->
 	<key>NSCameraUsageDescription</key>
 	<string>扫码连接电脑时使用相机</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>应用锁使用面容 ID 验证</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>连接局域网内电脑的备用通道时访问本地网络</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>语音输入时使用麦克风</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>语音输入时识别你说的话</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -53,6 +59,28 @@
 			</array>
 		</dict>
 	</dict>
+	<!-- 长按图标快捷入口（早前批次）：静态项=文案随构建
+	     语言（自用中文；动作类型对齐 Android shortcuts.xml 的
+	     shortcut_action 值，Dart normalizeShortcutAction 零改动直收）。 -->
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>square.and.pencil</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>新任务</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>new_task</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>clock</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>最近会话</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>last_session</string>
+		</dict>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

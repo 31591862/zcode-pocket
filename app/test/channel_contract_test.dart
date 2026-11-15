@@ -102,7 +102,7 @@ void main() {
     expect(insetSrc.contains('refreshSystemInset'), isTrue);
   });
 
-  group('companion 通道注册表（ios-adaptation-1 平台缝）', () {
+  group('companion 通道注册表（早前批次 平台缝）', () {
     test('注册表与 lib/ 通道字面量双向一致（防漂移）', () {
       final literals = <String>{};
       for (final entity in Directory('lib').listSync(recursive: true)) {
@@ -140,6 +140,12 @@ void main() {
     });
 
     test('注册表通道名必须在 Android Kotlin 源出现（原生侧删改即拦）', () {
+      // 公树 HMS 剥离形态（strip_public_hms 删除 android/app/src/voiceHms）：
+      // Dart 侧 companion/hms_asr 客户端保留但默认关闭（VOICE_HMS=false），
+      // 原生载体 HmsAsrPlugin.kt 不在场属预期，跳过该通道断言。私库该
+      // 目录在场，断言照旧全量（原生侧删改仍即时拦下）。
+      final voiceHmsPresent =
+          Directory('android/app/src/voiceHms').existsSync();
       final kt = StringBuffer();
       for (final entity
           in Directory('android/app/src').listSync(recursive: true)) {
@@ -149,6 +155,7 @@ void main() {
       final text = kt.toString();
       expect(text, isNotEmpty, reason: '解析失败会让本守卫失效');
       for (final ch in kCompanionChannels) {
+        if (!voiceHmsPresent && ch.name == 'companion/hms_asr') continue;
         expect(
           text.contains('"${ch.name}"'),
           isTrue,

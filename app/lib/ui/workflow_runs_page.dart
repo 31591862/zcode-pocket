@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart' hide Text;
 import '../core/artifact_share.dart' show kArtifactShareBlockBytes;
 import '../core/localized_text.dart';
+import '../core/payload_guard.dart';
 import '../core/theme.dart';
 import 'turn_model.dart' show toolInputArgs;
 import 'workflow_dashboards.dart';
@@ -145,6 +146,16 @@ bool sniffImageMagic(List<int> b) {
   'stopped' => (label: '已停止', color: context.colors.foregroundSubtle),
   _ => (label: status, color: context.colors.foregroundSubtle),
 };
+
+/// 修订链（supersededBy，官方 AmendWorkflow 语义）：run 被「调整」停止
+/// 并由后继接管——stopped + stopReason=superseded 时携带 supersededBy=
+/// 后继 runId（WorkflowRunState schema：仅此组合才出现）；后继端反向
+/// 携带 resumedFrom=前驱 runId。官方词表（zh-CN.ts:6885/6890-6891）：
+/// 被替代=「已被替代」、后继血缘行=「调整自 run」。
+bool workflowRunSuperseded(Map<String, dynamic>? run) =>
+    run != null &&
+    '${run['status'] ?? ''}' == 'stopped' &&
+    '${run['stopReason'] ?? ''}' == 'superseded';
 
 String _shortRunId(String runId) =>
     runId.length <= 10 ? runId : runId.substring(0, 10);
@@ -488,7 +499,12 @@ class _WorkflowRunsPageState extends State<WorkflowRunsPage> {
                                 constraints:
                                     const BoxConstraints(maxWidth: 72),
                                 child: Text(
-                                  status.label,
+                                  // 修订链（官方目录=「已停止 · 已被替代」，
+                                  // 72dp 放不下全串）：被替代是比「已停止」
+                                  // 更关键的事实，直接以停止原因词替换状态词。
+                                  workflowRunSuperseded(run)
+                                      ? tr('已被替代')
+                                      : status.label,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: AppType.uiCaption,
@@ -830,6 +846,130 @@ class _WorkflowRunDetailPageState extends State<WorkflowRunDetailPage> {
   /// 更晚事件=最新；无投影序号=官方从头取，只能称「最早」。
   /// 追平档复用既有可翻译标题形态（custom_l10n 的
   /// `^事件（最新 (\d+) 条）$` 模式），英文界面不裸露中文。
+  /// 修订链血缘头（supersededBy/resumedFrom；官方详情页对位=
+  /// WorkflowRunSidePaneSections.tsx:137-140「已被替代，后继 run」/
+  /// 「调整自 run」）：投影联接权威 run，联接不上（纯冷查询、CLI 重启
+  /// 后投影为空）不硬凑。目标 run 在投影里可解析时整行可点，直达其
+  /// 详情页（官方 E2E 同款可达性）。
+  List<Widget> _lineageHeader(BuildContext context) {
+    final runs =
+        AppStateScope.of(context).conversationStates[widget.sessionId]
+            ?.workflowRunsList ??
+        const <Map<String, dynamic>>[];
+    final run = joinWorkflowRunProjection(runs, runId: widget.runId);
+    final supersededBy = '${run?['supersededBy'] ?? ''}';
+    final resumedFrom = '${run?['resumedFrom'] ?? ''}';
+    if (supersededBy.isEmpty && resumedFrom.isEmpty) return const [];
+
+    Widget lineageRow({
+      required String role,
+      required String text,
+      required String targetRunId,
+    }) {
+      // 自引用（畸形投影）不给可点跳转——防无限叠同 runId 详情页。
+      final target = targetRunId == widget.runId
+          ? null
+          : joinWorkflowRunProjection(runs, runId: targetRunId);
+      final resolvable = target != null;
+      final targetLabel = resolvable ? '${target['label'] ?? ''}' : '';
+      final title = targetLabel.trim().isNotEmpty
+          ? targetLabel
+          : _shortRunId(targetRunId);
+      return Padding(
+        // 键含角色+目标 runId（含角色防两行指向同一目标时重复
+        // ValueKey 断言——早前批次）。
+        key: ValueKey('workflow-lineage-$role-$targetRunId'),
+        padding: const EdgeInsets.only(top: 4),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          onTap: resolvable
+              ? () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => WorkflowRunDetailPage(
+                      sessionId: widget.sessionId,
+                      runId: targetRunId,
+                      title: title,
+                      // 守卫读取（早前批次 ：裸 as num? 遇 String 数字
+                      // 形态点击抛 TypeError）。
+                      lastEventSequence: intOf(target['lastEventSequence']),
+                    ),
+                  ),
+                )
+              : null,
+          child: Row(
+            children: [
+              Icon(
+                Icons.subdirectory_arrow_right,
+                size: 14,
+                color: context.colors.foregroundSubtle,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  // 不加 translate:false——中文前缀+runId 由
+                  // `^已被替代，后继 run (.+)$` / `^调整自 run (.+)$`
+                  // 模式整体转英文。
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: AppType.uiCaption,
+                    fontFamily: 'monospace',
+                    color: resolvable
+                        ? context.colors.foregroundSubtle
+                        : context.colors.foregroundSubtlest,
+                  ),
+                ),
+              ),
+              if (resolvable)
+                Icon(
+                  Icons.chevron_right,
+                  size: 14,
+                  color: context.colors.foregroundSubtlest,
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return [
+      Padding(
+        key: const ValueKey('workflow-lineage-card'),
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          decoration: BoxDecoration(
+            color: context.colors.card,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(color: context.colors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (supersededBy.isNotEmpty)
+                lineageRow(
+                  role: 'supersededBy',
+                  text: '已被替代，后继 run $supersededBy',
+                  targetRunId: supersededBy,
+                ),
+              if (resumedFrom.isNotEmpty)
+                lineageRow(
+                  role: 'resumedFrom',
+                  text: '调整自 run $resumedFrom',
+                  targetRunId: resumedFrom,
+                ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// 事件标题的诚实口径：追平（到顶）才敢说「最新」；有投影序号但没有
+  /// 更晚事件=最新；无投影序号=官方从头取，只能称「最早」。
+  /// 追平档复用既有可翻译标题形态（custom_l10n 的
+  /// `^事件（最新 (\d+) 条）$` 模式），英文界面不裸露中文。
   String get _eventsTitle {
     final count = _events.length;
     if (_lastEventSequence == null) {
@@ -1026,6 +1166,8 @@ class _WorkflowRunDetailPageState extends State<WorkflowRunDetailPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
               children: [
+                // 修订链血缘（supersededBy/resumedFrom；无血缘时零占位）。
+                ..._lineageHeader(context),
                 if (_events.isNotEmpty) ...[
                   Text(
                     _eventsTitle,
@@ -1122,7 +1264,7 @@ class _WorkflowRunDetailPageState extends State<WorkflowRunDetailPage> {
                           child: InkWell(
                             key: ValueKey('workflow-artifact-${a['id']}'),
                             borderRadius: BorderRadius.circular(AppRadius.sm),
-                            // A 批（2026-11-08 拍板⑥）：内容产物=分块字节读取；
+                            // （2026-11-08 拍板）：内容产物=分块字节读取；
                             // 看板四类（chart/table/metrics/board）=数据页渲染
                             //（workflowRunArtifactData + spec 宽松解析）。
                             onTap: _artifactReadable(a)
@@ -1459,7 +1601,7 @@ class OffPeakTaskCard extends StatelessWidget {
   }
 }
 
-/// A 批（拍板⑧）+ 对抗审查返工（高③）：会话内工作流 run 卡。
+/// （拍板）+ 对抗审查返工（高③）：会话内工作流 run 卡。
 /// runId/status 权威源=快照 workflowRuns 投影按 toolCallId 联接（官方
 /// workflowRunCardJoin.ts:33-51——v4 工具行 output 只有散文，结构化
 /// 字段不在行上）；联接不上=只显示名称不可点（官方同款：编不过的
@@ -1518,8 +1660,13 @@ class WorkflowRunCard extends StatelessWidget {
         : live
         ? context.colors.running
         : context.colors.foregroundSubtlest;
-    final statusLabel =
-        status.isEmpty ? tr('工作流') : workflowRunStatusWord(status);
+    final statusLabel = workflowRunSuperseded(run)
+        // 官方 v4 轮尾摘要卡种类词（WorkflowCardChrome.tsx:41-54）：
+        // stopped+superseded 换「工作流已被替代」，不再是「工作流已停止」。
+        ? tr('工作流已被替代')
+        : status.isEmpty
+        ? tr('工作流')
+        : workflowRunStatusWord(status);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Container(

@@ -520,7 +520,7 @@ class ToolbarPill extends StatelessWidget {
   final bool pending;
   final bool outlined;
 
-  /// 主文字色（批⑦：完全访问药丸整颗变 warning 橙——官方
+  /// 主文字色（批：完全访问药丸整颗变 warning 橙——官方
   /// text-warning 药丸视觉，null=默认前景色）。
   final Color? labelColor;
 
