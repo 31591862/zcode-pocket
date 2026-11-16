@@ -264,11 +264,14 @@ class _ConversationPageState extends State<ConversationPage> {
   /// relay/工作区/任务索引，不补订"正开着"的会话明细；页面持有的旧
   /// 订阅对象已死=运行过程停止更新，此前只有退列表重进才恢复。
   /// 保活分支（审批提醒开）的驻留恢复走同一状态对象增量续订，无需此补丁。
+  /// 第三版（真机 12:11 复现"桌面 12:10 完成回合、手机停在 10:05 状态"）：
+  /// 固定轮询窗先于 resume bootstrap（waitPaired 最长 90s）过期，且过期后
+  /// 无新通知再武装=永久冻结——改页面存活期持续轮询（500ms、前台门控）。
   bool _deadSubResubInFlight = false;
   bool _deadSubWatchArmed = false;
 
-  /// app 通知驱动的死订阅检测：在线态 + 本页订阅已 dispose → 武装有界
-  /// 自轮询（10s），工作区就绪即重订。
+  /// app 通知驱动的死订阅检测：在线态 + 本页订阅已 dispose → 页面存活期
+  /// 持续轮询（500ms、前台门控、不设过期），就绪即重订。
   void _onAppChangedForDeadSub() {
     if (!mounted) return;
     final app = _appRef;
@@ -280,27 +283,31 @@ class _ConversationPageState extends State<ConversationPage> {
     if (_deadSubResubInFlight) return;
     _deadSubResubInFlight = true;
     unawaited(() async {
-      // 有界自轮询（10s）：resume 链路"relay 在线先到、工作区打开在后"
-      // ——真机反馈在窗口内冲进 ensureConversation 撞 no active
-      // workspace（"工作区尚未打开"横幅）。等待判据=会话明细传输真正
-      // 就绪（conversationTransportReady，registry._transportProvider 口
-      // 径）——bridge/activeWorkspace 都先于它就位，单独等它们不够
-      // （第二版真机复现）；期间活订阅出现（自愈路径接手/用户重进）即退。
-      for (var i = 0; i < 40; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 250));
+      // 页面存活期持续轮询（500ms 节拍，**不设过期**）：resume bootstrap
+      // （waitPaired 最长 90s+bootstrapWorkspace）经常超过固定轮询窗——
+      // 过期后无新通知再武装=永久冻结（真机 12:11 复现：桌面 12:10 完成
+      // 回合，手机停在 10:05 状态）。tick 门控前台（后台 skip，电量红线）；
+      // 等待判据=conversationTransportReady（registry._transportProvider
+      // 口径，bridge/activeWorkspace 都先于它就位）；活订阅出现/换页即退。
+      while (true) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
         if (!mounted) return;
+        final lifecycle = WidgetsBinding.instance.lifecycleState;
+        if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+          continue;
+        }
         final appNow = _appRef;
-        if (appNow == null || appNow.phase != LinkPhase.online) continue;
-        if (!appNow.conversationTransportReady) continue;
+        if (appNow == null) return;
         if (_sessionId == null || _sessionId != sid) return;
         final subNow = _sub;
         if (subNow != null && !subNow.isDisposed) return;
+        if (appNow.phase != LinkPhase.online) continue;
+        if (!appNow.conversationTransportReady) continue;
         _deadSubResubInFlight = false;
         debugPrint('[conv] disposed sub after resume -> resubscribe $sid');
         await _subscribe(sid);
         return;
       }
-      _deadSubResubInFlight = false;
     }());
   }
 
