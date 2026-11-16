@@ -75,8 +75,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('换机助手'), findsOneWidget,
-        reason: '入口直达换机助手页（导出/导入都在这页）');
+        reason: '入口直达换机助手页');
+    // 入口语义=页面形态：登录门只有导入，无导出（新机无数据可导）。
     expect(find.text('从旧手机导入'), findsOneWidget);
+    expect(find.text('导出到新手机'), findsNothing);
   });
 
   testWidgets('导入成功路径的刷新方法：档案重载后 HomeShell 翻页', (tester) async {

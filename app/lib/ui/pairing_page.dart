@@ -427,7 +427,9 @@ class _PairingPageState extends State<PairingPage> {
                       ? null
                       : () => Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => const DeviceMigrationPage(),
+                              builder: (_) => const DeviceMigrationPage(
+                                mode: DeviceMigrationMode.import,
+                              ),
                             ),
                           ),
                   icon: const Icon(Icons.phone_android, size: 16),

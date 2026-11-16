@@ -44,7 +44,9 @@ Future<void> _pumpPage(WidgetTester tester) async {
   await tester.pumpWidget(
     AppStateScope(
       app: _GateApp(),
-      child: const MaterialApp(home: DeviceMigrationPage()),
+      child: const MaterialApp(
+        home: DeviceMigrationPage(mode: DeviceMigrationMode.import),
+      ),
     ),
   );
   await tester.pump();

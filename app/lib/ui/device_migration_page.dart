@@ -21,8 +21,15 @@ import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../state/device_backup_service.dart';
 
+/// 入口语义决定页面形态（2026-11-16 用户拍板）：
+/// - export：设置入口（已登录=本机有数据，只导出）；
+/// - import：登录门入口（新机无数据可导，只导入）。
+enum DeviceMigrationMode { export, import }
+
 class DeviceMigrationPage extends StatefulWidget {
-  const DeviceMigrationPage({super.key});
+  const DeviceMigrationPage({super.key, required this.mode});
+
+  final DeviceMigrationMode mode;
 
   /// 测试缝（对齐 ConversationPage.debugPickFiles）：注入后替代
   /// FilePicker——回归测试无法走真实平台选择器。
@@ -254,9 +261,11 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
               children: [
                 _warningCard(),
                 const SizedBox(height: 16),
-                _exportCard(),
-                const SizedBox(height: 16),
-                _importCard(),
+                // 入口语义=页面形态：登录门只导入，设置只导出。
+                switch (widget.mode) {
+                  DeviceMigrationMode.export => _exportCard(),
+                  DeviceMigrationMode.import => _importCard(),
+                },
                 const SizedBox(height: 24),
               ],
             ),

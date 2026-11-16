@@ -258,13 +258,14 @@ class SettingsPage extends StatelessWidget {
                 style: TextStyle(fontSize: AppType.uiBase),
               ),
               subtitle: const Text(
-                '账号/电脑/设置/草稿加密导出导入（换手机免重登）',
+                '导出账号与已配对电脑（加密），换手机免重登',
                 style: TextStyle(fontSize: AppType.uiCaption),
               ),
               trailing: const Icon(Icons.chevron_right, size: 18),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => const DeviceMigrationPage(),
+                  builder: (_) =>
+                      const DeviceMigrationPage(mode: DeviceMigrationMode.export),
                 ),
               ),
             ),
