@@ -182,6 +182,12 @@ class ComputerStack extends ChangeNotifier {
   set workspaceOpening(bool value) =>
       _workspaceController.workspaceOpening = value;
 
+  /// 会话明细传输就绪（2026-11-16 批）：registry._transportProvider 的
+  /// 公开口径——activeWorkspace/bridge 先于它就位（resume 链路"在线先
+  /// 到、工作区打开在后"），死订阅重订等它而不是等前两者。
+  bool get conversationTransportReady =>
+      _workspaceController.conversation != null;
+
   /// 冷工作区降级：si 订阅 dormant（runtime 未运行）——任务索引照常，
   /// 点开会话冷启动后自动复活（官方 sessionsIndexStore dormant 语义）。
   bool get siDormant => _workspaceController.siDormant;

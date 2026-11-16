@@ -327,6 +327,11 @@ class AppState extends ChangeNotifier {
 
   Map<String, dynamic>? get activeWorkspace => _active?.activeWorkspace;
 
+  /// 会话明细传输就绪（死订阅重订的等待判据——比 bridge/activeWorkspace
+  /// 更后到位的真正信号，见 ComputerStack 同名 getter）。
+  bool get conversationTransportReady =>
+      _active?.conversationTransportReady ?? false;
+
   /// 草稿身份使用的账号与建栈凭据同口径；身份不明时返回 null，宁可
   /// 保持内存草稿也不写入可能属于另一账号的共享桶。
   Future<String?> activeDraftAccountId() async {

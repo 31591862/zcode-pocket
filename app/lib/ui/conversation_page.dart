@@ -282,15 +282,16 @@ class _ConversationPageState extends State<ConversationPage> {
     unawaited(() async {
       // 有界自轮询（10s）：resume 链路"relay 在线先到、工作区打开在后"
       // ——真机反馈在窗口内冲进 ensureConversation 撞 no active
-      // workspace（"工作区尚未打开"横幅）。轮询等 bridge+activeWorkspace
-      // 就绪才 _subscribe，不依赖工作区打开完成时的通知时序；期间活订阅
-      // 出现（自愈路径接手/用户重进）即退。
+      // workspace（"工作区尚未打开"横幅）。等待判据=会话明细传输真正
+      // 就绪（conversationTransportReady，registry._transportProvider 口
+      // 径）——bridge/activeWorkspace 都先于它就位，单独等它们不够
+      // （第二版真机复现）；期间活订阅出现（自愈路径接手/用户重进）即退。
       for (var i = 0; i < 40; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 250));
         if (!mounted) return;
         final appNow = _appRef;
         if (appNow == null || appNow.phase != LinkPhase.online) continue;
-        if (appNow.bridge == null || appNow.activeWorkspace == null) continue;
+        if (!appNow.conversationTransportReady) continue;
         if (_sessionId == null || _sessionId != sid) return;
         final subNow = _sub;
         if (subNow != null && !subNow.isDisposed) return;
