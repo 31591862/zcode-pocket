@@ -253,106 +253,84 @@ class ConversationPage extends StatefulWidget {
   State<ConversationPage> createState() => _ConversationPageState();
 }
 
-class _ConversationPageState extends State<ConversationPage>
-    with WidgetsBindingObserver {
+class _ConversationPageState extends State<ConversationPage> {
   // AppState 引用（dispose 时清 viewingSessionId——dispose 不能 of(context)）
   AppState? _appRef;
   final _input = TextEditingController();
 
-  /// 回前台死订阅自愈（2026-11-16 用户报告"后台回 app 会话不刷新"）：
-  /// 审批提醒关（默认档）退后台 90s 整栈 suspend——registry.demote 会
-  /// dispose 全部会话订阅，而恢复路径（pokeOrResume→resume）只重连
-  /// relay/工作区/任务索引，不补订"正开着"的会话明细；页面持有的旧
-  /// 订阅对象已死=运行过程停止更新，此前只有退列表重进才恢复。
-  /// 保活分支（审批提醒开）的驻留恢复走同一状态对象增量续订，无需此补丁。
-  /// 第三版（真机 12:11 复现"桌面 12:10 完成回合、手机停在 10:05 状态"）：
-  /// 固定轮询窗先于 resume bootstrap（waitPaired 最长 90s）过期，且过期后
-  /// 无新通知再武装=永久冻结——改页面存活期持续轮询（500ms、前台门控）。
-  bool _deadSubResubInFlight = false;
-  bool _deadSubWatchArmed = false;
-
-  /// 活订阅僵死检测基线（数据版本 + 静默拍计数——500ms 一拍，
-  /// 120 拍=60s；用拍计数而非 DateTime，测试假时钟可推进）。
+  /// 会话健康巡检（2026-11-16 批，第五版）：页面存活期常驻 2s 一拍，
+  /// 双兜底——
+  /// ① 死订阅补订：默认档退后台 90s 整栈 suspend（registry.demote dispose
+  ///    全部订阅），恢复链路只重连 relay/工作区/任务索引、不补订"正开着"
+  ///    的会话；dispose 后的订阅引用页面仍持有。
+  /// ② 活订阅僵死强制重订：订阅活着但帧流断（真机 14:08/15:0x 两次复现，
+  ///    terminal-owner-ended 降级窗口内传输层看门狗的 resync 走同一条挂死
+  ///    通道时无人自愈）——运行中且 60s（30 拍）无 dataVersion 变化 →
+  ///    dispose 旧订阅强制重订（服务端重放权威快照）。
+  /// 设计要点：常驻巡检而非事件驱动武装——真机日志实证恢复完成后的通知
+  /// 时序不可靠，事件驱动会漏武装=永久冻结；tick 门控前台（后台 skip，
+  /// 电量红线）；运行中静默（等审批/长工具）不误触发（对齐传输层看门狗
+  /// 的 running 门控）；dispose 取消定时器（测试无 pending timer）。
+  Timer? _convHealthTimer;
   int? _staleBaseVersion;
   int _staleTicks = 0;
+  bool _convHealthBusy = false;
 
-  /// 死订阅/僵死检测的武装入口：app 通知与生命周期 resumed 双源——
-  /// 武装本身不做 phase 前置（第四版真机日志实证：resume 完成通知的
-  /// 时序不可靠，错过则无人武装=永久冻结），就绪等待全部在轮询内部。
-  void _onAppChangedForDeadSub() {
-    if (!mounted) return;
+  void _startConvHealthTimer() {
+    _convHealthTimer ??= Timer.periodic(
+      const Duration(milliseconds: 2000),
+      (_) => _convHealthTick(),
+    );
+  }
+
+  void _convHealthTick() {
+    if (!mounted || _convHealthBusy) return;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    // 前台门控：后台 tick 直接跳过（不做 RPC 不唤醒无线电，电量红线）。
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+    final app = _appRef;
+    if (app == null || app.phase != LinkPhase.online) return;
+    if (!app.conversationTransportReady) return;
     final sid = _sessionId;
     if (sid == null || sid.isEmpty) return;
     final sub = _sub;
-    // 武装条件：订阅已死（重订），或活且运行中（僵死检测——帧流断时
-    // dataVersion 不动，轮询 60s 兜底强制重订）。活且非运行=空闲正常
-    // 静默，无需页面层兜底（传输层看门狗同口径）。
-    final subAlive = sub != null && !sub.isDisposed;
-    if (subAlive && !(sub.state.isRunning)) return;
-    if (_deadSubResubInFlight) return;
-    _deadSubResubInFlight = true;
-    unawaited(() async {
-      // 页面存活期持续轮询（500ms 节拍，**不设过期**）：resume bootstrap
-      // （waitPaired 最长 90s+bootstrapWorkspace）经常超过固定轮询窗——
-      // 过期后无新通知再武装=永久冻结（真机 12:11 复现：桌面 12:10 完成
-      // 回合，手机停在 10:05 状态）。tick 门控前台（后台 skip，电量红线）；
-      // 等待判据=conversationTransportReady（registry._transportProvider
-      // 口径，bridge/activeWorkspace 都先于它就位）；活订阅出现/换页即退。
-      // 活订阅僵死检测（真机 14:08 复现"桌面 14:07 完成、手机停在 14:04
-      // 运行中"——订阅活着但帧流断，传输层看门狗的 resync RPC 若也挂死
-      // 则无人自愈）：运行中且 60s 无状态变化 → dispose 旧订阅强制重订。
-      while (true) {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
-        if (!mounted) return;
-        final lifecycle = WidgetsBinding.instance.lifecycleState;
-        if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
-          continue;
-        }
-        final appNow = _appRef;
-        if (appNow == null) return;
-        if (_sessionId == null || _sessionId != sid) return;
-        if (appNow.phase != LinkPhase.online) continue;
-        if (!appNow.conversationTransportReady) continue;
-        final subNow = _sub;
-        if (subNow == null || subNow.isDisposed) {
-          _deadSubResubInFlight = false;
-          debugPrint('[conv] disposed sub after resume -> resubscribe $sid');
-          await _subscribe(sid);
-          return;
-        }
-        // 活订阅：仅"运行中"做僵死检测（空闲会话本就无帧，传输层看门狗
-        // 对非运行态刻意不 resync——等用户输入，页面层同口径）。
-        if (!subNow.state.isRunning) return;
-        if ((_ownRoute?.isCurrent ?? false) == false) continue;
-        final v = subNow.state.dataVersion;
-        if (v != _staleBaseVersion) {
-          _staleBaseVersion = v;
-          _staleTicks = 0;
-          continue;
-        }
-        _staleTicks++;
-        if (_staleTicks < 120) continue;
-        _staleBaseVersion = null;
-        _staleTicks = 0;
-        _deadSubResubInFlight = false;
-        debugPrint(
-          '[conv] alive-sub stale 60s while running -> fresh resubscribe $sid',
-        );
-        unawaited(subNow.dispose());
-        await _subscribe(sid);
-        return;
-      }
-    }());
+    // ① 死订阅 → 补订。
+    if (sub == null || sub.isDisposed) {
+      debugPrint('[conv] dead sub -> resubscribe ' + sid);
+      _convHealthBusy = true;
+      unawaited(
+        _subscribe(sid).whenComplete(() => _convHealthBusy = false),
+      );
+      return;
+    }
+    // ② 活订阅僵死检测：仅"运行中"（空闲会话本就无帧，传输层看门狗
+    //    对非运行态刻意不 resync——等用户输入，页面层同口径）。
+    if (!sub.state.isRunning) {
+      _staleTicks = 0;
+      return;
+    }
+    // 被弹层/子页覆盖时不折腾。
+    if ((_ownRoute?.isCurrent ?? false) == false) return;
+    final v = sub.state.dataVersion;
+    if (v != _staleBaseVersion) {
+      _staleBaseVersion = v;
+      _staleTicks = 0;
+      return;
+    }
+    _staleTicks++;
+    if (_staleTicks < 30) return;
+    _staleBaseVersion = null;
+    _staleTicks = 0;
+    debugPrint(
+      '[conv] alive-sub stale 60s while running -> fresh resubscribe ' + sid,
+    );
+    _convHealthBusy = true;
+    unawaited(sub.dispose());
+    unawaited(
+      _subscribe(sid).whenComplete(() => _convHealthBusy = false),
+    );
   }
 
-  /// 挂死订阅看门（幂等）：本页仍在树上期间持续监听 app 通知。
-  void _armDeadSubWatch() {
-    if (_deadSubWatchArmed) return;
-    final app = AppStateScope.of(context);
-    _deadSubWatchArmed = true;
-    _appRef = app;
-    app.addListener(_onAppChangedForDeadSub);
-  }
 
   DraftIdentity? _draftIdentity;
   Future<void>? _draftRestoreFuture;
@@ -674,9 +652,8 @@ class _ConversationPageState extends State<ConversationPage>
   @override
   void initState() {
     super.initState();
-    // 死订阅/僵死看门的生命周期源：resumed 事件直达武装
-    // （app 通知时序不可靠——第四版真机日志实证）。
-    WidgetsBinding.instance.addObserver(this);
+    // 会话健康巡检：页面存活期常驻（dispose 取消）。
+    _startConvHealthTimer();
     _sessionId = widget.sessionId;
     final sid = _sessionId;
     final memory = (sid == null || sid.isEmpty) ? null : _scrollMemory[sid];
@@ -1215,13 +1192,6 @@ class _ConversationPageState extends State<ConversationPage>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _onAppChangedForDeadSub();
-    }
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _ownRoute ??= ModalRoute.of(context);
@@ -1230,8 +1200,6 @@ class _ConversationPageState extends State<ConversationPage>
       _appRef = AppStateScope.of(context);
       _scheduleDraftRestore();
     }
-    // 死订阅看门挂 app 监听（幂等，含 readOnly 页——只读页同样订阅明细）。
-    _armDeadSubWatch();
     if (_initialSubscribePending) {
       _initialSubscribePending = false;
       _subscribe(widget.sessionId!);
@@ -1281,8 +1249,7 @@ class _ConversationPageState extends State<ConversationPage>
     _input.dispose();
     _inputFocusNode.dispose();
     _scroll.dispose();
-    _appRef?.removeListener(_onAppChangedForDeadSub);
-    WidgetsBinding.instance.removeObserver(this);
+    _convHealthTimer?.cancel();
     _search.dispose();
     _fileDebounce?.cancel();
     _followTick?.cancel();
