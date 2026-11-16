@@ -60,7 +60,7 @@ void main() {
     expect(find.textContaining(' · 2 KB'), findsWidgets);
   });
 
-  testWidgets('图片=3 列方形缩略图网格；单元格含移除角标', (tester) async {
+  testWidgets('图片=72px 方形缩略图条（左起、多图换行）；单元格含移除角标', (tester) async {
     await tester.pumpWidget(
       _host([for (var i = 0; i < 5; i++) _img('$i')]),
     );
@@ -76,14 +76,14 @@ void main() {
       find.byKey(const ValueKey('pending-attachment-remove-0')),
       findsOneWidget,
     );
-    // 3 列：第 4 张图换行（y 更大）。
+    // 72px 条：每行 4 个——第 5 张换行（y 更大）。
     final a = tester.getTopLeft(
       find.byKey(const ValueKey('pending-attachment-0')),
     );
-    final d = tester.getTopLeft(
-      find.byKey(const ValueKey('pending-attachment-3')),
+    final e = tester.getTopLeft(
+      find.byKey(const ValueKey('pending-attachment-4')),
     );
-    expect(d.dy, greaterThan(a.dy));
+    expect(e.dy, greaterThan(a.dy));
   });
 
   testWidgets('上传中显示百分比；失败态点缩略图重试', (tester) async {

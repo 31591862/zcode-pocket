@@ -85,6 +85,20 @@ String _fmtScaled(double v, String unit) {
 /// Token 量格式化（22.4亿 / 3.7亿 / 8562万）。
 String formatTokens(num v) => _fmtNum(v);
 
+/// 精确计数格式化（2026-11-16 用户需求：Start Plan 剩余额度显示精确
+/// 数字而非 3亿 粗粒度）——整数加千分位分隔，小数原样。
+String formatExactCount(num v) {
+  final i = v.truncate();
+  if (v != i) return '$v';
+  final digits = i.abs().toString();
+  final buf = StringBuffer();
+  for (var idx = 0; idx < digits.length; idx++) {
+    if (idx > 0 && (digits.length - idx) % 3 == 0) buf.write(',');
+    buf.write(digits[idx]);
+  }
+  return i < 0 ? '-\${buf.toString()}' : buf.toString();
+}
+
 /// 时长格式化（13 小时 5 分钟 / 42 分钟 / <1 分钟）。
 String formatDurationMs(num ms) {
   final totalMin = (ms / 60000).floor();

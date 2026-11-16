@@ -202,8 +202,11 @@ void main() {
     await pumpPage(tester, app);
     await tester.tap(find.byKey(const ValueKey('plan-kind-start-plan')));
     await settle(tester);
-    expect(find.textContaining('剩余 1.2万'), findsOneWidget,
-        reason: '用户需求：把剩余额度数值显示出来（remaining.count）');
+    // 精确数字（2026-11-16 用户需求）：count=12000 → 12,000 千分位。
+    expect(find.textContaining('剩余 12,000'), findsOneWidget,
+        reason: '用户需求：剩余额度显示精确数字（remaining.count）');
+    expect(find.textContaining('1.2万'), findsNothing,
+        reason: '不再用万/亿粗粒度格式');
     // Start Plan remaining 无 usage/currentValue，不出"已用 X / Y"行。
     expect(find.textContaining('已用'), findsNothing);
   });

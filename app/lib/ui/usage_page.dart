@@ -1116,8 +1116,19 @@ class _UsagePageState extends State<UsagePage>
   /// 剩余额度四卡：5 小时窗口 / 每周 / 每月工具 / ZCode MCP
   /// （官方 CodingPlanUsagePanel cards + resolveMcpQuotaLimit 同构）。
   Widget _buildQuotaCards() {
+    final startPlan = _planKind == 'start-plan';
     final quota = _ent?['quota'];
     final limits = quota is Map ? listOf(quota['limits']) : null;
+    // Start Plan 总量 = 各桶 total_units（number）合计——与桌面
+    // buildZaiStartPlanRemaining 的分母同口径（percentage 即剩余/总量）。
+    num? startPlanTotal;
+    if (startPlan) {
+      for (final b in limits ?? const []) {
+        if (b is Map && b['number'] is num) {
+          startPlanTotal = (startPlanTotal ?? 0) + (b['number'] as num);
+        }
+      }
+    }
     final mcpAggregate = () {
       final mcp = _ent?['mcpQuota'];
       return mcp is Map ? mcp['aggregate'] : null;
@@ -1156,6 +1167,7 @@ class _UsagePageState extends State<UsagePage>
           // Start Plan 的 remaining 口径与个人套餐相反（0-1 剩余比例 vs
           // 0-100 已用占比）——按档分流，误反转会恒显示 ~99%。
           startPlan: _planKind == 'start-plan',
+          startPlanTotal: startPlanTotal,
         );
       }
       return const SizedBox.shrink();
@@ -1185,7 +1197,13 @@ class _UsagePageState extends State<UsagePage>
         ),
         const SizedBox(height: 8),
         for (final c in cards) ...[
-          _quotaCard(c.label, c.limit!, c.color, startPlan: _planKind == 'start-plan'),
+          _quotaCard(
+            c.label,
+            c.limit!,
+            c.color,
+            startPlan: _planKind == 'start-plan',
+            startPlanTotal: startPlanTotal,
+          ),
           const SizedBox(height: 8),
         ],
       ],
@@ -1210,6 +1228,7 @@ class _UsagePageState extends State<UsagePage>
     Map<String, dynamic>? limit,
     Color color, {
     bool startPlan = false,
+    num? startPlanTotal,
   }) {
     // Start Plan 的 percentage 是 0-1 **剩余比例**（桌面
     // buildZaiStartPlanRemaining），个人套餐是 0-100 已用占比（官方
@@ -1224,13 +1243,21 @@ class _UsagePageState extends State<UsagePage>
     String? remainLine;
     if (startPlan) {
       final count = quotaRemainingCount(limit);
-      if (count != null) {
-        remainLine = '${tr('剩余')} ${formatTokens(count)}';
+      if (count != null &&
+          startPlanTotal != null &&
+          startPlanTotal > 0) {
+        // 剩余 / 总量（2026-11-16 用户需求：298,341,915 / 300,000,000
+        // 形态——总量=quota.limits 各桶 total_units 合计）。
+        remainLine =
+            '${tr('剩余')} ${formatExactCount(count)} / ${formatExactCount(startPlanTotal)}';
+      } else if (count != null) {
+        // 精确数字（2026-11-16 用户需求）：3亿 → 300,000,000 千分位。
+        remainLine = '${tr('剩余')} ${formatExactCount(count)}';
       } else {
         final used = limit?['usage'] as num?;
         final total = limit?['number'] as num?;
         if (used != null && total != null && total > 0) {
-          remainLine = '${tr('剩余')} ${formatTokens(max(total - used, 0))}';
+          remainLine = '${tr('剩余')} ${formatExactCount(max(total - used, 0))}';
         }
       }
     }    return Container(

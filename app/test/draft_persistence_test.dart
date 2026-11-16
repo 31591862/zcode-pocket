@@ -741,6 +741,12 @@ void main() {
       ),
     );
     await _pump(tester, 20);
+    final dbgTexts = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((w) => w.data ?? '(span)')
+        .join(' | ');
+    // ignore: avoid_print
+    print('DBG texts: ' + dbgTexts);
     expect(find.textContaining('preview.png'), findsWidgets,
         reason: '入口 chip 与（可能的）展开预览各一份，≥1 即可');
     expect(find.textContaining('已上传'), findsWidgets,

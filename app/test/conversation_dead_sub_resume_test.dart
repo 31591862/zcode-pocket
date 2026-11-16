@@ -181,9 +181,8 @@ void main() {
     app.sub1.disposed = true;
     // 模拟回前台：pokeOrResume 完成后 phase 已 online，app notifyListeners
     // （状态层 onAppResumed 末尾的通知就是页面的触发源）。
-    app.notifyListeners();
-    // 自轮询节拍 250ms + _subscribe 异步链。
-    await tester.pump(const Duration(milliseconds: 400));
+    // 巡检 2s 一拍 + _subscribe 异步链。
+    await tester.pump(const Duration(milliseconds: 2500));
     await _settle(tester);
 
     expect(app.ensureCalls, greaterThan(before),
@@ -200,7 +199,7 @@ void main() {
 
     // 订阅还活着（后台 <90s / 保活驻留分支）——通知不得引起重订。
     app.notifyListeners();
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 2500));
     await _settle(tester);
     expect(app.ensureCalls, before, reason: '活订阅不重订（复核仍活）');
   });
@@ -215,7 +214,7 @@ void main() {
     app.sub1.disposed = true;
     app.workspaceOpen = false;
     app.notifyListeners();
-    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump(const Duration(milliseconds: 2500));
     await _settle(tester, rounds: 6);
     expect(app.ensureCalls, before,
         reason: 'bridge/activeWorkspace 未就绪不得冲订阅（修复前在此窗口'
@@ -225,7 +224,7 @@ void main() {
 
     // 工作区打开完成（无需新通知——自轮询不依赖通知时序）：补订接续。
     app.workspaceOpen = true;
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 2500));
     await _settle(tester);
     expect(app.ensureCalls, greaterThan(before),
         reason: '就绪后自轮询必须补订');
@@ -245,7 +244,7 @@ void main() {
 
     // 帧流断（dataVersion 不再变化）+ 运行中 → app 通知武装轮询。
     app.notifyListeners();
-    // 60s 僵死窗口=120 拍（假时钟推进，500ms 节拍全速跑）。
+    // 60s 僵死窗口=30 拍（假时钟推进，2s 节拍全速跑）。
     await tester.pump(const Duration(seconds: 70));
     await _settle(tester);
 
