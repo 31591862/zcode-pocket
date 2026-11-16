@@ -313,17 +313,25 @@ class TurnBarState extends State<TurnBar> {
               // 底边距清零（间距堆栈整改六轮定稿，用户验收
               // 拍板"差不多了"——收起态正文统一无底边距，卡侧空隙
               // 由卡自身表达）。
-              child: SearchTargetFrame(
-                rowId: intOf(vt['rowId']),
-                activeRowId: widget.searchTargetRowId,
-                targetKey: widget.searchTargetKey,
-                child: AssistantText(
-                  text: '${vt['text'] ?? ''}',
-                  streaming: vt['state'] == 'streaming',
-                  verticalPadding: 0,
-                  sessionId: widget.sessionId,
-                  header: work.header,
-                  searchQuery: widget.searchQuery,
+              // 长按行操作（2026-11-16 用户反馈"输出的文字不能长按
+              // 触发复制"）：收起态内联正文此前漏挂——长按只在展开态
+              // assistantText 分支存在，而默认呈现恰是收起态。
+              child: GestureDetector(
+                onLongPress: widget.onRowActions == null
+                    ? null
+                    : () => widget.onRowActions!(vt),
+                child: SearchTargetFrame(
+                  rowId: intOf(vt['rowId']),
+                  activeRowId: widget.searchTargetRowId,
+                  targetKey: widget.searchTargetKey,
+                  child: AssistantText(
+                    text: '${vt['text'] ?? ''}',
+                    streaming: vt['state'] == 'streaming',
+                    verticalPadding: 0,
+                    sessionId: widget.sessionId,
+                    header: work.header,
+                    searchQuery: widget.searchQuery,
+                  ),
                 ),
               ),
             ),

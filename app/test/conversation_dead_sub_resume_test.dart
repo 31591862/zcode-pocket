@@ -133,6 +133,11 @@ class _ResubApp extends AppState {
   Map<String, dynamic>? get activeWorkspace =>
       workspaceOpen ? const {'name': '测试工作区'} : null;
 
+  // 第三版修复的真正判据：会话明细传输就绪（前两版等 bridge/activeWorkspace
+  // 不够——它们先于 registry._transportProvider 就位，真机复现横幅）。
+  @override
+  bool get conversationTransportReady => workspaceOpen;
+
   @override
   Future<ConversationSubscription> ensureConversation(
     String id, {
