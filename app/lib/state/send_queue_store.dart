@@ -307,4 +307,71 @@ class SendQueueStore {
     await _diskTail;
     _closed = true;
   }).catchError((_) {});
+
+  // --------------------------------------------- 换机备份（2026-11-16 批）
+
+  /// 换机备份导出：桶键+条目全量（bucket.key 为 jsonEncode 4 元数组串，
+  /// 导入侧经 [_parseKey] 校验回放）。commandId 一并导出——队列只装
+  /// 从未发送过的消息，重放沿用同一 ID 走服务端幂等去重（红线不变）。
+  Future<List<Map<String, dynamic>>> exportForBackup() => _serial(() => [
+    for (final e in _buckets.entries)
+      if (e.value.isNotEmpty)
+        {'bucket': e.key, 'entries': [for (final entry in e.value) entry.toJson()]},
+  ]);
+
+  /// 换机备份导入：桶键校验 + 桶内按条目 id 去重（同 id 跳过），超上限
+  /// 丢最旧（对齐 add 语义）。返回 (added, skipped)。
+  Future<({int added, int skipped})> importFromBackup(List<dynamic> rawList) =>
+      _serial<({int added, int skipped})>(() async {
+        if (_closed) return (added: 0, skipped: rawList.length);
+        var added = 0;
+        var skipped = 0;
+        var touched = false;
+        for (final raw in rawList) {
+          if (raw is! Map) {
+            skipped++;
+            continue;
+          }
+          final bucketKey = raw['bucket'];
+          final entries = raw['entries'];
+          if (bucketKey is! String || _parseKey(bucketKey) == null) {
+            skipped++;
+            continue;
+          }
+          if (entries is! List) {
+            skipped++;
+            continue;
+          }
+          final list = _buckets.putIfAbsent(bucketKey, () => []);
+          for (final entryRaw in entries) {
+            if (entryRaw is! Map) {
+              skipped++;
+              continue;
+            }
+            final entry = SendQueueEntry.fromJson(
+              entryRaw.cast<String, dynamic>(),
+            );
+            if (entry == null) {
+              skipped++;
+              continue;
+            }
+            if (list.any((x) => x.id == entry.id)) {
+              skipped++;
+              continue;
+            }
+            list.add(entry);
+            added++;
+          }
+          if (list.length > maxQueuedEntries) {
+            list.removeRange(0, list.length - maxQueuedEntries);
+          }
+          if (list.isNotEmpty) {
+            touched = true;
+          } else {
+            _buckets.remove(bucketKey);
+          }
+        }
+        if (touched) _scheduleWrite();
+        return (added: added, skipped: skipped);
+      }).catchError((_) => (added: 0, skipped: 0));
 }

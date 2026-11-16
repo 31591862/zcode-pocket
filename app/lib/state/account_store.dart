@@ -357,6 +357,83 @@ class AccountStore {
   /// 全清（回登录门/测试用）。
   Future<void> clear() => _serialized(_clearRaw);
 
+  // --------------------------------------------- 换机备份（2026-11-16 批）
+
+  /// 换机备份导出：全量账号（含 **JWT 明文**——调用方负责口令加密落盘，
+  /// 严禁明文写文件）。孤儿条目（列表在、凭据键缺——历史事故形态）不导。
+  Future<Map<String, dynamic>> exportForBackup() => _serialized(() async {
+    await _ensureMigrated();
+    final accounts = <Map<String, dynamic>>[];
+    for (final a in await _readListRaw()) {
+      final jwt = await _read('$_jwtPrefix${a.id}$_jwtSuffix');
+      if (jwt == null || jwt.isEmpty) continue;
+      accounts.add({
+        'id': a.id,
+        'jwt': jwt,
+        'provider': a.provider,
+        'label': a.label,
+      });
+    }
+    final last = await _read(_lastKey);
+    return {
+      'accounts': accounts,
+      if (last != null && last.isNotEmpty && accounts.any((e) => e['id'] == last))
+        'lastUsed': last,
+    };
+  });
+
+  /// 换机备份导入：**只补缺**——同 id 跳过（本机已有凭据更可信：
+  /// 导入可能是旧导出，重登后的本地 token 更新；备注名同理本机优先）。
+  /// 导入账号按导出顺序追加到本机列表尾部（"首项=最近使用"不变式不破）；
+  /// [lastUsed] 仅本机此前无账号时生效。
+  Future<({int added, int skipped})> importFromBackup(
+    List<dynamic> rawAccounts, {
+    String? lastUsed,
+  }) => _serialized(() async {
+    await _ensureMigrated();
+    final list = await _readListRaw();
+    final localHadAccounts = list.isNotEmpty;
+    final known = list.map((a) => a.id).toSet();
+    var added = 0;
+    var skipped = 0;
+    for (final raw in rawAccounts) {
+      if (raw is! Map) {
+        skipped++;
+        continue;
+      }
+      final id = '${raw['id'] ?? ''}'.trim();
+      final jwt = '${raw['jwt'] ?? ''}'.trim();
+      final provider = '${raw['provider'] ?? 'unknown'}'.trim();
+      final label = '${raw['label'] ?? ''}'.trim();
+      if (id.isEmpty || jwt.isEmpty) {
+        skipped++;
+        continue;
+      }
+      if (known.contains(id)) {
+        skipped++;
+        continue;
+      }
+      list.add(StoredAccount(id: id, provider: provider, label: label));
+      await _write('$_jwtPrefix$id$_jwtSuffix', jwt);
+      await _write('$_jwtPrefix$id$_providerSuffix', provider);
+      known.add(id);
+      added++;
+    }
+    if (added > 0) {
+      await _writeListRaw(list);
+      // 列表先落、凭据后写（对齐 _saveRaw）——本函数凭据键逐条即时写，
+      // 此处只是收口 lastUsed。
+    }
+    final localWasEmpty = !localHadAccounts && added > 0;
+    if (localWasEmpty) {
+      final trimmedLast = (lastUsed ?? '').trim();
+      final target = trimmedLast.isEmpty
+          ? (list.isNotEmpty ? list.first.id : null)
+          : (list.any((a) => a.id == trimmedLast) ? trimmedLast : null);
+      if (target != null) await _write(_lastKey, target);
+    }
+    return (added: added, skipped: skipped);
+  });
   Future<void> _clearRaw() async {
     _migrated = _migrate(); // 幂等：旧键若仍在先吸收
     // 迁移失败时复位 _migrated 再抛——残留失败 future

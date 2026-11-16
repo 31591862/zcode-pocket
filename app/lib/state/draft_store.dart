@@ -458,4 +458,43 @@ class DraftStore {
     _debounce?.cancel();
     _writeRetryTimer?.cancel();
   }
+
+  // --------------------------------------------- 换机备份（2026-11-16 批）
+
+  /// 换机备份导出：可解析草稿条目（损坏形态 [_unparsedDrafts] 不入备份
+  /// ——导入侧无法解码，带过去只会静默丢）。
+  Future<List<Map<String, dynamic>>> exportForBackup() =>
+      _serial<List<Map<String, dynamic>>>(
+        () => [for (final draft in _entries.values) draft.toJson()],
+      );
+
+  /// 换机备份导入：按 identity.key 合并，**本机优先**——revision 不高于
+  /// 本机现存则跳过（导入可能是旧导出；空位直接补）。返回 (added, skipped)
+  /// 并即时落盘。
+  Future<({int added, int skipped})> importFromBackup(List<dynamic> rawList) =>
+      _serial<({int added, int skipped})>(() async {
+        if (_closed) return (added: 0, skipped: rawList.length);
+        var added = 0;
+        var skipped = 0;
+        for (final raw in rawList) {
+          if (raw is! Map) {
+            skipped++;
+            continue;
+          }
+          final draft = ComposerDraft.fromJson(raw.cast<String, dynamic>());
+          if (draft == null) {
+            skipped++;
+            continue;
+          }
+          final current = _entries[draft.identity.key];
+          if (current != null && draft.revision <= current.revision) {
+            skipped++;
+            continue;
+          }
+          _entries[draft.identity.key] = draft;
+          added++;
+        }
+        if (added > 0) _scheduleWrite();
+        return (added: added, skipped: skipped);
+      });
 }

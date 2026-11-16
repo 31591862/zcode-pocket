@@ -11,6 +11,7 @@ import '../state/app_state_scope.dart';
 import '../state/device_stack_registry.dart' show AccountRebindRequired;
 import '../transport/connection_params.dart';
 import 'device_list_page.dart';
+import 'device_migration_page.dart';
 import 'login_page.dart';
 import 'qr_scan_page.dart';
 
@@ -396,6 +397,27 @@ class _PairingPageState extends State<PairingPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Text('连接'),
+            ),
+            // 换机助手（2026-11-16 批）：新手机首装正停在登录门——导入
+            // 入口必须挂在这里，否则设置页（换机助手主入口）根本进不去。
+            // 次要路径低调居中；导入成功经 app.refreshAfterBackupImport
+            // 重载档案+接通，HomeShell 自动翻页。
+            Padding(
+              padding: const EdgeInsets.only(top: 20),
+              child: Center(
+                child: TextButton.icon(
+                  key: const ValueKey('pairing-migration-entry'),
+                  onPressed: _connecting
+                      ? null
+                      : () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const DeviceMigrationPage(),
+                            ),
+                          ),
+                  icon: const Icon(Icons.phone_android, size: 16),
+                  label: const Text('从旧手机恢复（换机助手）'),
+                ),
+              ),
             ),
           ],
         ),

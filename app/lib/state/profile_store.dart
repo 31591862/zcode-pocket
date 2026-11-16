@@ -240,6 +240,75 @@ class ProfileStore {
     }
   });
 
+  // --------------------------------------------- 换机备份（2026-11-16 批）
+
+  /// 换机备份导出：档案列表（复用 [_encodeProfile] 序列化形态，导入侧
+  /// 可直接 [_decodeProfile] 回放）。[includeV1]=是否包含 V1 直连档案
+  /// （URL 含 hash=链接即凭据——默认由 UI 勾选，默认不导；V2 档案仅
+  /// 描述符，凭据=账号 JWT，不随本开关）。
+  Future<Map<String, dynamic>> exportForBackup({required bool includeV1}) =>
+      _serialized(() async {
+        final profiles = (await _readRaw()).profiles;
+        return {
+          'profiles': [
+            for (final p in profiles)
+              if (p is! RelayProfile || includeV1) _encodeProfile(p),
+          ],
+          'activeDeviceSid': await _storage.read(key: '${_prefix}relay.active'),
+        };
+      });
+
+  /// 换机备份导入：同 deviceSid 跳过（本机档案优先——可能是刷新过二维码
+  /// 的新档案）；坏条目逐条跳过计数；[activeDeviceSid] 仅本机无激活档案
+  /// 时生效。写后同步刷新明文备份（对齐 upsert 的击杀防丢层）。
+  Future<({int added, int skipped, int invalid})> importFromBackup(
+    Map<String, dynamic> payload,
+  ) => _serialized(() async {
+        final rawList = payload['profiles'];
+        if (rawList is! List) throw const FormatException('profiles 缺失');
+        final existing = (await _readRaw()).profiles;
+        final localHadAny = existing.isNotEmpty;
+        final known = existing.map((p) => p.deviceSid).toSet();
+        final merged = [...existing];
+        var added = 0;
+        var skipped = 0;
+        var invalid = 0;
+        for (final raw in rawList) {
+          if (raw is! Map) {
+            invalid++;
+            continue;
+          }
+          DeviceProfile profile;
+          try {
+            profile = _decodeProfile(raw.cast<String, dynamic>());
+          } on Object {
+            invalid++;
+            continue;
+          }
+          if (known.contains(profile.deviceSid)) {
+            skipped++;
+            continue;
+          }
+          merged.add(profile);
+          known.add(profile.deviceSid);
+          added++;
+        }
+        if (added > 0) {
+          await _storage.write(
+            key: '${_prefix}relay.list',
+            value: jsonEncode(merged.map(_encodeProfile).toList()),
+          );
+          await _writeBackup(merged);
+        }
+        if (!localHadAny && added > 0) {
+          final sid = '${payload['activeDeviceSid'] ?? ''}'.trim();
+          if (sid.isNotEmpty && known.contains(sid)) {
+            await _storage.write(key: '${_prefix}relay.active', value: sid);
+          }
+        }
+        return (added: added, skipped: skipped, invalid: invalid);
+      });
+
   Map<String, dynamic> _encodeProfile(DeviceProfile p) => switch (p) {
     RelayProfile v1 => {
       'url': v1.params.source.toString(),

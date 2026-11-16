@@ -129,6 +129,10 @@ class InputBar extends StatelessWidget {
   /// 待发送附件 chips 行（阶段 3 第三段；空附件传 null 不占位）。
   final Widget? attachmentsBar;
 
+  /// 托盘有待发附件（2026-11-16 纯附件发送）：空文本时发送键保持
+  /// 发送态（不退麦克风键），运行中保持"发送即排队"而非停止键。
+  final bool hasAttachments;
+
   /// 语音输入入口（null=不可用）：发送键**长按**触发（2026-10-22 用户
   /// 拍板：语音键收起腾位给状态点——独立语音键退役）。
   final VoidCallback? onVoice;
@@ -156,6 +160,7 @@ class InputBar extends StatelessWidget {
     this.onSelectionTap,
     this.onAdd,
     this.attachmentsBar,
+    this.hasAttachments = false,
     this.onVoice,
     this.statusColor,
     this.statusProgress,
@@ -329,8 +334,12 @@ class InputBar extends StatelessWidget {
                       // 停止键。视觉轮：黑色圆锚点（官方 bg-brand），42px 触达。
                       ListenableBuilder(
                         listenable: controller,
+                        // 纯附件发送（2026-11-16）：托盘有附件=有草稿意图，
+                        // 运行中保持发送键（发送即排队），不切停止键。
                         builder: (context, _) =>
-                            running && controller.text.trim().isEmpty
+                            running &&
+                                controller.text.trim().isEmpty &&
+                                !hasAttachments
                             ? SizedBox(
                                 // Paseo 观感二轮：发送/停止 42→36、
                                 // 图标 22→18（控件小一圈=精致感主来源）。
@@ -437,12 +446,15 @@ class InputBar extends StatelessWidget {
                                           // 草稿时图标换麦克风、点按直达语音
                                           // （微信/Telegram 同款惯例；长按
                                           // 语音不变）——「发送键能语音」
-                                          // 从此可见。
+                                          // 从此可见。纯附件发送（
+                                          // 2026-11-16）：托盘有附件时空文本
+                                          // 也是有效草稿，保持发送态。
                                           onPressed:
                                               (sending ||
-                                                  controller.text
-                                                      .trim()
-                                                      .isEmpty)
+                                                  (controller.text
+                                                          .trim()
+                                                          .isEmpty &&
+                                                      !hasAttachments))
                                               ? ((onVoice != null && !sending)
                                                     ? onVoice
                                                     : null)
@@ -466,6 +478,7 @@ class InputBar extends StatelessWidget {
                                               : (controller.text
                                                         .trim()
                                                         .isEmpty &&
+                                                    !hasAttachments &&
                                                     onVoice != null)
                                               ? const Icon(
                                                   Icons.mic_rounded,

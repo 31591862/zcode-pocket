@@ -41,6 +41,24 @@ double quotaRemainingPercent(Map<String, dynamic>? limit) {
   return (100 - used).clamp(0, 100);
 }
 
+/// Start Plan remaining 口径（桌面 buildZaiStartPlanRemaining：percentage=
+/// **0-1 剩余比例**，与 Coding Pro 的 0-100 已用占比口径相反）。用量页此前
+/// 对 Start Plan 快照误按"已用"反转 → 恒显示 ~99%（用户报告"剩余额度
+/// 百分比不会刷新"的根因）；桌面 quota_banner 对同字段即按剩余比例取用
+/// （startPlanQuotaBuckets.ts）。percentage 缺失（总量 0 桶）返回 null。
+double? startPlanRemainingPercent(Map<String, dynamic>? limit) {
+  final p = (limit?['percentage'] as num?)?.toDouble();
+  if (p == null || !p.isFinite) return null;
+  return (p * 100).clamp(0.0, 100.0);
+}
+
+/// 剩余额度绝对值（remaining.count：个人套餐=主限额剩余；
+/// Start Plan=各桶 remaining_units 合计）。
+num? quotaRemainingCount(Map<String, dynamic>? limit) {
+  final c = limit?['count'];
+  return c is num ? c : null;
+}
+
 /// 「已用/总量」展示行（实测定案：usage=总额度、currentValue=已用；
 /// 5h 窗口无计数只有百分比→null）。
 (String, String)? quotaUsageFraction(Map<String, dynamic>? limit) {

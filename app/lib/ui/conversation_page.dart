@@ -237,6 +237,60 @@ class _ConversationPageState extends State<ConversationPage> {
   AppState? _appRef;
   final _input = TextEditingController();
 
+  /// 回前台死订阅自愈（2026-11-16 用户报告"后台回 app 会话不刷新"）：
+  /// 审批提醒关（默认档）退后台 90s 整栈 suspend——registry.demote 会
+  /// dispose 全部会话订阅，而恢复路径（pokeOrResume→resume）只重连
+  /// relay/工作区/任务索引，不补订"正开着"的会话明细；页面持有的旧
+  /// 订阅对象已死=运行过程停止更新，此前只有退列表重进才恢复。
+  /// 保活分支（审批提醒开）的驻留恢复走同一状态对象增量续订，无需此补丁。
+  bool _deadSubResubInFlight = false;
+  bool _deadSubWatchArmed = false;
+
+  /// app 通知驱动的死订阅检测：在线态 + 本页订阅已 dispose → 武装有界
+  /// 自轮询（10s），工作区就绪即重订。
+  void _onAppChangedForDeadSub() {
+    if (!mounted) return;
+    final app = _appRef;
+    if (app == null || app.phase != LinkPhase.online) return;
+    final sid = _sessionId;
+    if (sid == null || sid.isEmpty) return;
+    final sub = _sub;
+    if (sub != null && !sub.isDisposed) return;
+    if (_deadSubResubInFlight) return;
+    _deadSubResubInFlight = true;
+    unawaited(() async {
+      // 有界自轮询（10s）：resume 链路"relay 在线先到、工作区打开在后"
+      // ——真机反馈在窗口内冲进 ensureConversation 撞 no active
+      // workspace（"工作区尚未打开"横幅）。轮询等 bridge+activeWorkspace
+      // 就绪才 _subscribe，不依赖工作区打开完成时的通知时序；期间活订阅
+      // 出现（自愈路径接手/用户重进）即退。
+      for (var i = 0; i < 40; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        if (!mounted) return;
+        final appNow = _appRef;
+        if (appNow == null || appNow.phase != LinkPhase.online) continue;
+        if (appNow.bridge == null || appNow.activeWorkspace == null) continue;
+        if (_sessionId == null || _sessionId != sid) return;
+        final subNow = _sub;
+        if (subNow != null && !subNow.isDisposed) return;
+        _deadSubResubInFlight = false;
+        debugPrint('[conv] disposed sub after resume -> resubscribe $sid');
+        await _subscribe(sid);
+        return;
+      }
+      _deadSubResubInFlight = false;
+    }());
+  }
+
+  /// 挂死订阅看门（幂等）：本页仍在树上期间持续监听 app 通知。
+  void _armDeadSubWatch() {
+    if (_deadSubWatchArmed) return;
+    final app = AppStateScope.of(context);
+    _deadSubWatchArmed = true;
+    _appRef = app;
+    app.addListener(_onAppChangedForDeadSub);
+  }
+
   DraftIdentity? _draftIdentity;
   Future<void>? _draftRestoreFuture;
   /// 草稿身份恢复在飞/待重跑标记（didChangeDependencies 每次 app 通知都
@@ -1103,6 +1157,8 @@ class _ConversationPageState extends State<ConversationPage> {
       _appRef = AppStateScope.of(context);
       _scheduleDraftRestore();
     }
+    // 死订阅看门挂 app 监听（幂等，含 readOnly 页——只读页同样订阅明细）。
+    _armDeadSubWatch();
     if (_initialSubscribePending) {
       _initialSubscribePending = false;
       _subscribe(widget.sessionId!);
@@ -1152,6 +1208,7 @@ class _ConversationPageState extends State<ConversationPage> {
     _input.dispose();
     _inputFocusNode.dispose();
     _scroll.dispose();
+    _appRef?.removeListener(_onAppChangedForDeadSub);
     _search.dispose();
     _fileDebounce?.cancel();
     _followTick?.cancel();
@@ -1823,6 +1880,9 @@ class _ConversationPageState extends State<ConversationPage> {
       context,
       onSend: (text) {
         if (!mounted) return;
+        // 语音直发只发文本（听写空串不发）——_sendText 的空文本门已为
+        // 纯附件发送放行，语音路径不连带托盘附件误发。
+        if (text.trim().isEmpty) return;
         unawaited(_sendText(text));
       },
     );
@@ -2086,7 +2146,9 @@ class _ConversationPageState extends State<ConversationPage> {
 
   Future<void> _send() async {
     final text = _input.text.trim();
-    if (text.isEmpty) return;
+    // 纯附件发送（2026-11-16 用户反馈）：仅附件无文字也可发——桌面
+    // sendText schema 的 text 无 min(1)（空文本+attachments 合法）。
+    if (text.isEmpty && _pendingAtts.isEmpty) return;
     // 用户拍板（2026-10-23）：点发送即收起输入法——回复期间键盘常驻
     // 挡半屏。发送失败回填草稿后用户点输入框自然再聚焦。
     FocusManager.instance.primaryFocus?.unfocus();
@@ -2191,7 +2253,11 @@ class _ConversationPageState extends State<ConversationPage> {
     SendQueueEntry? fromQueue,
   }) async {
     final app = AppStateScope.of(context);
-    if (text.trim().isEmpty || _sending) return false;
+    // 纯附件发送（2026-11-16 用户反馈）：空文本在有待发附件时放行
+    // （桌面 sendText schema text 无 min(1)；语音直发入口已另挡空文本）。
+    if ((text.trim().isEmpty && _pendingAtts.isEmpty) || _sending) {
+      return false;
+    }
     // 会话压缩（compact-command-1，用户反馈「手机发起压缩无任何提示」
     // 根因：官方 compact 是专用命令信封，我们此前按纯文本发送=CLI 不
     // 执行。官方 compact 无参数——精确匹配 /compact 走命令通道；其余
@@ -5374,6 +5440,9 @@ class _ConversationPageState extends State<ConversationPage> {
               sending: _sending,
               onSend: _send,
               onStop: _stop,
+              // 纯附件发送（2026-11-16）：托盘有附件时发送键亮发送态，
+              // 不再退麦克风/停止键。
+              hasAttachments: _pendingAtts.isNotEmpty,
               // 合并药丸（2026-10-19）：模型+思考档一体展示，挂起点统一
               // （任一挂起即亮）—— 角标语义延续。批4 同族回落：
               // 缓存预渲期 config 也从缓存读（离线/首帧药丸不空转「模型」）。

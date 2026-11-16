@@ -8,6 +8,7 @@ import '../platform/capabilities.dart';
 import '../state/app_state_scope.dart';
 import 'app_widgets.dart';
 import 'about_page.dart';
+import 'device_migration_page.dart';
 import 'settings_accounts_page.dart';
 import 'settings_security_page.dart';
 import 'update_flow.dart';
@@ -248,6 +249,23 @@ class SettingsPage extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right, size: 18),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsSecurityPage()),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.phone_android, size: 20),
+              title: const Text(
+                '换机助手',
+                style: TextStyle(fontSize: AppType.uiBase),
+              ),
+              subtitle: const Text(
+                '账号/电脑/设置/草稿加密导出导入（换手机免重登）',
+                style: TextStyle(fontSize: AppType.uiCaption),
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const DeviceMigrationPage(),
+                ),
               ),
             ),
             const AppSectionHeader('关于'),

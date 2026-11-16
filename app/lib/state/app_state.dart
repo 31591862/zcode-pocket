@@ -992,6 +992,35 @@ class AppState extends ChangeNotifier {
     refreshActiveAccountLabel();
   }
 
+  /// 换机助手导入后重载档案并接通（2026-11-16 批）：新手机首装正停在
+  /// 登录门（PairingPage）——导入走设置/门上的换机助手入口，落盘后
+  /// 内存态（registry.profiles）并不知道。此处重读档案列表 → 无激活
+  /// 档案时按导入侧落的 activeDeviceSid（空机导入才生效）接通；
+  /// notifyListeners 驱动 HomeShell 门翻页（PairingPage → TaskCenterPage）。
+  /// 已有档案的手机在设置页导入：不动现有激活，只刷新列表。
+  Future<void> refreshAfterBackupImport() async {
+    if (_disposed) return;
+    try {
+      final r = await store.listProfilesDetailed();
+      profiles = r.profiles;
+    } catch (e) {
+      _log('post-import profile reload failed (contained): $e');
+    }
+    if (activeProfile == null) {
+      final activeSid = await store.activeDeviceSid();
+      final profile = (activeSid == null ? null : profileOf(activeSid)) ??
+          profiles.where((p) => !p.invalid).firstOrNull;
+      if (profile != null) {
+        try {
+          await activate(profile);
+        } catch (e) {
+          _log('post-import activate failed (contained): $e');
+        }
+      }
+    }
+    notifyListeners();
+  }
+
   /// 测试缝：直驱失败处理（多账号收窄红绿——绕开真实栈连接时序）。
   @visibleForTesting
   Future<void> debugStackFailure(ComputerStack stack, RelayFailure f) =>

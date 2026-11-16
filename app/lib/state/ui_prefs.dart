@@ -627,4 +627,71 @@ class UiPrefs extends ChangeNotifier {
     notifyListeners();
     await _persist(_keyProjectOrders, jsonEncode(_projectOrders));
   }
+
+  // --------------------------------------------- 换机备份（2026-11-16 批）
+
+  /// 偏好快照键域（全部 ui.* 已知键的**原始字符串值**——含 JSON 串）。
+  /// 应用锁 PIN 盐/哈希一并迁移（同口令即同锁）；updateLastCheckAt 属
+  /// 本机节流状态不迁。
+  static const List<String> backupKeys = [
+    _keyShowToolCalls,
+    _keyLastModel,
+    _keyLastThought,
+    _keyAlertsEnabled,
+    _keyMuteApprovals,
+    _keyMuteTasks,
+    _keyMuteGoals,
+    _keyFollowupMode,
+    _keyVoiceApiKey,
+    _keyVoiceRefine,
+    _keyVoiceApiProvider,
+    _keyThemeMode,
+    _keyLocalePreference,
+    _keyCodeHighlight,
+    _keyQuotaReminders,
+    _keyAskAutoResolution,
+    _keyHomeCollapsedGroups,
+    _keyProjectOrders,
+    _keyShowOtherComputers,
+    _keyFabMenuHintShown,
+    _keyDualPaneCollapsed,
+    _keyAppLockMode,
+    _keyAppLockAutoLockSeconds,
+    _keyAppLockSecureFlag,
+    _keyAppLockPinSalt,
+    _keyAppLockPinHash,
+    _keyUpdateInAppEnabled,
+  ];
+
+  /// 换机备份导出：已知键的原始值快照（调用方加密落盘）。
+  Future<Map<String, String>> exportForBackup() async {
+    final out = <String, String>{};
+    for (final key in backupKeys) {
+      try {
+        final value = await _storage.read(key: key);
+        if (value != null) out[key] = value;
+      } catch (_) {
+        // 单键读取失败跳过（对齐 _loadOnce 逐键容错）。
+      }
+    }
+    return out;
+  }
+
+  /// 换机备份导入：键域白名单过滤后整键覆盖写入，再走 [load] 重载内存态
+  /// （load 幂等可重入）。返回实际写入键数。
+  Future<int> importFromBackup(Map<String, dynamic> raw) async {
+    var written = 0;
+    for (final entry in raw.entries) {
+      if (!backupKeys.contains(entry.key)) continue;
+      if (entry.value is! String) continue;
+      try {
+        await _storage.write(key: entry.key, value: entry.value as String);
+        written++;
+      } catch (e) {
+        debugPrint('[prefs] backup-import write-fail key=${entry.key}: $e');
+      }
+    }
+    await load();
+    return written;
+  }
 }

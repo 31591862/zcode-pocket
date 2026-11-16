@@ -93,10 +93,13 @@ class _UsagePageState extends State<UsagePage>
 
   /// （2026-10-24 修复批）stale-while-revalidate：已有数据时切档/
   /// 刷新不整页转圈——保留旧值渲染，列表顶部细进度条示刷新中；
-  /// entitlement 成功态短期缓存（2min 内切档复用，只拉档聚合）。
+  /// entitlement 成功态短期缓存（60s 内切档复用，只拉档聚合）。
   bool _cpRefreshing = false;
   DateTime? _entLoadedAt;
-  static const _entCacheTtl = Duration(minutes: 2);
+  // 60s 与页面停留期刷新 tick 同频（2026-11-16 用户"百分比不会刷新"）：
+  // 2min 档会让额度卡比图表晚一拍才更新——同 tick 消费者感知割裂；
+  // 页面打开期间每 tick 多一次 entitlement RPC，后台暂停逻辑不变。
+  static const _entCacheTtl = Duration(seconds: 60);
 
   /// 批①（2026-10-23）：个人套餐范围三档（官方 CodingPlanUsageRange
   /// today/7d/30d——原写死 30d，用户想看今日/近一周被堵死）；按档缓存。
@@ -353,7 +356,7 @@ class _UsagePageState extends State<UsagePage>
       });
       return;
     }
-    // entitlement 短期缓存命中（成功态且 2min 内）不重拉——切档
+    // entitlement 短期缓存命中（成功态且 TTL 内）不重拉——切档
     // 只取档聚合；force（手动刷新/下拉）绕过。
     final entCached =
         !force &&
@@ -1150,6 +1153,9 @@ class _UsagePageState extends State<UsagePage>
           '剩余额度',
           remaining.cast<String, dynamic>(),
           context.charts.series[0],
+          // Start Plan 的 remaining 口径与个人套餐相反（0-1 剩余比例 vs
+          // 0-100 已用占比）——按档分流，误反转会恒显示 ~99%。
+          startPlan: _planKind == 'start-plan',
         );
       }
       return const SizedBox.shrink();
@@ -1179,7 +1185,7 @@ class _UsagePageState extends State<UsagePage>
         ),
         const SizedBox(height: 8),
         for (final c in cards) ...[
-          _quotaCard(c.label, c.limit!, c.color),
+          _quotaCard(c.label, c.limit!, c.color, startPlan: _planKind == 'start-plan'),
           const SizedBox(height: 8),
         ],
       ],
@@ -1199,11 +1205,35 @@ class _UsagePageState extends State<UsagePage>
     return '${two(t.month)}/${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
   }
 
-  Widget _quotaCard(String label, Map<String, dynamic>? limit, Color color) {
-    final remainPct = quotaRemainingPercent(limit);
+  Widget _quotaCard(
+    String label,
+    Map<String, dynamic>? limit,
+    Color color, {
+    bool startPlan = false,
+  }) {
+    // Start Plan 的 percentage 是 0-1 **剩余比例**（桌面
+    // buildZaiStartPlanRemaining），个人套餐是 0-100 已用占比（官方
+    // getQuotaRemainingPercentage 反转）——口径相反，按档分流。
+    final remainPct = startPlan
+        ? (startPlanRemainingPercent(limit) ?? 0)
+        : quotaRemainingPercent(limit);
     final fraction = quotaUsageFraction(limit);
     final reset = formatResetTime(limit?['nextResetTime']);
-    return Container(
+    // 剩余额度绝对值（remaining.count；2026-11-16 用户需求"把剩余额度
+    // 也显示出来"）。Start Plan 桶无 count 时退算 number-usage。
+    String? remainLine;
+    if (startPlan) {
+      final count = quotaRemainingCount(limit);
+      if (count != null) {
+        remainLine = '${tr('剩余')} ${formatTokens(count)}';
+      } else {
+        final used = limit?['usage'] as num?;
+        final total = limit?['number'] as num?;
+        if (used != null && total != null && total > 0) {
+          remainLine = '${tr('剩余')} ${formatTokens(max(total - used, 0))}';
+        }
+      }
+    }    return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: context.colors.card,
@@ -1244,8 +1274,9 @@ class _UsagePageState extends State<UsagePage>
           const SizedBox(height: 6),
           Text(
             [
-              if (fraction != null)
+              if (!startPlan && fraction != null)
                 '${tr('已用')} ${tr(fraction.$1)} / ${tr(fraction.$2)}',
+              if (remainLine != null) remainLine,
               if (reset.isNotEmpty) '${tr('重置')} $reset',
             ].join(' · '),
             style: TextStyle(
