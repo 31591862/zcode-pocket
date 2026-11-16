@@ -11,7 +11,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/material.dart' hide Text;
 import 'package:path_provider/path_provider.dart';
 
@@ -38,10 +37,14 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
   final _exportPass1 = TextEditingController();
   final _exportPass2 = TextEditingController();
   final _importPass = TextEditingController();
-  bool _includePrefs = true;
-  bool _includeDrafts = true;
-  bool _includeQueue = true;
-  bool _includeV1 = false;
+
+  /// 导出范围定案（2026-11-16 用户拍板）：只要账号免重登 + 已配对电脑
+  /// 自动接通——设置/草稿/断网队列不迁移，V1 hash 凭据永不导出。
+  /// 服务层的 include 参数保留（未来按需放开 UI），本页固定全关。
+  static const _includePrefs = false;
+  static const _includeDrafts = false;
+  static const _includeQueue = false;
+  static const _includeV1 = false;
   bool _busy = false;
   String? _pickedPath;
 
@@ -348,8 +351,7 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
           ),
           const SizedBox(height: 4),
           Text(
-            '账号凭据、已配对电脑${_includePrefs ? '、设置' : ''}'
-            '${_includeDrafts ? '、草稿' : ''}${_includeQueue ? '、断网队列' : ''}',
+            '账号凭据、已配对电脑（导入后自动接通）；设置/草稿不迁移',
             style: TextStyle(
               fontSize: 12,
               color: context.colors.foregroundSubtle,
@@ -378,19 +380,6 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
                 ),
               ),
             ),
-          const SizedBox(height: 8),
-          _checkRow('迁移 UI 与功能设置', _includePrefs, (v) {
-            setState(() => _includePrefs = v ?? false);
-          }),
-          _checkRow('迁移草稿', _includeDrafts, (v) {
-            setState(() => _includeDrafts = v ?? false);
-          }),
-          _checkRow('迁移断网发送队列', _includeQueue, (v) {
-            setState(() => _includeQueue = v ?? false);
-          }),
-          _checkRow('包含 V1 直连档案（老版桌面）', _includeV1, (v) {
-            setState(() => _includeV1 = v ?? false);
-          }, subtitle: '内含永久有效的直连凭据（hash），非必需不建议勾选'),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -464,31 +453,4 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
       ),
     );
   }
-
-  Widget _checkRow(
-    String label,
-    bool value,
-    ValueChanged<bool?> onChanged, {
-    String? subtitle,
-  }) => Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(fontSize: 13)),
-                if (subtitle != null)
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: context.colors.foregroundSubtlest,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Checkbox(value: value, onChanged: onChanged),
-        ],
-      );
 }
