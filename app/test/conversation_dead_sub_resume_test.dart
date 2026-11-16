@@ -21,7 +21,7 @@ import 'package:zcode_pocket/transport/rpc_frame_transport.dart';
 import 'package:zcode_pocket/ui/conversation_page.dart';
 
 class _FakeSub implements ConversationSubscription {
-  _FakeSub(this.sessionId, this.rows) {
+  _FakeSub(this.sessionId, this.rows, {this.phase = 'idle'}) {
     state.applySeed(
       ConversationSeed(
         rows: [
@@ -32,13 +32,14 @@ class _FakeSub implements ConversationSubscription {
         seq: rows.length + 2,
         firstRowId: 1,
         totalCount: rows.length + 2,
-        snapshot: const {
+        snapshot: {
           'title': '后台回前台回归',
-          'control': {'phase': 'idle'},
+          'control': {'phase': phase},
         },
       ),
     );
   }
+  final String phase;
 
   final String sessionId;
   final List<Map<String, dynamic>> rows;
@@ -93,14 +94,15 @@ class _NoopBridge implements BridgeSession {
 }
 
 class _ResubApp extends AppState {
-  final sub1 = _FakeSub('s1', [
+  final _FakeSub sub1;
+  _ResubApp({String sub1Phase = 'idle'}) : sub1 = _FakeSub('s1', [
     {
       'rowId': 2,
       'kind': 'assistantText',
       'state': 'complete',
       'text': '后台前的旧输出',
     },
-  ]);
+  ], phase: sub1Phase);
   late final sub2 = _FakeSub('s1', [
     {
       'rowId': 2,
@@ -228,5 +230,28 @@ void main() {
     expect(app.ensureCalls, greaterThan(before),
         reason: '就绪后自轮询必须补订');
     expect(find.textContaining('后台期间的新输出'), findsOneWidget);
+  });
+
+  testWidgets('活订阅僵死：运行中 60s 无状态变化 → 强制重订', (tester) async {
+    // 真机 14:08 复现：订阅活着、帧流断（桌面 14:07 完成回合、手机停在
+    // 14:04 运行中）——传输层看门狗的 resync RPC 若同样挂死则无人自愈。
+    // 页面层兜底：运行中且 60s 无 dataVersion 变化 → dispose 旧订阅强制
+    // 重订（服务端重放权威快照）。
+    final app = _ResubApp(sub1Phase: 'running');
+    await tester.pumpWidget(_host(app));
+    await _settle(tester);
+    expect(find.textContaining('后台前的旧输出'), findsOneWidget);
+    final before = app.ensureCalls;
+
+    // 帧流断（dataVersion 不再变化）+ 运行中 → app 通知武装轮询。
+    app.notifyListeners();
+    // 60s 僵死窗口=120 拍（假时钟推进，500ms 节拍全速跑）。
+    await tester.pump(const Duration(seconds: 70));
+    await _settle(tester);
+
+    expect(app.ensureCalls, greaterThan(before),
+        reason: '运行中 60s 无状态变化必须强制重订（修复前永久停在旧状态）');
+    expect(find.textContaining('后台期间的新输出'), findsOneWidget,
+        reason: '重订后服务端权威快照上屏');
   });
 }

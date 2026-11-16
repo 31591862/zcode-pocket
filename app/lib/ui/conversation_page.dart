@@ -270,6 +270,11 @@ class _ConversationPageState extends State<ConversationPage> {
   bool _deadSubResubInFlight = false;
   bool _deadSubWatchArmed = false;
 
+  /// 活订阅僵死检测基线（数据版本 + 静默拍计数——500ms 一拍，
+  /// 120 拍=60s；用拍计数而非 DateTime，测试假时钟可推进）。
+  int? _staleBaseVersion;
+  int _staleTicks = 0;
+
   /// app 通知驱动的死订阅检测：在线态 + 本页订阅已 dispose → 页面存活期
   /// 持续轮询（500ms、前台门控、不设过期），就绪即重订。
   void _onAppChangedForDeadSub() {
@@ -279,7 +284,11 @@ class _ConversationPageState extends State<ConversationPage> {
     final sid = _sessionId;
     if (sid == null || sid.isEmpty) return;
     final sub = _sub;
-    if (sub != null && !sub.isDisposed) return;
+    // 武装条件：订阅已死（重订），或活且运行中（僵死检测——帧流断时
+    // dataVersion 不动，轮询 60s 兜底强制重订）。活且非运行=空闲正常
+    // 静默，无需页面层兜底（传输层看门狗同口径）。
+    final subAlive = sub != null && !sub.isDisposed;
+    if (subAlive && !(sub.state.isRunning)) return;
     if (_deadSubResubInFlight) return;
     _deadSubResubInFlight = true;
     unawaited(() async {
@@ -289,6 +298,9 @@ class _ConversationPageState extends State<ConversationPage> {
       // 回合，手机停在 10:05 状态）。tick 门控前台（后台 skip，电量红线）；
       // 等待判据=conversationTransportReady（registry._transportProvider
       // 口径，bridge/activeWorkspace 都先于它就位）；活订阅出现/换页即退。
+      // 活订阅僵死检测（真机 14:08 复现"桌面 14:07 完成、手机停在 14:04
+      // 运行中"——订阅活着但帧流断，传输层看门狗的 resync RPC 若也挂死
+      // 则无人自愈）：运行中且 60s 无状态变化 → dispose 旧订阅强制重订。
       while (true) {
         await Future<void>.delayed(const Duration(milliseconds: 500));
         if (!mounted) return;
@@ -299,12 +311,34 @@ class _ConversationPageState extends State<ConversationPage> {
         final appNow = _appRef;
         if (appNow == null) return;
         if (_sessionId == null || _sessionId != sid) return;
-        final subNow = _sub;
-        if (subNow != null && !subNow.isDisposed) return;
         if (appNow.phase != LinkPhase.online) continue;
         if (!appNow.conversationTransportReady) continue;
+        final subNow = _sub;
+        if (subNow == null || subNow.isDisposed) {
+          _deadSubResubInFlight = false;
+          debugPrint('[conv] disposed sub after resume -> resubscribe $sid');
+          await _subscribe(sid);
+          return;
+        }
+        // 活订阅：仅"运行中"做僵死检测（空闲会话本就无帧，传输层看门狗
+        // 对非运行态刻意不 resync——等用户输入，页面层同口径）。
+        if (!subNow.state.isRunning) return;
+        if ((_ownRoute?.isCurrent ?? false) == false) continue;
+        final v = subNow.state.dataVersion;
+        if (v != _staleBaseVersion) {
+          _staleBaseVersion = v;
+          _staleTicks = 0;
+          continue;
+        }
+        _staleTicks++;
+        if (_staleTicks < 120) continue;
+        _staleBaseVersion = null;
+        _staleTicks = 0;
         _deadSubResubInFlight = false;
-        debugPrint('[conv] disposed sub after resume -> resubscribe $sid');
+        debugPrint(
+          '[conv] alive-sub stale 60s while running -> fresh resubscribe $sid',
+        );
+        unawaited(subNow.dispose());
         await _subscribe(sid);
         return;
       }
