@@ -292,6 +292,7 @@ class _UsagePageState extends State<UsagePage>
       _ent = null;
       _cp = null;
       _cpError = null;
+      _cpChartFailed = false;
       _entLoadedAt = null;
       _resetStatus = null;
       _resetLoadedAt = null;
@@ -401,7 +402,12 @@ class _UsagePageState extends State<UsagePage>
         }
       }
       Map<String, dynamic>? cp;
-      if (reason.isEmpty) {
+      // Start Plan（2026-11-16 用户实证）：getCodingPlanUsageSnapshot 的
+      // monitor 聚合接口不覆盖 start-plan 档——调用必失败。跳过拉取
+      // （省一次注定失败的 RPC）且不置图表失败位：额度卡+订阅行+重置
+      // 礼包就是 Start Plan 的完整面。
+      final chartApplicable = reason.isEmpty && _planKind != 'start-plan';
+      if (chartApplicable) {
         cp =
             (!force ? _cpCache.get(cacheKey, DateTime.now()) : null) ??
             await _callCodingPlanUsage(bridge, range: _cpRange);
@@ -431,7 +437,8 @@ class _UsagePageState extends State<UsagePage>
             _cp = cp;
             _cpChartFailed = false;
           } else if (_cp == null) {
-            _cpChartFailed = true;
+            // Start Plan 跳过拉取≠失败：不置失败位（不出误导提示）。
+            _cpChartFailed = chartApplicable;
           }
           _cpError = null;
         } else {

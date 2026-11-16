@@ -22,6 +22,9 @@ class _ScriptedChannel extends ChannelClient {
   /// getEntitlementSnapshot 的脚本载荷（按用例替换）。
   Map<String, dynamic> entitlement;
 
+  /// getCodingPlanUsageSnapshot 调用计数（Start Plan 应为 0）。
+  int chartCalls = 0;
+
   @override
   Future<dynamic> call(
     String channel,
@@ -33,6 +36,7 @@ class _ScriptedChannel extends ChannelClient {
       case 'getEntitlementSnapshot':
         return entitlement;
       case 'getCodingPlanUsageSnapshot':
+        chartCalls++;
         return {
           'activity': {'summary': <String, dynamic>{}},
         };
@@ -247,6 +251,15 @@ void main() {
     // 桶类型 model_usage 不匹配 TOKENS_LIMIT → 仍是剩余额度单卡。
     expect(find.text('99%'), findsOneWidget,
         reason: '0.99447305 剩余比例 → 99%');
+
+    // Start Plan 不打图表 RPC（monitor 聚合接口不覆盖 start-plan 档，
+    // 调用必失败——跳过而非每 60s 白打一次）。
+    _UsageApp._channel.chartCalls = 0;
+    await tester.pump(const Duration(milliseconds: 2500));
+    expect(_UsageApp._channel.chartCalls, 0,
+        reason: 'Start Plan 档必须跳过图表拉取');
+    // 误导性提示不得出现（用户报告：Start Plan 本就没有图表数据）。
+    expect(find.textContaining('图表数据获取失败'), findsNothing);
   });
 
   testWidgets('个人套餐口径不回归：40 已用 → 60%；已用 40 / 100 行保留', (
