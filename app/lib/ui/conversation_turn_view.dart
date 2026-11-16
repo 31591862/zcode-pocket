@@ -313,25 +313,20 @@ class TurnBarState extends State<TurnBar> {
               // 底边距清零（间距堆栈整改六轮定稿，用户验收
               // 拍板"差不多了"——收起态正文统一无底边距，卡侧空隙
               // 由卡自身表达）。
-              // 长按行操作（2026-11-16 用户反馈"输出的文字不能长按
-              // 触发复制"）：收起态内联正文此前漏挂——长按只在展开态
-              // assistantText 分支存在，而默认呈现恰是收起态。
-              child: GestureDetector(
-                onLongPress: widget.onRowActions == null
-                    ? null
-                    : () => widget.onRowActions!(vt),
-                child: SearchTargetFrame(
-                  rowId: intOf(vt['rowId']),
-                  activeRowId: widget.searchTargetRowId,
-                  targetKey: widget.searchTargetKey,
-                  child: AssistantText(
-                    text: '${vt['text'] ?? ''}',
-                    streaming: vt['state'] == 'streaming',
-                    verticalPadding: 0,
-                    sessionId: widget.sessionId,
-                    header: work.header,
-                    searchQuery: widget.searchQuery,
-                  ),
+              // 文本选择（2026-11-16 用户拍板）：正文 selectable 化后
+              // 长按=进入系统选择手柄——此前的长按行操作菜单在此路径
+              // 移除（协议操作走下方轮尾操作行，复制走选择工具条）。
+              child: SearchTargetFrame(
+                rowId: intOf(vt['rowId']),
+                activeRowId: widget.searchTargetRowId,
+                targetKey: widget.searchTargetKey,
+                child: AssistantText(
+                  text: '${vt['text'] ?? ''}',
+                  streaming: vt['state'] == 'streaming',
+                  verticalPadding: 0,
+                  sessionId: widget.sessionId,
+                  header: work.header,
+                  searchQuery: widget.searchQuery,
                 ),
               ),
             ),
@@ -443,12 +438,11 @@ class TurnBarState extends State<TurnBar> {
                     firstSeen: widget.firstSeenOf(row),
                     elapsedMs: widget.elapsedMsOf(row),
                   ),
-                  'assistantText' => GestureDetector(
-                    onLongPress: widget.onRowActions == null
-                        ? null
-                        : () => widget.onRowActions!(row),
-                    child:
-                        (running ||
+                  'assistantText' =>
+                    // 文本选择（2026-11-16 用户拍板）：正文 selectable 化
+                    // 后长按=进入系统选择手柄，行操作菜单移除（协议操作
+                    // 走轮尾操作行——重试按钮已补进 TurnTailActions）。
+                    (running ||
                             unitIdx != lastTextUnitIdx ||
                             '${row['state']}' == 'streaming' ||
                             // 对抗审查 ：中断/失败轮不出操作行（官方
@@ -496,7 +490,6 @@ class TurnBarState extends State<TurnBar> {
                               ),
                             ],
                           ),
-                  ),
                   'subagent' => SubagentTile(row: row, openSession: widget.openSession),
                   // （2026-10-29 审查）：TodoWrite 待办
                   // 清单官方有专用渲染（renderers/todo.tsx：状态图标+

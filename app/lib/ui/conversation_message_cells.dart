@@ -443,6 +443,27 @@ class TurnTailActionsState extends State<TurnTailActions> {
     }
   }
 
+  /// 重试这轮（2026-11-16 批：正文 selectable 化后从长按菜单承接——
+  /// 该动作此前只存在于行操作菜单）。ack 口径对齐 _fork。
+  Future<void> _retry(AppState app) async {
+    final target = _target;
+    if (target == null) {
+      _snack(tr('该行缺少协议标识，无法重试'));
+      return;
+    }
+    try {
+      final res = await app.retryTurn(widget.sessionId!, target);
+      if (!mounted) return;
+      if (!_ackOk(res)) {
+        _snack(
+          '重试未生效（${res is Map ? res['reasonCode'] ?? res['status'] : 'rejected'}）',
+        );
+      }
+    } catch (e) {
+      if (mounted) _snack('重试失败：$e');
+    }
+  }
+
   Future<void> _fork(AppState app) async {
     if (_forking) return;
     _forking = true;
@@ -451,8 +472,7 @@ class TurnTailActionsState extends State<TurnTailActions> {
       _forking = false;
       _snack(tr('该行缺少协议标识，无法创建分支'));
       return;
-    }
-    try {
+    }    try {
       final res = await app.forkAssistant(widget.sessionId!, target);
       if (!mounted) return;
       if (!_ackOk(res)) {
@@ -527,6 +547,13 @@ class TurnTailActionsState extends State<TurnTailActions> {
             compact: true,
             iconSize: 14,
           ),
+        ),
+        // 重试这轮（2026-11-16 批）：正文 selectable 化后长按行操作菜单
+        // 移除——重试从此处承接（仅长按菜单曾有的动作，防丢失）。
+        ghost(
+          Icons.refresh,
+          '重试这轮',
+          canCommand ? () => _retry(AppStateScope.of(context)) : null,
         ),
         ghost(
           feedback == 'like' ? Icons.thumb_up : Icons.thumb_up_outlined,

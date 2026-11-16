@@ -52,11 +52,19 @@ class MarkdownView extends StatelessWidget {
   /// 语法高亮总开关（设置→对话；默认开）。由调用方从 uiPrefs 传入。
   final bool codeHighlightEnabled;
 
+  /// 文本可选（2026-11-16 用户需求"输出的文字要能自由选中复制"）：
+  /// flutter_markdown_plus 的 selectable 模式——每块落 SelectableText
+  /// （长按/双击进入系统级选择手柄+复制工具条；链接 span 的点击在
+  /// 可选模式下由包内 span recognizer 承接，不受影响）。助手正文/
+  /// 工具输出/关于页同走此默认开。
+  final bool selectable;
+
   const MarkdownView({
     super.key,
     required this.data,
     this.streaming = false,
     this.codeHighlightEnabled = true,
+    this.selectable = true,
   });
 
   @override
@@ -79,6 +87,7 @@ class MarkdownView extends StatelessWidget {
     return L10nScope(
       enabled: false,
       child: MarkdownBody(
+      selectable: selectable,
       data: _encodeLocalLinks(streaming ? '$data ▍' : data),
       builders: {
         'pre': _PreHighlightBuilder(
