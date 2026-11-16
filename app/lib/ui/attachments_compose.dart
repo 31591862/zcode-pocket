@@ -98,7 +98,12 @@ class PendingAttachmentChips extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 328),
         child: SingleChildScrollView(
-          child: Column(
+          // 撑满宽度（2026-11-16 用户参考截图改版）：InputBar 的 Column
+          // 默认 center——内容窄（单图 90px）时整条预览被居中成"大图居中"；
+          // 撑满后内容恒从左缘起排。
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (images.isNotEmpty)
@@ -115,6 +120,7 @@ class PendingAttachmentChips extends StatelessWidget {
                   children: [for (final a in files) _fileChip(context, a)],
                 ),
             ],
+            ),
           ),
         ),
       ),
@@ -198,9 +204,10 @@ class PendingAttachmentChips extends StatelessWidget {
     );
   }
 }
-
-/// 图片附件缩略图网格（验收回填：3 列方形，官方 grid 变体
-/// size-24 方块观感的手机化）。
+/// 图片附件缩略图条（2026-11-16 参考截图改版）：72px 固定小方块、
+/// 左起排列、多图换行（原 3 列自适应 90-108px 偏大，且窄内容被输入框
+/// Column 居中成"大图居中"——附件栏已撑满宽度左对齐）。状态语义不变：
+/// 失败整格点按重试、上传中遮罩百分比、源失效提示、标注入口保留。
 class _ImageGrid extends StatelessWidget {
   final List<PendingAttachment> images;
   final void Function(String id) onRemove;
@@ -216,201 +223,187 @@ class _ImageGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, cons) {
-        const gap = 8.0;
-        final cell = ((cons.maxWidth - gap * 2) / 3).clamp(80.0, 140.0);
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            for (final a in images)
-              SizedBox(
-                key: ValueKey('pending-attachment-${a.id}'),
-                width: cell,
-                height: cell,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      child: a.error != null
-                          ? Container(
-                              color: context.colors.destructive.withValues(
-                                alpha: 0.08,
-                              ),
-                              alignment: Alignment.center,
-                              child: SingleChildScrollView(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.error_outline,
-                                      size: 20,
-                                      color: context.colors.destructive,
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      a.sourceUnavailable
-                                          ? '源文件已失效\n请重新选择'
-                                          : '上传失败 点此重试',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: AppType.uiXs,
-                                        color: context.colors.destructive,
-                                      ),
-                                    ),
-                                    Text(
-                                      a.fileName,
-                                      translate: false,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: AppType.uiXs,
-                                        color: context.colors.destructive,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          : a.bytes.isEmpty && a.ready
-                          ? Container(
-                              color: context.colors.surface,
-                              alignment: Alignment.center,
-                              child: SingleChildScrollView(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.cloud_done_outlined,
-                                      size: 20,
-                                      color: context.colors.linkBlue,
-                                    ),
-                                    Text(
-                                      '已上传 · ${humanBytes(a.effectiveByteSize)}',
-                                      style: TextStyle(
-                                        fontSize: AppType.uiXs,
-                                        color: context.colors.foregroundSubtle,
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                      ),
-                                      child: Text(
-                                        a.fileName,
-                                        translate: false,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: AppType.uiXs,
-                                          color:
-                                              context.colors.foregroundSubtle,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          : Image(
-                              image: MemoryImage(a.bytes),
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                              errorBuilder: (_, _, _) => Container(
-                                color: context.colors.surface,
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.broken_image_outlined,
-                                  size: 20,
-                                  color: context.colors.foregroundSubtlest,
-                                ),
-                              ),
-                            ),
-                    ),
-                    // 失败态整格可点重试；上传中遮罩显示进度。
-                    if (a.error != null && !a.sourceUnavailable)
-                      Positioned.fill(
-                        child: InkWell(
-                          key: ValueKey('pending-attachment-retry-${a.id}'),
-                          onTap: () => onRetry(a.id),
-                        ),
-                      ),
-                    if (a.error == null && !a.ready)
-                      Positioned.fill(
-                        child: Container(
-                          color: context.colors.foreground.withValues(
-                            alpha: 0.45,
+    const gap = 6.0;
+    const cell = 72.0;
+    return Wrap(
+      spacing: gap,
+      runSpacing: gap,
+      children: [
+        for (final a in images)
+          SizedBox(
+            key: ValueKey('pending-attachment-${a.id}'),
+            width: cell,
+            height: cell,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: a.error != null
+                      ? Container(
+                          color: context.colors.destructive.withValues(
+                            alpha: 0.08,
                           ),
                           alignment: Alignment.center,
-                          child: Text(
-                            a.progress < 0
-                                ? '待发'
-                                : '${(a.progress * 100).toInt()}%',
-                            style: TextStyle(
-                              fontSize: AppType.uiCaption,
-                              fontWeight: FontWeight.w600,
-                              color: context.colors.card,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 20,
+                                color: context.colors.destructive,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                a.sourceUnavailable ? '已失效' : '上传失败',
+                                style: TextStyle(
+                                  fontSize: AppType.uiXs,
+                                  color: context.colors.destructive,
+                                ),
+                              ),
+                              // 文件名保留（draft 恢复场景刻意设计：
+                              // 失败占位靠文件名识别，72px 内 1 行省略）。
+                              Text(
+                                a.fileName,
+                                translate: false,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: AppType.uiXs,
+                                  color: context.colors.destructive,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : a.bytes.isEmpty && a.ready
+                      ? Container(
+                          color: context.colors.surface,
+                          alignment: Alignment.center,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.cloud_done_outlined,
+                                size: 20,
+                                color: context.colors.linkBlue,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '已上传',
+                                style: TextStyle(
+                                  fontSize: AppType.uiXs,
+                                  color: context.colors.foregroundSubtle,
+                                ),
+                              ),
+                              // 文件名保留：draft 恢复的附件 bytes 为空，
+                              // 文件名是唯一标识（同失败占位口径）。
+                              Text(
+                                a.fileName,
+                                translate: false,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: AppType.uiXs,
+                                  color: context.colors.foregroundSubtle,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Image(
+                          image: MemoryImage(a.bytes),
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) => Container(
+                            color: context.colors.surface,
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              size: 20,
+                              color: context.colors.foregroundSubtlest,
                             ),
                           ),
                         ),
-                      ),
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: GestureDetector(
-                        key: ValueKey('pending-attachment-remove-${a.id}'),
-                        onTap: () => onRemove(a.id),
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: context.colors.foreground.withValues(
-                              alpha: 0.55,
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.close,
-                            size: 14,
-                            color: context.colors.card,
-                          ),
+                    ),
+                // 失败态整格可点重试；上传中遮罩显示进度。
+                if (a.error != null && !a.sourceUnavailable)
+                  Positioned.fill(
+                    child: InkWell(
+                      key: ValueKey('pending-attachment-retry-${a.id}'),
+                      onTap: () => onRetry(a.id),
+                    ),
+                  ),
+                if (a.error == null && !a.ready)
+                  Positioned.fill(
+                    child: Container(
+                      color: context.colors.foreground.withValues(alpha: 0.45),
+                      alignment: Alignment.center,
+                      child: Text(
+                        a.progress < 0
+                            ? '待发'
+                            : '${(a.progress * 100).toInt()}%',
+                        style: TextStyle(
+                          fontSize: AppType.uiCaption,
+                          fontWeight: FontWeight.w600,
+                          color: context.colors.card,
                         ),
                       ),
                     ),
-                    // 标注入口（6.6④）：左下角小画笔，仅在可标注态出现。
-                    if (a.annotatable && onAnnotate != null)
-                      Positioned(
-                        left: 4,
-                        bottom: 4,
-                        child: GestureDetector(
-                          key: ValueKey('pending-attachment-annotate-${a.id}'),
-                          onTap: () => onAnnotate?.call(a.id),
-                          child: Container(
-                            width: 22,
-                            height: 22,
-                            decoration: BoxDecoration(
-                              color: context.colors.foreground.withValues(
-                                alpha: 0.55,
-                              ),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.edit,
-                              size: 13,
-                              color: context.colors.card,
-                            ),
+                  ),
+                Positioned(
+                  top: 3,
+                  right: 3,
+                  child: GestureDetector(
+                    key: ValueKey('pending-attachment-remove-${a.id}'),
+                    onTap: () => onRemove(a.id),
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: context.colors.foreground.withValues(
+                          alpha: 0.55,
+                        ),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.close,
+                        size: 12,
+                        color: context.colors.card,
+                      ),
+                    ),
+                  ),
+                ),
+                // 标注入口（6.6④）：左下角小画笔，仅在可标注态出现。
+                if (a.annotatable && onAnnotate != null)
+                  Positioned(
+                    left: 3,
+                    bottom: 3,
+                    child: GestureDetector(
+                      key: ValueKey('pending-attachment-annotate-${a.id}'),
+                      onTap: () => onAnnotate?.call(a.id),
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color: context.colors.foreground.withValues(
+                            alpha: 0.55,
                           ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.edit,
+                          size: 12,
+                          color: context.colors.card,
                         ),
                       ),
-                  ],
-                ),
-              ),
-          ],
-        );
-      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
