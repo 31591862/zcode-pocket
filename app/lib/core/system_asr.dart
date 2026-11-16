@@ -30,9 +30,9 @@ class SystemAsr {
   @visibleForTesting
   static Duration probeRetryInterval = const Duration(seconds: 15);
 
-  /// 系统识别服务是否可用（设备有语音识别 provider 即 true——海外机
-  /// =Google 服务、多数国产机=ROM 内置语音服务，语音键盘同源）。
-  /// 测试环境（无原生 handler）安全回落 false。
+  /// 系统识别服务是否可用：Android=RecognitionService 存在（不含权限）；
+  /// iOS=SFSpeechRecognizer 可创建（权限状态不参与——早前批次，
+  /// 权限被拒也要保留入口与恢复出口）。测试环境无原生 handler 回落 false。
   static bool get available => _availableCache ?? false;
 
   /// 消费点兜底重探（2026-11-08 对抗审查）：main 只在启动时探一次，

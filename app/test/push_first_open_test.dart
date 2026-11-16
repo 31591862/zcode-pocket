@@ -1,4 +1,4 @@
-// 1.0.1 真机验收⑤A（用户拍板拆两段）：跨工作区点任务卡→**立即**推入
+// 1.0.1 真机验收（用户拍板拆两段）：跨工作区点任务卡→**立即**推入
 // 会话页（转圈「正在打开工作区…」），后台完成工作区切换，桥就绪后
 // 自动加载。红=旧实现（先 await 切换再 push，慢切换期间无会话页）。
 import 'dart:async';
@@ -189,7 +189,7 @@ void main() {
     expect(
       find.byType(ConversationPage, skipOffstage: false),
       findsOneWidget,
-      reason: '⑤A：切换在途即推入会话页（旧实现等切换完才有）',
+      reason: '切换在途即推入会话页（旧实现等切换完才有）',
     );
     expect(
       find.text('正在打开工作区…', skipOffstage: false),

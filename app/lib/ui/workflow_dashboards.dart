@@ -1,4 +1,4 @@
-// A 批（2026-11-08 拍板⑥）看板产物：预置 spec 宽松解析 + 字段取数 +
+// （2026-11-08 拍板）看板产物：预置 spec 宽松解析 + 字段取数 +
 // 四渲染器数据准备（官方 presets/spec.ts + workflow-artifacts.ts
 // readWorkflowArtifactField 的 Dart 对位）。
 //
@@ -297,7 +297,7 @@ List<(String, String)> buildMetricTiles(DashboardSpec spec, List<ArtifactDataIte
   return out;
 }
 
-/// run 状态词（A 批：官方 status 枚举 → 中文；stopReason 展示留后续）。
+/// run 状态词（官方 status 枚举 → 中文；stopReason 展示留后续）。
 String workflowRunStatusWord(String status) => switch (status) {
       'pending' => '等待中',
       'running' => '运行中',
@@ -307,7 +307,7 @@ String workflowRunStatusWord(String status) => switch (status) {
       _ => status,
     };
 
-// ---------- 看板数据页（A 批：workflowRunArtifactData 取数 + 四渲染器） ----------
+// ---------- 看板数据页（workflowRunArtifactData 取数 + 四渲染器） ----------
 
 class WorkflowDashboardPage extends StatefulWidget {
   final String sessionId;

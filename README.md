@@ -145,6 +145,12 @@ The protocol is additive by design: unknown message types and fields are
 ignored rather than rejected, so a newer desktop usually keeps working — but
 verify after major desktop upgrades before filing a protocol bug.
 
+## iOS
+
+The iOS port is in development, unreleased, and experimental — no prebuilt
+packages, no build support, and iOS-related issues are not accepted for now.
+(The `app/ios/` directory contains work-in-progress sources.)
+
 ## Installation
 
 Grab a prebuilt APK from [Releases](https://github.com/JZYLukis/zcode-pocket/releases)

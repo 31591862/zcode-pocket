@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Text;
+import 'package:flutter/services.dart' show MethodChannel;
 import '../core/localized_text.dart';
 
 import '../core/theme.dart';
@@ -49,6 +50,20 @@ class SettingsNotificationsPage extends StatelessWidget {
                             color: context.colors.warning),
                       ),
                     ),
+                    // iOS 出口（早前批次 对抗审查）：
+                    // Android 的「去系统设置」由 OEM 引导页承载（notify_
+                    // guide），iOS 无该页（supportsOemPowerGuide=false）——
+                    // 权限被拒后在这里给直达按钮（companion/notify 的
+                    // openNotificationSettings iOS 真实现交付）。
+                    if (!ZpCapabilities.supportsOemPowerGuide)
+                      TextButton(
+                        onPressed: () => MethodChannel(
+                          'companion/notify',
+                        ).invokeMethod('openNotificationSettings').catchError(
+                              (_) {},
+                            ),
+                        child: Text(tr('去设置')),
+                      ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       onPressed: app.clearAlertsError,
@@ -65,7 +80,7 @@ class SettingsNotificationsPage extends StatelessWidget {
                 '审批提醒',
                 style: TextStyle(fontSize: AppType.uiBase),
               ),
-              // 文案分档（ios-adaptation-1）：Android=前台服务保活语义；
+              // 文案分档（早前批次）：Android=前台服务保活语义；
               // iOS 无保活（supportsBackgroundKeepAlive=false）按「前台
               // 实时+回前台对账」档呈现，不承诺后台实时通知。
               subtitle: Text(
@@ -115,7 +130,7 @@ class SettingsNotificationsPage extends StatelessWidget {
               ),
             ),
             // OEM 省电白名单引导（notify-guide-oem-1）：iOS 无此概念
-            // （结构性，supportsOemPowerGuide）入口隐藏（ios-adaptation-1）。
+            // （结构性，supportsOemPowerGuide）入口隐藏（早前批次）。
             if (ZpCapabilities.supportsOemPowerGuide)
               ListTile(
                 leading: const Icon(Icons.tune_outlined, size: 20),

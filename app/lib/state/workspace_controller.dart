@@ -874,7 +874,7 @@ class WorkspaceController {
     activeWorkspace = null;
   }
 
-  /// 1.0.1 真机验收⑩：后台退订/回前台重订 tasks-index（转发）。
+  /// 1.0.1 真机验收：后台退订/回前台重订 tasks-index（转发）。
   Future<void> pauseTasksIndexForBackground() =>
       _taskCatalog.pauseTasksIndexForBackground();
   Future<void> resumeTasksIndexFromBackground() =>

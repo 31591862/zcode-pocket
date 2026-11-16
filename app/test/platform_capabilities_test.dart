@@ -1,8 +1,9 @@
-// 平台能力矩阵 + UI 门控（ios-adaptation-1 平台缝）：
+// 平台能力矩阵 + UI 门控（早前批次 平台缝）：
 // - Android（测试默认平台）五项能力全 true——本批红线「Android 零视觉
 //   变化」的机器钉子；
 // - iOS（debugDefaultTargetPlatformOverride 模拟）结构性三项为 false，
-//   消费点按 capability 隐藏/换文案，不出现假功能开关。
+//   消费点按 capability 隐藏/换文案，不出现假功能开关；待实现项按批次
+// 翻转（起系统凭证解锁已 true，见该组用例注记）。
 //
 // 测试坑：①覆写必须在测试体内复位（框架不变量检查早于 tearDown——
 // 残留覆写会把真实失败掩盖成 debug 变量断言）；②设置页长列表懒构建，
@@ -96,17 +97,23 @@ void main() {
       expect(ZpCapabilities.supportsOemPowerGuide, isTrue);
       expect(ZpCapabilities.supportsSystemCredentialUnlock, isTrue);
       expect(ZpCapabilities.supportsSecureFlag, isTrue);
+      expect(ZpCapabilities.supportsSurfaceRecreate, isTrue);
     });
 
-    test('iOS：结构性三项+未实现两项全 false（E/G 批落地前）', () {
+    test('iOS：结构性三项恒 false；系统凭证解锁 已翻 true', () {
       _onPlatformSync(TargetPlatform.iOS);
       // 结构性（永不翻转）。
       expect(ZpCapabilities.supportsSelfUpdate, isFalse);
       expect(ZpCapabilities.supportsOemPowerGuide, isFalse);
       expect(ZpCapabilities.supportsSecureFlag, isFalse);
-      // 待实现（E/G 批翻 true，翻转时本断言同步改并留批次注记）。
+      // Activity.recreate 无 iOS 对位（结构性，早前批次 高2）。
+      expect(ZpCapabilities.supportsSurfaceRecreate, isFalse);
+      // 待实现（批次落地时翻 true，届时本断言同步改并留批次注记）。
       expect(ZpCapabilities.supportsBackgroundKeepAlive, isFalse);
-      expect(ZpCapabilities.supportsSystemCredentialUnlock, isFalse);
+      // 早前批次 已落地：LAContext（deviceOwnerAuthentication）
+      // 对位——系统锁凭证（含 Face ID/触控 ID，不可用时由系统回落设备
+      // 密码）可用，本批起由 false 翻 true。
+      expect(ZpCapabilities.supportsSystemCredentialUnlock, isTrue);
     });
   });
 

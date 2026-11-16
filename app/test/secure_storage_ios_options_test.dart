@@ -1,6 +1,6 @@
-// secure storage iOS Keychain 定档守卫（ios-adaptation-3）：三个存储
+// secure storage iOS Keychain 定档守卫（早前批次）：三个存储
 // 构造点（account/profile/ui_prefs）必须统一带
-// first_unlock_this_device（可读性=首次解锁后，E 批通知场景不因锁屏读
+// first_unlock_this_device（可读性=首次解锁后通知场景不因锁屏读
 // 挂；this_device=条目不随 iCloud/迁移恢复到其他设备，对齐
 // allowBackup=false 口径）。静态源码断言（channel_contract 同族先例）——
 // 运行时行为在 iOS 模拟器集成测试覆盖。

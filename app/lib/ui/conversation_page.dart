@@ -3,6 +3,7 @@ import 'dart:convert' show utf8;
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Text;
 
@@ -26,6 +27,7 @@ import '../transport/project_tree.dart';
 import 'app_widgets.dart';
 import 'anchored_chat_list.dart';
 import 'branch_sheet.dart';
+import 'context_composition_page.dart';
 import 'brand_logo.dart';
 import 'attachments_compose.dart';
 import 'attachment_annotate_page.dart';
@@ -36,6 +38,7 @@ import '../state/draft_store.dart';
 import '../transport/channel_client.dart';
 import '../transport/conversation.dart';
 
+import 'dart:io' show File;
 import 'dart:typed_data';
 
 import 'composer_panels.dart';
@@ -83,7 +86,7 @@ class SendCancelled implements Exception {
   String toString() => 'send cancelled';
 }
 
-/// 空态欢迎屏分时问候语（2026-10-23 用户反馈批⑥，对齐官方
+/// 空态欢迎屏分时问候语（2026-10-23 用户反馈批，对齐官方
 /// ConversationDraftEmptyState.tsx:32-44 六档原文 zh-CN.ts:4591-4596）：
 /// 不插用户名/workspace 名（官方设计文档明令，避免与工作区身份混淆）。
 String chatEmptyGreeting(int hour) => switch (hour) {
@@ -183,7 +186,25 @@ class ConversationPage extends StatefulWidget {
   @visibleForTesting
   static Future<List<PlatformFile>> Function()? debugPickFiles;
 
-  /// 1.0.1 真机验收⑤A：跨工作区打开任务时先推本页（转圈）后台开桥
+  /// 照片名归一（纯函数可测）：heic/heif → jpg——imageQuality 重编码后
+  /// 字节已是 JPEG（见 _pickPhotos 注释），名字同步防名实不符。
+  @visibleForTesting
+  static String normalizePhotoFileName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.heic') || lower.endsWith('.heif')) {
+      final dot = name.lastIndexOf('.');
+      return dot <= 0 ? '$name.jpg' : '${name.substring(0, dot)}.jpg';
+    }
+    return name;
+  }
+
+  /// 相册直选测试缝（早前批次）：注入后替代相册选择+映射——
+  /// 与 debugPickFiles 同款形态（PlatformFile 层；测试注内存桩，
+  /// 避开 testWidgets 假区真 IO 悬挂—— 教训）。
+  @visibleForTesting
+  static Future<List<PlatformFile>> Function()? debugPickImages;
+
+  /// 1.0.1 真机验收：跨工作区打开任务时先推本页（转圈）后台开桥
   /// ——非空=等待 activeWorkspace 键匹配且桥就绪后再订阅（超时/切换
   /// 失败走页面错误态可重试）；null=原行为（当前栈直接订阅）。
   final String? waitForWorkspace;
@@ -527,7 +548,7 @@ class _ConversationPageState extends State<ConversationPage> {
   /// 持久标记，这里只防同页多帧重复查）。
   bool _fabHintChecked = false;
 
-  /// ⑤A：正在等目标工作区就绪（loading 副文案切换用）。
+  /// 正在等目标工作区就绪（loading 副文案切换用）。
   bool _waitingWorkspace = false;
 
   /// 挂起选型（早期反馈①官方语义）：面板选择 → 随下次 sendText 提交。
@@ -536,7 +557,7 @@ class _ConversationPageState extends State<ConversationPage> {
   String? _pendingThought;
   String? _pendingMode;
 
-  /// 计划模式挂起值（2026-10-23 用户反馈批⑦）：null=跟随会话当前值，
+  /// 计划模式挂起值（2026-10-23 用户反馈批）：null=跟随会话当前值，
   /// true/false=用户已切换（随下条 sendText/createSession 提交——官方
   /// V4ComposerModeControls 菜单只编辑草稿，运行中切换命令
   /// switchCollaborationMode 无 planEnabled 字段，计划只能草稿态切）。
@@ -1296,7 +1317,7 @@ class _ConversationPageState extends State<ConversationPage> {
     _openStopwatch
       ..reset()
       ..start();
-    // 1.0.1 真机验收⑤A：跨区 push-first——等待目标工作区就绪（键匹配
+    // 1.0.1 真机验收：跨区 push-first——等待目标工作区就绪（键匹配
     // 且桥在场）再订阅；切换失败（workspaceError）/超时走错误态可重试。
     // 对抗审查高②：等待循环的 throw 原在 try 外（_subscribe 是
     // fire-and-forget，异常被 PlatformDispatcher 吞→页面永久转圈）。
@@ -1634,7 +1655,7 @@ class _ConversationPageState extends State<ConversationPage> {
           (String? centerKey, double offset, bool pinned,
               int savedAtMs)>{};
 
-  /// 滚动记忆 5 分钟过期（验收⑧）：隔了一阵再打开旧对话直接跳底看最新
+  /// 滚动记忆 5 分钟过期（验收）：隔了一阵再打开旧对话直接跳底看最新
   /// 消息；仅同一使用会话内的对话切换保留阅读位置。
   static const _scrollMemoryTtlMs = 5 * 60 * 1000;
   (String?, double, bool)? _scrollMemoryOf(String? sid) {
@@ -1846,6 +1867,17 @@ class _ConversationPageState extends State<ConversationPage> {
 
   /// 常见扩展名 → mime（file_picker 只给扩展名；官方 begin schema 要求
   /// type/subtype 结构，mime 影响预览授权面）。
+  /// XFile → PlatformFile 适配（早前批次 相册直选）：file_picker
+  /// 13.x 的 PlatformFile 为抽象基类（无公开构造）——按官方接口包小适配。
+  /// heic/heif 扩展名归一 jpg（imageQuality 重编码后字节已是 JPEG，见
+  /// _pickPhotos 注释）。
+  static PlatformFile _XFileAsPlatformFile(XFile x) =>
+      _PickedXFile(
+        name: ConversationPage.normalizePhotoFileName(x.name),
+        uri: Uri.file(x.path),
+        xfile: x,
+      );
+
   static String _mimeOfExtension(String ext) => switch (ext.toLowerCase()) {
     'png' => 'image/png',
     'jpg' || 'jpeg' => 'image/jpeg',
@@ -1902,6 +1934,46 @@ class _ConversationPageState extends State<ConversationPage> {
       return;
     }
     if (!mounted || files.isEmpty) return;
+    await _ingestPickedFiles(files);
+  }
+
+  /// 相册直选（早前批次）：系统相册多选（iOS=PHPicker 独立进程
+  /// 无需相册权限；Android=系统照片选择器）→ 与文件附件同一条摄取管线。
+  /// imageQuality=95 强制 JPEG 重编码——iOS 相册 HEIC 直传模型端普遍
+  /// 不认，统一转档兼容（95 档肉眼近无损）；heic/heif 扩展名同步归一
+  /// 为 jpg 防名实不符。
+  ///
+  /// 发布预审加固：maxWidth/maxHeight=4096 + limit——不传尺寸时 Android
+  /// ImageResizer 按原尺寸整图解码（48MP≈192MB ARGB），高像素多选有
+  /// OOM 崩溃面；limit 在选择器层截断（API<30 的 ACTION_GET_CONTENT
+  /// 分支不消费 limit，摄取管线另有 kMaxChatAttachments 兜底）。
+  Future<void> _pickPhotos() async {
+    final messenger = ScaffoldMessenger.of(context);
+    List<PlatformFile> files;
+    try {
+      files = await (ConversationPage.debugPickImages?.call() ??
+          [
+            for (final x in await ImagePicker().pickMultiImage(
+              imageQuality: 95,
+              maxWidth: 4096,
+              maxHeight: 4096,
+              limit: kMaxChatAttachments,
+            ))
+              _XFileAsPlatformFile(x),
+          ]);
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(tr('相册不可用'))));
+      }
+      return;
+    }
+    if (!mounted || files.isEmpty) return;
+    await _ingestPickedFiles(files);
+  }
+
+  /// 文件/照片共用摄取：计数上限/大小拦截/字节读取/待传队列+上传泵。
+  Future<void> _ingestPickedFiles(List<PlatformFile> files) async {
+    final messenger = ScaffoldMessenger.of(context);
     var added = 0;
     for (final f in files) {
       if (_pendingAtts.length >= kMaxChatAttachments) {
@@ -2363,7 +2435,7 @@ class _ConversationPageState extends State<ConversationPage> {
           if (_pendingModelProvider != null) 'provider': _pendingModelProvider,
           if (_pendingModelId != null) 'model': _pendingModelId,
           if (_pendingThought != null) 'thought': _pendingThought,
-          // 批⑦（2026-10-23）：mode=权限档（build/edit/guarded/yolo），
+          // 批（2026-10-23）：mode=权限档（build/edit/guarded/yolo），
           // planEnabled=独立开关——两字段并行（官方 create-session-config
           // 同款双字段；旧「plan 作为 mode」兼容值不再从这里发）。
           if (_pendingMode != null) 'mode': _pendingMode,
@@ -2471,7 +2543,7 @@ class _ConversationPageState extends State<ConversationPage> {
             'options': {'reasoningLevel': effThought},
           };
         }
-        // 批⑦（2026-10-23）：mode=权限档、planEnabled=独立开关并行提交
+        // 批（2026-10-23）：mode=权限档、planEnabled=独立开关并行提交
         // （官方 composerSubmissionConfig.ts:35-37 同款；_pendingMode 不再
         // 承载 'plan'——计划从开关来，可为显式 false=关闭会话已开的计划）。
         // 对抗审查 （2026-10-24）：服务端 resolveExecutionState 对
@@ -3382,7 +3454,7 @@ class _ConversationPageState extends State<ConversationPage> {
 
   // ── 工具栏常驻选型（2026-10-17 输入区对齐桌面）──────────────────
 
-  /// 生效权限档（2026-10-23 用户反馈批⑦）：计划=独立开关可并行——
+  /// 生效权限档（2026-10-23 用户反馈批）：计划=独立开关可并行——
   /// 官方 V4ComposerModeControls.tsx:63 权限单选组排除 plan；
   /// 旧 config.mode='plan' 兼容折算为 build+计划开（官方
   /// execution-state.ts resolveExecutionState 同款折算）。
@@ -3706,6 +3778,15 @@ class _ConversationPageState extends State<ConversationPage> {
                     },
                   ),
                   AddAction(
+                    key: const ValueKey('add-photo'),
+                    icon: Icons.photo_library_outlined,
+                    label: '照片',
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _pickPhotos();
+                    },
+                  ),
+                  AddAction(
                     key: const ValueKey('add-attachment'),
                     icon: Icons.attach_file,
                     label: '附件文件',
@@ -3834,7 +3915,7 @@ class _ConversationPageState extends State<ConversationPage> {
     );
   }
 
-  /// 模式选择（2026-10-20 真机反馈修复 + 2026-10-23 用户反馈批⑦重构）：
+  /// 模式选择（2026-10-20 真机反馈修复 + 2026-10-23 用户反馈批重构）：
   /// 计划模式=独立开关、与权限档**并行**（官方
   /// V4ComposerModeControls.tsx:40「Plan 是独立勾选项，三种权限仍为
   /// 单选；只编辑草稿」+ e2e 断言 {mode:'yolo', planEnabled:true} 可叠加）。
@@ -4066,7 +4147,7 @@ class _ConversationPageState extends State<ConversationPage> {
           '复制',
           Icons.copy_outlined,
           () {
-            // 2026-10-23 用户反馈批⑧：补 SnackBar 反馈（原先静默复制，
+            // 2026-10-23 用户反馈批：补 SnackBar 反馈（原先静默复制，
             // 用户不知道复制成功了）。
             Clipboard.setData(ClipboardData(text: '${row['text'] ?? ''}'));
             snack('已复制');
@@ -4620,7 +4701,7 @@ class _ConversationPageState extends State<ConversationPage> {
               tooltip: tr('任务内查找'),
               onPressed: _openConversationSearch,
             ),
-          // 子代理列表入口（2026-10-26 批④拍板⑥）：长会话免翻找，直达
+          // 子代理列表入口（2026-10-26 批④拍板）：长会话免翻找，直达
           // 本会话全部子智能体（运行中/已结束+下钻只读会话）。
           if (state != null && _sessionId != null)
             IconButton(
@@ -4667,7 +4748,7 @@ class _ConversationPageState extends State<ConversationPage> {
                 // 菜单槽位撤销。
                 // 后台工作二级页入口（compactness-feedback-1109 反馈②）：
                 // 完全撤出输入区一级空间——有后台工作才出现在菜单，带
-                // 计数；一级感知=任务卡后台小点（B 批既有）。
+                // 计数；一级感知=任务卡后台小点（既有）。
                 if ((_sub?.state.backgroundWorks ?? const []).isNotEmpty)
                   PopupMenuItem(
                     value: 'bgWorks',
@@ -5217,6 +5298,16 @@ class _ConversationPageState extends State<ConversationPage> {
                               (state != null || _cachePreview != null)
                           ? () => _sendCompact(AppStateScope.of(context))
                           : null,
+                      // ① 上下文组成下钻（早前批次）：只读会话也可看。
+                      onDrillDown: _sessionId != null
+                          ? () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ContextCompositionPage(
+                                    sessionId: _sessionId!,
+                                  ),
+                                ),
+                              )
+                          : null,
                     ),
                   ),
                 );
@@ -5516,7 +5607,7 @@ class _ConversationPageState extends State<ConversationPage> {
   /// 会话运行时（冷会话可能要等较久），不能让用户误以为这是草稿页。
   Widget _buildLoadingOrDraft() {
     if (_sessionId == null) {
-      // 2026-10-23 用户反馈批⑥：草稿空态对齐官方欢迎屏
+      // 2026-10-23 用户反馈批：草稿空态对齐官方欢迎屏
       // ConversationDraftEmptyState——分时问候语（六档原文）+ 若隐若现
       // Z 水印垫底（官方=水印绝对居中、问候语覆盖其上；建议 chips 是
       // 手机端对官方 suggested prompts 的既有形态，保留）。
@@ -5918,6 +6009,9 @@ class _ConversationPageState extends State<ConversationPage> {
                     attachments: _attachmentsOf(item.row),
                     onLongPress: () => _showRowActions(item.row),
                     onAttachment: (i) => _openAttachmentAt(item.row, i),
+                    // ④ 提交配置溯源：变化点徽标。
+                    submitConfig: item.submitConfig,
+                    showConfigBadge: item.showConfigBadge,
                     searchReveal:
                         _activeSearchMatch?.rowId ==
                         intOf(item.row['rowId']),
@@ -6061,5 +6155,46 @@ class _TopBarCountBadge extends StatelessWidget {
       ),
       child: Icon(icon, size: 18),
     );
+  }
+}
+
+/// XFile → PlatformFile 具体适配（早前批次 相册直选）：见
+/// _XFileAsPlatformFile 注释。file_picker 13.x 的 PlatformFile 是抽象
+/// base 类——子类须带 base/final 修饰。
+final class _PickedXFile extends PlatformFile {
+  _PickedXFile({required this.name, required this.uri, required XFile xfile})
+    : _xfile = xfile;
+
+  @override
+  final String name;
+
+  @override
+  final Uri uri;
+
+  final XFile _xfile;
+
+  @override
+  XFile get xFile => _xfile;
+
+  @override
+  int? lengthSync() {
+    // XFile 无同步 length——openRead 读元数据属异步；照片重编码后为
+    // 临时文件，读长度失败返回 null 交由摄取管线读字节兜底。
+    try {
+      return File(_xfile.path).lengthSync();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<int?> length() async => await _xfile.length();
+
+  @override
+  Future<Uint8List> readAsBytes() => _xfile.readAsBytes();
+
+  @override
+  Stream<Uint8List> readAsByteStream() async* {
+    yield await _xfile.readAsBytes();
   }
 }

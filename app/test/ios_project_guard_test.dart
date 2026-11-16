@@ -1,4 +1,4 @@
-// iOS 工程静态守卫（ios-adaptation-2，B 批；android_manifest_guard_test
+// iOS 工程静态守卫（早前批次；android_manifest_guard_test
 // 同族先例）：Windows 上无法跑 Xcode 构建，iOS 工程配置的正确性先由
 // 静态断言钉死——配置漂移（再跑 flutter create 覆写/手滑改动）在本地
 // 测试步即拦，不必等 macOS CI 或云 Mac 才发现。
@@ -126,6 +126,42 @@ void main() {
         );
       }
     });
+
+    test('审批时效性呈现：Time Sensitive entitlement + timeSensitive 分档'
+        '（早前批次）', () {
+      // 审批提醒是 180s 倒计时的时效交互。两处缺一都会静默降级：缺
+      // entitlement 时系统把 timeSensitive 降回 active（专注模式压掉
+      // 审批）；代码缺分档则无论 entitlement 都在 active 档。
+      for (final (name, src) in [
+        ('DebugProfile', entitlementsDebug),
+        ('Release', entitlementsRelease),
+      ]) {
+        expect(
+          RegExp(
+            r'<key>com\.apple\.developer\.usernotifications\.time-sensitive'
+            r'</key>\s*<true/>',
+          ).hasMatch(src),
+          isTrue,
+          reason: '$name.entitlements 缺 Time Sensitive Notifications 能力',
+        );
+      }
+      // 家族：剥注释行/行尾注释后再断言代码（注释里出现枚举名不算
+      // 数；trailing 注释同理）。
+      final svc =
+          File('lib/notify/notification_service.dart').readAsStringSync();
+      final code = svc
+          .split('\n')
+          .map((line) {
+            final cut = line.indexOf('//');
+            return cut >= 0 ? line.substring(0, cut) : line;
+          })
+          .join('\n');
+      expect(
+        code.contains('InterruptionLevel.timeSensitive'),
+        isTrue,
+        reason: 'notification_service 缺审批通道 timeSensitive 呈现分档',
+      );
+    });
   });
 
   group('依赖形态（Swift Package Manager）', () {
@@ -141,6 +177,140 @@ void main() {
         pbxproj.contains('productName = FlutterGeneratedPluginSwiftPackage;'),
         isTrue,
         reason: 'Runner target 缺 SPM 产品依赖',
+      );
+    });
+
+    test('通道文件在场且 AppDelegate 全部接线（早前批次）', () {
+      for (final f in [
+        'ios/Runner/ChannelsBasic.swift',
+        'ios/Runner/NotifyChannel.swift',
+        'ios/Runner/LockChannel.swift',
+        'ios/Runner/AsrChannel.swift',
+        'ios/Runner/TestChannel.swift',
+      ]) {
+        expect(File(f).existsSync(), isTrue, reason: '$f 缺失');
+      }
+      final appDelegate =
+          File('ios/Runner/AppDelegate.swift').readAsStringSync();
+      // 收紧：剥注释行后再断言（旧 contains 注释掉也绿）。
+      final codeLines = appDelegate
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      for (final call in [
+        'ChannelsBasic.attach',
+        'NotifyChannel.attach',
+        'LockChannel.attach',
+        'AsrChannel.attach',
+        'TestChannel.attach',
+      ]) {
+        expect(codeLines.contains(call), isTrue, reason: '$call 未接线');
+      }
+      // flutter_local_notifications delegate（早前批次 高1b）：
+      // 插件不自动设 UNUserNotificationCenter delegate——缺失则 iOS 前台
+      // 横幅/点击回调/冷启动 payload 全断（对抗审查乙）。
+      expect(
+        codeLines.contains('UNUserNotificationCenter.current().delegate = self'),
+        isTrue,
+        reason: 'AppDelegate 缺通知中心 delegate 接线（插件 README iOS '
+            'setup 明确要求 app 侧设置）',
+      );
+      // pbxproj 编译登记（新 Swift 文件不登记不编译——Xcode 经典组形态）。
+      // 收紧（早前批次 对抗审查）：只认 PBXSourcesBuildPhase
+      // 段内出现（旧 contains 会匹配 PBXBuildFile 定义行=假绿——删掉
+      // Sources 挂载仍过）。
+      final pbx = File('ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+      // 两个 Sources 段（RunnerTests 在文件序在前）——按「含 AppDelegate
+      // 的段=Runner 主 target」取。
+      final runnerSources = RegExp(
+        r'/\* Sources \*/ = \{[^}]*files = \(([^)]*)\)',
+        dotAll: true,
+      )
+          .allMatches(pbx)
+          .firstWhere(
+            (m) => m.group(1)!.contains('AppDelegate.swift in Sources'),
+            orElse: () => throw StateError('解析不到 Runner 的 Sources 段'),
+          );
+      for (final n in [
+        'ChannelsBasic.swift',
+        'NotifyChannel.swift',
+        'LockChannel.swift',
+        'AsrChannel.swift',
+        'TestChannel.swift',
+      ]) {
+        expect(
+          runnerSources.group(1)!.contains('$n in Sources */'),
+          isTrue,
+          reason: '$n 未挂 Runner target 的 Sources 段——Xcode 不会编译它',
+        );
+      }
+    });
+
+    test('通知 iOS 语义钉死（早前批次 高1a）', () {
+      // 插件把「权限请求结果」当 initialize 返回值——按需请求形态下
+      // iOS 恒 NO；若不把 iOS 返回值语义修正为「调用完成即就绪」，
+      // _ready=false 会短路全部 post（对抗审查乙，插件源码级实证）。
+      final svc =
+          File('lib/notify/notification_service.dart').readAsStringSync();
+      expect(
+        svc.contains('defaultTargetPlatform == TargetPlatform.iOS'),
+        isTrue,
+        reason: 'notification_service 缺 iOS initialize 返回值语义修正',
+      );
+    });
+
+    test('快捷入口静态项与动作值对齐（早前批次）', () {
+      // 动作类型必须与 Android shortcuts.xml 的 shortcut_action 值一致
+      //（Dart normalizeShortcutAction 白名单直收）——漂移即快捷入口哑火。
+      for (final v in ['new_task', 'last_session']) {
+        expect(
+          infoPlist.contains('<string>$v</string>'),
+          isTrue,
+          reason: 'Info.plist 缺快捷项动作值 $v（与 Android shortcuts.xml 对齐）',
+        );
+      }
+      expect(
+        infoPlist.contains('UIApplicationShortcutItems'),
+        isTrue,
+      );
+      final scene =
+          File('ios/Runner/SceneDelegate.swift').readAsStringSync();
+      expect(
+        scene.contains('TestChannel.stashLaunchShortcut'),
+        isTrue,
+        reason: 'SceneDelegate 缺冷启动快捷项转发',
+      );
+      expect(
+        scene.contains('TestChannel.reportShortcut'),
+        isTrue,
+        reason: 'SceneDelegate 缺热启动快捷项推送',
+      );
+      // 热启动选择器精确断言（早前批次 对抗审查发现）：系统回调的
+      // 是 UIWindowSceneDelegate 的 windowScene(_:performActionFor:)——
+      // 写成 scene(_:performActionFor:) 是永不回调的死代码，且 Swift 对
+      // ObjC 可选协议方法签名不符零警告，只有选择器级断言能拦。剥注释
+      // 行后匹配（家族：注释里出现正确签名不算数）。
+      final sceneCode = scene
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(
+        RegExp(
+          r'override func windowScene\(\s*_ windowScene: UIWindowScene,\s*'
+          r'performActionFor shortcutItem: UIApplicationShortcutItem',
+        ).hasMatch(sceneCode),
+        isTrue,
+        reason: '热启动快捷项须实现 windowScene(_:performActionFor:'
+            ':completionHandler:) 正确选择器；override 必须带——'
+            'FlutterSceneDelegate 自身实现该选择器，CI 首跑实证',
+      );
+      expect(
+        RegExp(
+          r'func scene\(\s*_ scene: UIScene,\s*performActionFor',
+        ).hasMatch(sceneCode),
+        isFalse,
+        reason: '死选择器形态残留（scene(_:performActionFor:) 永不被系统'
+            '回调——热路径静默失效）',
       );
     });
 
@@ -161,9 +331,18 @@ void main() {
       final keys = RegExp(
         r'<key>(NS\w*UsageDescription)</key>',
       ).allMatches(infoPlist).map((m) => m.group(1)!).toSet();
-      expect(keys, {'NSCameraUsageDescription', 'NSMicrophoneUsageDescription'},
-        reason: '新增权限（语音/相册等）须连实现批一起登记本集合，防死权限'
-            '代码静默编入',
+      expect(
+        keys,
+        {
+          'NSCameraUsageDescription',
+          'NSMicrophoneUsageDescription',
+          // 早前批次：局域网备通道（zcode --web）触发 iOS 14+ 本地
+          // 网络权限弹窗，无键=静默失败；不映射 permission_handler 宏。
+          'NSLocalNetworkUsageDescription',
+          'NSFaceIDUsageDescription', // 应用锁（LAContext 面容）。
+          'NSSpeechRecognitionUsageDescription', // 语音识别。
+        },
+        reason: '新增权限须连实现起登记本集合，防死权限代码静默编入',
       );
     });
   });

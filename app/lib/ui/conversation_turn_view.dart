@@ -498,7 +498,7 @@ class TurnBarState extends State<TurnBar> {
                               'OffPeakCreate' &&
                           offPeakCreateSummary(row) != null =>
                     OffPeakTaskCard(row: row),
-                  // A 批（2026-11-08 拍板⑧）：CreateWorkflow 专用 run 卡
+                  // （2026-11-08 拍板）：CreateWorkflow 专用 run 卡
                   //（官方对位——不再淹没在通用工具行里）。
                   'toolCall'
                       when '${row['toolName'] ?? row['name'] ?? ''}' ==

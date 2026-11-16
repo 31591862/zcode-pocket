@@ -333,6 +333,65 @@ void main() {
           reason: 'none 装载时关 FLAG_SECURE 只在曾开启过时调用');
     });
   });
+
+  group('PIN 材料单键存储（早前批次 混搭形态根治）', () {
+    test('setAppLockPin：单键 JSON 一次写+旧两键清除', () async {
+      final storage = _MemStorage();
+      final prefs = UiPrefs(storage: storage);
+      await prefs.load();
+      // 预置旧两键（模拟升级前状态）。
+      await storage.write(key: 'ui.appLockPinSalt', value: 'aa');
+      await storage.write(key: 'ui.appLockPinHash', value: 'bb');
+      await prefs.setAppLockPin('cc', 'dd');
+      expect(storage.data['ui.appLockPinMaterial'], contains('"cc"'));
+      expect(storage.data['ui.appLockPinMaterial'], contains('"dd"'));
+      expect(storage.data.containsKey('ui.appLockPinSalt'), isFalse,
+          reason: '旧键必须清除（读路径单键优先，但清了干净）');
+      expect(storage.data.containsKey('ui.appLockPinHash'), isFalse);
+    });
+
+    test('旧两键在场 → load 回落+自动迁移单键', () async {
+      final storage = _MemStorage();
+      await storage.write(key: 'ui.appLockPinSalt', value: 'aa');
+      await storage.write(key: 'ui.appLockPinHash', value: 'bb');
+      final prefs = UiPrefs(storage: storage);
+      await prefs.load();
+      expect(prefs.appLockPinSalt, 'aa');
+      expect(prefs.appLockPinHash, 'bb');
+      // 迁移为异步——轮询等到旧键被清（写单键在删旧键之前）。
+      for (var i = 0; i < 50; i++) {
+        if (!storage.data.containsKey('ui.appLockPinSalt')) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(storage.data['ui.appLockPinMaterial'], contains('"aa"'));
+      expect(storage.data.containsKey('ui.appLockPinSalt'), isFalse);
+    });
+
+    test('单键在场则优先于旧两键（防混搭复活）', () async {
+      final storage = _MemStorage();
+      await storage.write(key: 'ui.appLockPinSalt', value: 'OLD');
+      await storage.write(key: 'ui.appLockPinHash', value: 'OLD');
+      await storage.write(
+        key: 'ui.appLockPinMaterial',
+        value: '{"salt":"NEW","hash":"NEW"}',
+      );
+      final prefs = UiPrefs(storage: storage);
+      await prefs.load();
+      expect(prefs.appLockPinSalt, 'NEW',
+          reason: '单键是权威源——旧键残留不得覆盖（混搭防线）');
+      expect(prefs.appLockPinHash, 'NEW');
+    });
+
+    test('单键 JSON 损坏 → 按缺失处理（回落旧对）', () async {
+      final storage = _MemStorage();
+      await storage.write(key: 'ui.appLockPinMaterial', value: '{oops');
+      await storage.write(key: 'ui.appLockPinSalt', value: 'aa');
+      await storage.write(key: 'ui.appLockPinHash', value: 'bb');
+      final prefs = UiPrefs(storage: storage);
+      await prefs.load();
+      expect(prefs.appLockPinSalt, 'aa');
+    });
+  });
 }
 
 Widget _wrap(_GateApp app) {
@@ -373,6 +432,21 @@ class _MemStorage extends FlutterSecureStorage {
     WindowsOptions? wOptions,
   }) async {
     data[key] = value ?? '';
+  }
+
+  /// 106B/早前批次：setAppLockPin 现会删旧键（单键迁移）——缺 delete
+  /// 覆写会落到真通道（testWidgets 假区真 IO 永不完成=挂起家族）。
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    data.remove(key);
   }
 }
 

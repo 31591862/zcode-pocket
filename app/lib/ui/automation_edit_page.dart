@@ -7,7 +7,7 @@ import '../state/app_state_scope.dart';
 import '../transport/automation_client.dart';
 import 'app_widgets.dart';
 
-/// 定时任务编辑页（2026-11-05 反馈⑤：此前只可查看——官方
+/// 定时任务编辑页（2026-11-05 反馈：此前只可查看——官方
 /// updateAutomation（zcodeAgentPluginParams.ts:216-228）完整支持编辑，
 /// 桌面整卡点击进编辑，手机端纯没接）。
 ///
@@ -41,7 +41,7 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
   final Set<int> _weekdays = {};
   int _monthDay = 1;
 
-  /// 1.0.1 真机验收⑦：模式与模型可编辑（官方 updateAutomation 原生
+  /// 1.0.1 真机验收：模式与模型可编辑（官方 updateAutomation 原生
   /// 支持，桌面可改——此前手机端留白）。null=未改不下发。
   String? _mode;
   String? _selProvider;
@@ -651,7 +651,7 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
             ],
           ),
           const SizedBox(height: 12),
-          // 1.0.1 真机验收⑦：模式/模型从只读升可编辑（官方对齐）。
+          // 1.0.1 真机验收：模式/模型从只读升可编辑（官方对齐）。
           const AppSectionHeader('模式'),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -858,7 +858,7 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
             // 七只紧凑 chip 与档位/模式 chip 同规格（蓝 10% 选中）。
             // （视觉走查）：Wrap 在 375dp 宽下折成 5+2 两行——
             // 改 Row+7×Expanded 等分单行（间距 3dp、内容居中）。
-            // 紧凑回滚（候选 13 真机反馈⑤「太松散」）：保单行等分
+            // 紧凑回滚（候选 13 真机反馈「太松散」）：保单行等分
             //（修掉 5+2 折行），密度回 compact 与档位/模式 chip 同规格。
             if (_kind == _SchedKind.weekly)
               Padding(

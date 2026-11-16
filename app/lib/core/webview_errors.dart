@@ -1,4 +1,4 @@
-// WebView 主框架错误过滤（ios-adaptation-3，C 批第一段）。
+// WebView 主框架错误过滤（早前批次第一段）。
 //
 // OAuth 跨域重定向期间，两侧平台的 WebView 都会报「取消导航」类错误：
 // Android=ERR_ABORTED(-1)（2026-10-21 真机实证）、iOS=NSURLErrorCancelled
