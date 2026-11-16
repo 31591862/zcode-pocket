@@ -253,7 +253,8 @@ class ConversationPage extends StatefulWidget {
   State<ConversationPage> createState() => _ConversationPageState();
 }
 
-class _ConversationPageState extends State<ConversationPage> {
+class _ConversationPageState extends State<ConversationPage>
+    with WidgetsBindingObserver {
   // AppState 引用（dispose 时清 viewingSessionId——dispose 不能 of(context)）
   AppState? _appRef;
   final _input = TextEditingController();
@@ -275,12 +276,11 @@ class _ConversationPageState extends State<ConversationPage> {
   int? _staleBaseVersion;
   int _staleTicks = 0;
 
-  /// app 通知驱动的死订阅检测：在线态 + 本页订阅已 dispose → 页面存活期
-  /// 持续轮询（500ms、前台门控、不设过期），就绪即重订。
+  /// 死订阅/僵死检测的武装入口：app 通知与生命周期 resumed 双源——
+  /// 武装本身不做 phase 前置（第四版真机日志实证：resume 完成通知的
+  /// 时序不可靠，错过则无人武装=永久冻结），就绪等待全部在轮询内部。
   void _onAppChangedForDeadSub() {
     if (!mounted) return;
-    final app = _appRef;
-    if (app == null || app.phase != LinkPhase.online) return;
     final sid = _sessionId;
     if (sid == null || sid.isEmpty) return;
     final sub = _sub;
@@ -674,6 +674,9 @@ class _ConversationPageState extends State<ConversationPage> {
   @override
   void initState() {
     super.initState();
+    // 死订阅/僵死看门的生命周期源：resumed 事件直达武装
+    // （app 通知时序不可靠——第四版真机日志实证）。
+    WidgetsBinding.instance.addObserver(this);
     _sessionId = widget.sessionId;
     final sid = _sessionId;
     final memory = (sid == null || sid.isEmpty) ? null : _scrollMemory[sid];
@@ -1212,6 +1215,13 @@ class _ConversationPageState extends State<ConversationPage> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _onAppChangedForDeadSub();
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _ownRoute ??= ModalRoute.of(context);
@@ -1272,6 +1282,7 @@ class _ConversationPageState extends State<ConversationPage> {
     _inputFocusNode.dispose();
     _scroll.dispose();
     _appRef?.removeListener(_onAppChangedForDeadSub);
+    WidgetsBinding.instance.removeObserver(this);
     _search.dispose();
     _fileDebounce?.cancel();
     _followTick?.cancel();
