@@ -99,6 +99,7 @@ class _UsageApp extends AppState {
 Map<String, dynamic> _startPlanEntitlement({
   double percentage = 0.72,
   num count = 12000,
+  num? total,
 }) => {
   'generatedAt': DateTime.now().millisecondsSinceEpoch,
   'authenticated': true,
@@ -114,7 +115,20 @@ Map<String, dynamic> _startPlanEntitlement({
         .millisecondsSinceEpoch,
   },
   'subscription': null,
-  'quota': null,
+  'quota': total == null
+      ? null
+      : {
+          'level': 'Start',
+          'limits': [
+            {
+              'type': 'model_usage',
+              'number': total,
+              'usage': total - count,
+              'remaining': count,
+              'percentage': percentage,
+            },
+          ],
+        },
 };
 
 /// 个人套餐（Coding Pro）quota 形态：percentage=0-100 已用占比、
@@ -209,6 +223,30 @@ void main() {
         reason: '不再用万/亿粗粒度格式');
     // Start Plan remaining 无 usage/currentValue，不出"已用 X / Y"行。
     expect(find.textContaining('已用'), findsNothing);
+  });
+
+  testWidgets('Start Plan 总量在场：剩余/总量 精确形态（298,341,915 / 300,000,000）', (
+    tester,
+  ) async {
+    final app = _UsageApp();
+    _UsageApp._channel.entitlement = _startPlanEntitlement(
+      percentage: 0.99447305,
+      count: 298341915,
+      total: 300000000,
+    );
+    addTearDown(
+        () => _UsageApp._channel.entitlement = _startPlanEntitlement());
+    await pumpPage(tester, app);
+    // 切到 Start Plan 档（默认档 individual 走旧口径，无总量行）。
+    await tester.tap(find.byKey(const ValueKey('plan-kind-start-plan')));
+    await tester.pump(const Duration(milliseconds: 2500));
+    await settle(tester);
+
+    expect(find.textContaining('剩余 298,341,915 / 300,000,000'), findsOneWidget,
+        reason: '用户需求：剩余/总量 精确千分位形态');
+    // 桶类型 model_usage 不匹配 TOKENS_LIMIT → 仍是剩余额度单卡。
+    expect(find.text('99%'), findsOneWidget,
+        reason: '0.99447305 剩余比例 → 99%');
   });
 
   testWidgets('个人套餐口径不回归：40 已用 → 60%；已用 40 / 100 行保留', (
