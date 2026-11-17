@@ -253,7 +253,8 @@ class ConversationPage extends StatefulWidget {
   State<ConversationPage> createState() => _ConversationPageState();
 }
 
-class _ConversationPageState extends State<ConversationPage> {
+class _ConversationPageState extends State<ConversationPage>
+    with WidgetsBindingObserver {
   // AppState 引用（dispose 时清 viewingSessionId——dispose 不能 of(context)）
   AppState? _appRef;
   final _input = TextEditingController();
@@ -281,6 +282,27 @@ class _ConversationPageState extends State<ConversationPage> {
       const Duration(milliseconds: 2000),
       (_) => _convHealthTick(),
     );
+  }
+
+  /// 键盘 insets 动画的逐帧贴底跟随（2026-11-16 卡顿改造）：
+  /// didChangeMetrics 每帧回调（零重建），仅做带 1px 差值守卫的贴底
+  /// jumpTo——替代旧"每帧整页重建+无条件 jumpTo+100ms tick 交错"。
+  @override
+  void didChangeMetrics() {
+    _followKeyboardInsets();
+  }
+
+  void _followKeyboardInsets() {
+    if (!mounted || !_stickToBottom || !_scroll.hasClients) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_stickToBottom || !_scroll.hasClients) return;
+      final max = _scroll.position.maxScrollExtent;
+      // 差值守卫：≤1px 不动（旧实现无条件 jumpTo=每帧白付一次通知）。
+      if ((max - _scroll.offset) > 1) {
+        _markProgrammatic();
+        _scroll.jumpTo(max);
+      }
+    });
   }
 
   void _convHealthTick() {
@@ -652,6 +674,9 @@ class _ConversationPageState extends State<ConversationPage> {
   @override
   void initState() {
     super.initState();
+    // 键盘动画每帧触发 didChangeMetrics——回调只做带差守卫的贴底跟随
+    // （零重建；旧实现经 MediaQuery.of 订阅导致整页逐帧重建=卡顿主因）。
+    WidgetsBinding.instance.addObserver(this);
     // 会话健康巡检：页面存活期常驻（dispose 取消）。
     _startConvHealthTimer();
     _sessionId = widget.sessionId;
@@ -1250,6 +1275,7 @@ class _ConversationPageState extends State<ConversationPage> {
     _inputFocusNode.dispose();
     _scroll.dispose();
     _convHealthTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _search.dispose();
     _fileDebounce?.cancel();
     _followTick?.cancel();
@@ -1691,7 +1717,6 @@ class _ConversationPageState extends State<ConversationPage> {
 
 
   /// 上次构建的键盘 inset（变化检测）。
-  double _lastInsetBottom = -1;
 
   // ── 6.2 选分支：顶栏分支标签（工作区级 git 状态，通道放行实证见
   //    git_branch_service.dart 头注）─────────────────────────────
@@ -4537,21 +4562,11 @@ class _ConversationPageState extends State<ConversationPage> {
     // 6.2 选分支：顶栏分支标签懒加载（缓存键守卫，见方法注）。
     _maybeLoadBranchInfo(app2);
     final state = _sub?.state;
-    // （2026-10-19 审查）：键盘弹起（insets 变化）时粘底会话重新贴底
-    // ——原唯一触发是数据通知，流式静默期弹键盘会把输入栏压到内容之下。
-    // 只加触发；12 帧自驱动核心与拖拽即停阀不动（介入点 1 修出的粘底
-    // 机制一行不改）。
-    final insets = MediaQuery.of(context).viewInsets.bottom;
-    if (insets != _lastInsetBottom) {
-      _lastInsetBottom = insets;
-      if (_stickToBottom && _scroll.hasClients) {
-        _followUntilStable();
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_scroll.hasClients || !_stickToBottom) return;
-          _scroll.jumpTo(_scroll.position.maxScrollExtent);
-        });
-      }
-    }
+    // 键盘跟随（2026-11-16 卡顿改造）：insets 消费从 build 移到
+    // didChangeMetrics 回调——此前 MediaQuery.of(viewInsets) 订阅使整页
+    // 每个键盘动画帧全量重建（15-18 次/次开关），叠加每帧无条件 jumpTo
+    // 与 100ms 跟随 tick 交错=拉起/收起卡顿。粘底跟随改由
+    // _onMetricsChangedForFollow 承接（回调零重建 + 差值守卫）。
     // #8：草稿发送期（_sending、会话未建立）没有可停的回合——
     // 显示停止键点了必静默无效。
     // 批4 反馈①链上发现（2026-10-23）：缓存预渲期（live 快照未到）
