@@ -88,6 +88,9 @@ String? brandLogoAsset(String modelId) {
 ///   填色），OpenAI 官方图标亦为黑标（SI 的 412991 存疑不采）——均归
 ///   近黑单色类，浅色近黑可见、深色退文字色（与 Kimi 同档）。
 const Map<String, Color> _brandColors = {
+  // 智谱 Z 标圆底（2026-11-18 圆底徽标批：Eta zai 圆同款黑；深色模式
+  // 近黑提亮无意义→resolveBrandColor 返回 null 走中性圆回落）。
+  'assets/brand_logos/zhipu.svg': Color(0xFF1C1C1E),
   'assets/brand_logos/claude.svg': Color(0xFFD97757),
   'assets/brand_logos/deepseek.svg': Color(0xFF4D6BFE),
   'assets/brand_logos/qwen.svg': Color(0xFF615CED),
@@ -146,4 +149,68 @@ class BrandLogo extends StatelessWidget {
           BlendMode.srcIn,
         ),
       );
+}
+
+
+/// 圆底徽标（2026-11-18 用户拍板，Eta 同款）：固定直径的品牌色圆底 +
+/// 白色单色字标——大小统一感来自圆底而非字标本体（各厂字形大小不一
+/// 的"乱"根源在此根治）。
+/// - 已知品牌（asset 有品牌色映射）：圆底=品牌色（浅色原色/深色提亮，
+///   沿用 resolveBrandColor 策略；近黑品牌深色下圆底退中性灰）
+/// - 未知品牌（无 SVG 资产，如 doubao/hunyuan/stepfun）：中性圆底 +
+///   首字母白/前景字（官方彩色标与单色体系不同语言，暂不引入位图）
+class BrandLogoChip extends StatelessWidget {
+  final String modelId;
+  final String? asset;
+  final double size;
+
+  const BrandLogoChip({
+    super.key,
+    required this.modelId,
+    this.asset,
+    this.size = 18,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    final tint = asset != null
+        ? resolveBrandColor(asset!, brightness)
+        : null;
+    final bg = tint ?? Theme.of(context).colorScheme.secondaryContainer;
+    final glyphColor = tint != null
+        ? Colors.white
+        : Theme.of(context).colorScheme.onSecondaryContainer;
+    final glyphSize = size * 0.58;
+    final assetPath = asset;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: assetPath != null
+          ? SvgPicture.asset(
+              assetPath,
+              width: glyphSize,
+              height: glyphSize,
+              colorFilter: ColorFilter.mode(glyphColor, BlendMode.srcIn),
+            )
+          : Text(
+              _brandChipInitial(modelId),
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: size * 0.42,
+                fontWeight: FontWeight.w600,
+                color: glyphColor,
+              ),
+            ),
+    );
+  }
+}
+
+/// 回退首字母（未知品牌圆底用）：取模型 id 首个字符大写。
+String _brandChipInitial(String modelId) {
+  final t = modelId.trim();
+  if (t.isEmpty) return '?';
+  return t.characters.first.toUpperCase();
 }

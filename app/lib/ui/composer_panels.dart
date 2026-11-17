@@ -1338,18 +1338,9 @@ class _ModelListRow extends StatelessWidget {
                   width: 18,
                   height: 18,
                   child: Center(
-                    child: asset != null
-                        // 品牌色自动策略（2026-10-26 拍板①）：浅色原色/
-                        // 深色提亮——选中态保留品牌色（勾号即选中信号）。
-                        ? BrandLogo(asset: asset, size: 18)
-                        : Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: context.colors.foregroundSubtlest,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
+                    // 圆底徽标（2026-11-18 用户拍板，Eta 同款）：大小
+                    // 统一感来自品牌色圆底；未知品牌回落中性圆+首字母。
+                    child: BrandLogoChip(modelId: name, asset: asset, size: 18),
                   ),
                 ),
                 const SizedBox(width: 6),

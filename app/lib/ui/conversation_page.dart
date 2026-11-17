@@ -3552,7 +3552,9 @@ class _ConversationPageState extends State<ConversationPage>
     return t.isEmpty ? null : t;
   }
 
-  /// 在光标处插入触发文本并回焦输入框（+ 弹层 / 技能面板共用）。
+  /// 在光标处插入触发文本（+ 弹层 / 技能面板共用）。
+  /// 不回焦输入框（2026-11-18 用户拍板：从面板选择能力不拉键盘——
+  /// 已聚焦时焦点保持不变，未聚焦时保持收起）。
   void _insertAtCursor(String text) {
     final sel = _input.selection;
     final offset = sel.isValid ? sel.baseOffset : _input.text.length;
@@ -3560,7 +3562,6 @@ class _ConversationPageState extends State<ConversationPage>
     final at = offset.clamp(0, t.length);
     _input.text = '${t.substring(0, at)}$text${t.substring(at)}';
     _input.selection = TextSelection.collapsed(offset: at + text.length);
-    FocusScope.of(context).requestFocus(_inputFocusNode);
   }
 
   /// 连接状态点颜色（V2 曾随输入栏 5→4 键整组移除，2026-10-22 用户
@@ -5016,6 +5017,112 @@ class _ConversationPageState extends State<ConversationPage>
                       // live state 尚未就绪时列表已是缓存渲染，用户上滑
                       // 翻读后没箭头回不了底（真机实锤「展开之后没有
                       // 一键到底」的主场景）。
+                      // 悬浮卡（批⑥ 2026-11-18 用户拍板）：技能/审批卡
+                      // 与用量详情卡改**悬浮**——不再挤占消息列表高度。
+                      // 钉在列表底部=输入栏正上方；列表内容从卡下滚过。
+                      // 阴影用列级柔光（两卡各自容器不动）。
+                      if (state != null &&
+                          (state.pendingInteractions.isNotEmpty ||
+                              _usageCardOpen ||
+                              _slashCandidates.isNotEmpty ||
+                              _fileCandidates.isNotEmpty))
+                        Positioned(
+                          left: 10,
+                          right: 10,
+                          bottom: 6,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black
+                                      .withValues(alpha: 0.18),
+                                  blurRadius: 24,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (_usageCardOpen)
+                                  Builder(
+                                    builder: (_) {
+                                      final cwNow =
+                                          state.usage?['contextWindow'];
+                                      final bdNow = cwNow is Map
+                                          ? cwNow['breakdown']
+                                          : null;
+                                      if (bdNow is List && bdNow.isNotEmpty) {
+                                        _lastBreakdown[_sessionId ?? ''] =
+                                            bdNow.whereType<Map>().toList();
+                                      }
+                                      return ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxHeight:
+                                              MediaQuery.sizeOf(context)
+                                                      .height *
+                                                  0.55,
+                                        ),
+                                        child: SingleChildScrollView(
+                                          keyboardDismissBehavior:
+                                              ScrollViewKeyboardDismissBehavior
+                                                  .onDrag,
+                                          child: ContextDetailsCard(
+                                            state: state,
+                                            entitlement: _entCache,
+                                            entitlementLoading: _entLoading,
+                                            resetStatus: _resetStatusCache,
+                                            onUseReset: _useReset,
+                                            cachedBreakdown:
+                                                _lastBreakdown[
+                                                    _sessionId ?? ''],
+                                            onCompact: _sessionId != null
+                                                ? () => _sendCompact(
+                                                    AppStateScope.of(context))
+                                                : null,
+                                            onDrillDown: _sessionId != null
+                                                ? () => Navigator.of(context)
+                                                    .push(
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          ContextCompositionPage(
+                                                            sessionId:
+                                                                _sessionId!,
+                                                          ),
+                                                    ),
+                                                  )
+                                                : null,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                if (state.pendingInteractions.isNotEmpty)
+                                  SlideIn(
+                                    child: InteractionBanner(
+                                      state: state,
+                                      sessionId: _sessionId,
+                                    ),
+                                  ),
+                                // 能力选择卡（命令·能力/文件面板）同入悬浮
+                                // 层（批⑥ 2026-11-18 用户拍板：不再顶内容）。
+                                ComposerPanels(
+                                  slashCandidates: _slashCandidates,
+                                  fileCandidates: _fileCandidates,
+                                  onPick: _insertCompletion,
+                                  // ②：不选也能收起（原仅输入变化路径可关
+                                  // ——空输入时触不到）。
+                                  onClose: () => setState(() {
+                                    _slashCandidates = const [];
+                                    _fileCandidates = const [];
+                                  }),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ),
                       if ((state != null || _cachePreview != null) &&
                           !_stickToBottom)
                         () {
@@ -5274,68 +5381,10 @@ class _ConversationPageState extends State<ConversationPage>
           ),
           // Goal 面板（有目标时置顶于 chrome 区）
           if (state != null) GoalPanel(state: state, sessionId: _sessionId),
-          // 审批横幅（pendingInteractions，先到先得）
-          if (state != null)
-            // V3 动效包#4：审批横幅从输入栏方向滑入（250ms 一次性）。
-            SlideIn(
-              child: InteractionBanner(state: state, sessionId: _sessionId),
-            ),
+          // 技能/审批卡与用量卡已改悬浮（批⑥ 2026-11-18 用户拍板：
+          // 不再挤占消息列表高度）——见消息列表 Stack 内悬浮层。
           if (state != null) QueueStrip(state: state, sessionId: _sessionId),
-          ComposerPanels(
-            slashCandidates: _slashCandidates,
-            fileCandidates: _fileCandidates,
-            onPick: _insertCompletion,
-            // ②：不选也能收起（原仅输入变化路径可关——空输入时触不到）。
-            onClose: () => setState(() {
-              _slashCandidates = const [];
-              _fileCandidates = const [];
-            }),
-          ),
           // 用量详情卡（状态点开关，桌面悬停卡的手机等价物——用户设计）。
-          if (_usageCardOpen)
-            Builder(
-              builder: (_) {
-                final cwNow = state?.usage?['contextWindow'];
-                final bdNow = cwNow is Map ? cwNow['breakdown'] : null;
-                if (bdNow is List && bdNow.isNotEmpty) {
-                  _lastBreakdown[_sessionId ?? ''] = bdNow
-                      .whereType<Map>()
-                      .toList();
-                }
-                return ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.55,
-                  ),
-                  child: SingleChildScrollView(
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    child: ContextDetailsCard(
-                      state: state ?? ConversationState(),
-                      entitlement: _entCache,
-                      entitlementLoading: _entLoading,
-                      resetStatus: _resetStatusCache,
-                      onUseReset: _useReset,
-                      cachedBreakdown: _lastBreakdown[_sessionId ?? ''],
-                      onCompact:
-                          _sessionId != null &&
-                              (state != null || _cachePreview != null)
-                          ? () => _sendCompact(AppStateScope.of(context))
-                          : null,
-                      // ① 上下文组成下钻（早前批次）：只读会话也可看。
-                      onDrillDown: _sessionId != null
-                          ? () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => ContextCompositionPage(
-                                    sessionId: _sessionId!,
-                                  ),
-                                ),
-                              )
-                          : null,
-                    ),
-                  ),
-                );
-              },
-            ),
           // 信息条（用户 2026-10-17 设计定稿二）：上下文用量+模式紧凑左组，
 
           // 模型/思考/状态开关在输入卡内——各归其位，无大片空白。
@@ -5565,6 +5614,8 @@ class _ConversationPageState extends State<ConversationPage>
               selectionBrand: brandLogoAsset(
                 _pendingModelId ?? '${effState?.config?['model'] ?? ''}',
               ),
+              selectionBrandModelId:
+                  _pendingModelId ?? '${effState?.config?['model'] ?? ''}',
               selectionPending:
                   _pendingModelId != null || _pendingThought != null,
               // 面板数据源与药丸同用 effState（含缓存

@@ -120,6 +120,9 @@ class InputBar extends StatelessWidget {
 
   /// 当前模型品牌 logo 资产（null=回退纯文字）。
   final String? selectionBrand;
+
+  /// 当前模型 id（圆底徽标归属判定；空=不渲染徽标）。
+  final String? selectionBrandModelId;
   final bool selectionPending;
   final VoidCallback? onSelectionTap;
 
@@ -156,6 +159,7 @@ class InputBar extends StatelessWidget {
     this.selectionMain = '',
     this.selectionSub,
     this.selectionBrand,
+    this.selectionBrandModelId,
     this.selectionPending = false,
     this.onSelectionTap,
     this.onAdd,
@@ -311,6 +315,7 @@ class InputBar extends StatelessWidget {
                                   label: selectionMain,
                                   subLabel: selectionSub,
                                   brandAsset: selectionBrand,
+                                  brandModelId: selectionBrandModelId,
                                   chevron: true,
                                   pending: selectionPending,
                                   // Paseo 观感二轮（模型药丸不强求，
@@ -378,31 +383,10 @@ class InputBar extends StatelessWidget {
                             : Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if (running) ...[
-                                    SizedBox(
-                                      // （2026-10-24 修复批）：描边停止
-                                      // 键统一 36×36 对齐发送键（修复前默认
-                                      // 盒约 40，与右邻 36 并排错拍）。
-                                      width: 36,
-                                      height: 36,
-                                      child: IconButton.outlined(
-                                        key: const ValueKey('stop-button'),
-                                        visualDensity: VisualDensity.compact,
-                                        padding: EdgeInsets.zero,
-                                        style: IconButton.styleFrom(
-                                          foregroundColor:
-                                              context.colors.destructive,
-                                          side: BorderSide(
-                                            color: context.colors.destructive
-                                                .withValues(alpha: 0.55),
-                                          ),
-                                        ),
-                                        onPressed: onStop,
-                                        icon: const Icon(Icons.stop, size: 18),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                  ],
+                                  // 运行中+有文字：只显示发送键（批⑥
+                                  // 2026-11-18 用户拍板"输入框有文字时
+                                  // 不显示停止按钮"）——描边停止键退役；
+                                  // 停止诉求=清空文字（大停止键回归）。
                                   SizedBox(
                                     width: 36,
                                     height: 36,
@@ -527,6 +511,10 @@ class ToolbarPill extends StatelessWidget {
   /// 单色跟随文字色；null=无 logo 不占位）。
   final String? brandAsset;
 
+  /// 模型 id（2026-11-18 圆底徽标批：圆底+白字标的品牌归属判定与
+  /// 未知品牌首字母回退；空=不渲染徽标）。
+  final String? brandModelId;
+
   /// 次级文字（Paseo 参考：模型名亮+档位暗两级分层，降低文字密度感）。
   final String? subLabel;
   final bool chevron;
@@ -551,6 +539,7 @@ class ToolbarPill extends StatelessWidget {
     this.iconColor,
     required this.label,
     this.brandAsset,
+    this.brandModelId,
     this.subLabel,
     this.chevron = false,
     this.pending = false,
@@ -587,9 +576,14 @@ class ToolbarPill extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (brandAsset != null) ...[
-                // 品牌色自动策略（2026-10-26 拍板①）：浅色原色/深色提亮。
-                BrandLogo(asset: brandAsset!, size: 15),
+              if (brandAsset != null || (brandModelId ?? '').trim().isNotEmpty) ...[
+                // 圆底徽标（2026-11-18 批，Eta 同款）：品牌色圆底+白字标，
+                // 未知品牌回落首字母——大小统一感来自圆底。
+                BrandLogoChip(
+                  modelId: brandModelId ?? '',
+                  asset: brandAsset,
+                  size: 18,
+                ),
                 if (label.isNotEmpty) const SizedBox(width: 5),
               ],
               if (icon != null) ...[
