@@ -49,10 +49,14 @@ List<Map<String, dynamic>> _tallRows() => [
 
 ScrollPosition _pos(WidgetTester tester) => tester
     .state<ScrollableState>(
-      find.descendant(
-        of: find.byKey(const ValueKey('chat-scroll')),
-        matching: find.byType(Scrollable),
-      ),
+      // .first=最外层会话列表本体（正文 selectable 化后行内 EditableText
+      // 自带 Scrollable，descendant 不再唯一）。
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('chat-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     )
     .position;
 
