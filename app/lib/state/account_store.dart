@@ -25,6 +25,7 @@ class StoredAccount {
     required this.id,
     required this.provider,
     this.label = '',
+    this.officialName = '',
   });
   final String id;
   final String provider;
@@ -33,8 +34,18 @@ class StoredAccount {
   /// 「公司订阅」/「个人号」——仅本机存储，不外发不上传。
   final String label;
 
-  /// 显示名（徽标/顶栏统一入口）：备注名优先，未设置回退短码标签。
-  String get displayName => label.trim().isEmpty ? shortLabel : label.trim();
+  /// 官方昵称（2026-11-17 批：登录收割 user_info.displayName 随账号
+  /// 持久化；旧账号/官方页未提供时为空）。重登同 id 时刷新。
+  final String officialName;
+
+  /// 显示名（抽屉电脑卡统一入口）：备注名 > 官方昵称 > 短码标签。
+  String get displayName {
+    final l = label.trim();
+    if (l.isNotEmpty) return l;
+    final o = officialName.trim();
+    if (o.isNotEmpty) return o;
+    return shortLabel;
+  }
 
   /// UI 短标签（不含敏感信息，可进普通展示）：provider 前 2 + id 前 4。
   String get shortLabel {
@@ -158,6 +169,7 @@ class AccountStore {
               id: '${e['id'] ?? ''}'.trim(),
               provider: '${e['provider'] ?? 'unknown'}',
               label: '${e['label'] ?? ''}'.trim(),
+              officialName: '${e['displayName'] ?? ''}'.trim(),
             ),
       ].where((a) => a.id.isNotEmpty).toList();
     } catch (_) {
@@ -169,7 +181,12 @@ class AccountStore {
         _listKey,
         jsonEncode([
           for (final a in list)
-            {'id': a.id, 'provider': a.provider, if (a.label.isNotEmpty) 'label': a.label},
+            {
+              'id': a.id,
+              'provider': a.provider,
+              if (a.label.isNotEmpty) 'label': a.label,
+              if (a.officialName.isNotEmpty) 'displayName': a.officialName,
+            },
         ]),
       );
 
@@ -269,11 +286,13 @@ class AccountStore {
     required String jwt,
     required String provider,
     String? identity,
+    String? displayName,
     bool? setActive,
   }) => _serialized(() => _saveRaw(
         jwt: jwt,
         provider: provider,
         identity: identity,
+        displayName: displayName,
         setActive: setActive,
       ));
 
@@ -281,6 +300,7 @@ class AccountStore {
     required String jwt,
     required String provider,
     String? identity,
+    String? displayName,
     bool? setActive,
   }) async {
     await _ensureMigrated();
@@ -290,14 +310,23 @@ class AccountStore {
     // 此前 jwt 键先落、列表后落，两写之间被杀会留下 clear()/remove
     // Account 都按列表枚举而清不掉的孤儿凭据键（明文 JWT 永久残留）；
     // 反序的中间态（列表有 id 凭据缺）可经重删/重登自愈。
-    final existingLabel = list
-        .where((a) => a.id == id)
-        .map((a) => a.label)
-        .fold('', (prev, e) => prev.isEmpty ? e : prev);
+    final existing = list.where((a) => a.id == id).firstOrNull;
+    final existingLabel = existing?.label ?? '';
+    // 官方昵称：登录收割的 displayName 非空则刷新；空且已有旧值时保留
+    //（官方页偶发缺 user_info 不清已有昵称）。
+    final officialName =
+        (displayName?.trim().isNotEmpty ?? false)
+        ? displayName!.trim()
+        : existing?.officialName ?? '';
     list.removeWhere((a) => a.id == id);
     list.insert(
       0,
-      StoredAccount(id: id, provider: provider, label: existingLabel),
+      StoredAccount(
+        id: id,
+        provider: provider,
+        label: existingLabel,
+        officialName: officialName,
+      ),
     );
     await _writeListRaw(list);
     await _write('$_jwtPrefix$id$_jwtSuffix', jwt);

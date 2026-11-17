@@ -657,19 +657,99 @@ class TaskCatalog {
         'taskIds': taskIds,
       });
 
+  // ── 归档区全局化（2026-11-17 用户 bug 实证）：桌面端 listTaskMetas
+  // 的 SQL 是 `@workspace_key IS NULL OR workspace_key = @workspace_key`
+  // ——scope 不带 workspacePath 时返回**全部工作区**的归档任务（官方
+  // listPinnedTaskIds 同款全局先例）。此前只按当前活跃工作区拉：跨
+  // 工作区归档的任务（其工作区已从桌面移除时）永远查不到，归档页恒空。
+
+  /// 全工作区归档任务（空 scope=桌面端放行 workspace 过滤）。
+  /// 行自带 workspacePath/workspaceIdentity（来源标注+恢复/删除定位）。
+  Future<List<Map<String, dynamic>>> listArchivedTasksGlobal() async {
+    final bridge = _bridgeProvider();
+    if (bridge == null) throw StateError('no active workspace');
+    final raw = await bridge.channels.call(
+      Channels.zcodeTask,
+      'listArchivedTasks',
+      [const <String, dynamic>{}],
+      timeout: const Duration(seconds: 12),
+    );
+    return raw is List
+        ? raw.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList()
+        : const <Map<String, dynamic>>[];
+  }
+
+  /// 任务行自带 scope（归档行含 workspace 归属——跨工作区恢复/删除
+  /// 必须按任务自己的 workspace_key 定位；缺字段回退当前活跃工作区
+  /// =旧行为）。行键优先 camelCase（listTasks 同源映射），兼容
+  /// snake_case（SQL 原列名直出场景）。
+  Map<String, dynamic> taskRowScope(Map<String, dynamic> task) {
+    final path = '${task['workspacePath'] ?? task['workspace_path'] ?? ''}'
+        .trim();
+    final identity =
+        '${task['workspaceIdentity'] ?? task['workspace_identity'] ?? ''}'
+            .trim();
+    return {
+      ...workspaceScopeOf(_activeWorkspaceProvider() ?? const {}),
+      if (path.isNotEmpty) 'workspacePath': path,
+      if (identity.isNotEmpty) 'workspaceIdentity': identity,
+      'taskId': '${task['taskId'] ?? ''}',
+    };
+  }
+
+  /// 跨工作区恢复（scope=任务行自身归属）。
+  Future<dynamic> unarchiveTaskInScope(Map<String, dynamic> task) =>
+      _taskCall('unarchiveTask', taskRowScope(task));
+
+  /// 跨工作区删除单个归档任务（scope=任务行自身归属）。
+  Future<dynamic> deleteArchivedTaskInScope(Map<String, dynamic> task) =>
+      _taskCall('deleteArchivedTask', taskRowScope(task));
+
+  /// 跨工作区批量删除：按 workspace_key 分组逐 scope 发（桌面端契约
+  /// 按 scope 过滤，跨区混发打偏）。返回各组回执（聚合三分计数用）。
+  Future<List<dynamic>> deleteArchivedTasksInScope(
+    List<Map<String, dynamic>> tasks,
+  ) async {
+    final groups = <String, Map<String, dynamic>>{};
+    for (final t in tasks) {
+      final scope = taskRowScope(t);
+      final key =
+          '${scope['workspacePath'] ?? ''}|${scope['workspaceIdentity'] ?? ''}';
+      final group = groups.putIfAbsent(key, () {
+        final g = <String, dynamic>{'taskIds': <String>[]};
+        if (scope['workspacePath'] != null) {
+          g['workspacePath'] = scope['workspacePath'];
+        }
+        if (scope['workspaceIdentity'] != null) {
+          g['workspaceIdentity'] = scope['workspaceIdentity'];
+        }
+        return g;
+      });
+      (group['taskIds'] as List<String>).add('${t['taskId'] ?? ''}');
+    }
+    final receipts = <dynamic>[];
+    for (final g in groups.values) {
+      receipts.add(await _taskCall('deleteArchivedTasks', g));
+    }
+    return receipts;
+  }
+
   /// ③ 会话永久删除两阶段（早前批次）：官方 zcode-task 频道包装
   ///（含归档校验 not-archived+任务索引预约清理——官方 web remote 同路径
   /// windowHostControllerService:851-874 → zcodeTaskServiceAdapter:2979）。
   /// preview 返回范围指纹 revision（树/文件/引用/忙态任一变化即变）；
   /// execute 回传 revision+operationId，服务端重算比对不一致=
   /// blocked+changed 零破坏。超时放宽：preview 需扫全树文件。
-  Future<dynamic> previewArchivedTaskDeletion(String taskId) async {
+  Future<dynamic> previewArchivedTaskDeletion(
+    String taskId, {
+    Map<String, dynamic>? taskScope,
+  }) async {
     final bridge = _bridgeProvider();
     if (bridge == null) throw StateError('no active workspace');
     return bridge.channels.call(
       Channels.zcodeTask,
       'previewArchivedTaskDeletion',
-      [_taskScope(taskId)],
+      [taskScope ?? _taskScope(taskId)],
       timeout: const Duration(seconds: 30),
     );
   }
@@ -678,6 +758,7 @@ class TaskCatalog {
     String taskId, {
     required String revision,
     required String operationId,
+    Map<String, dynamic>? taskScope,
   }) async {
     // 早前批次：bridge 缺失必须抛错（对齐 _taskCall/preview）——原
     // `?.call` 短路返回 null 会让 UI 把「一个字节都没删」谎报成
@@ -689,7 +770,7 @@ class TaskCatalog {
       'permanentlyDeleteArchivedTask',
       [
         {
-          ..._taskScope(taskId),
+          ...(taskScope ?? _taskScope(taskId)),
           'revision': revision,
           'operationId': operationId,
         },

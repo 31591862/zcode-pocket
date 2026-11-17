@@ -176,7 +176,10 @@ class _LoginPageState extends State<LoginPage> {
   /// 决定性证据（此前 WebView 内部对 logcat 完全静默，只能盲猜）。
   // 诊断打点（- 排查期）：排查已收口，置为
   // 静默保留调用点——未来排查一键恢复函数体即可。
-  void _diag(String line) {}
+  /// 登录流程诊断（2026-11-17 昵称排查启用）：全部内容为 URL/长度/
+  /// 状态等非敏感值（token 只打长度），发布版也保留—— harvest 静默
+  /// 失败此前完全不可见（空函数黑匣）。
+  void _diag(String line) => debugPrint('[login] $line');
   WebViewController? _controller;
   Timer? _poll;
   bool _extracting = false;
@@ -416,9 +419,13 @@ class _LoginPageState extends State<LoginPage> {
         savedAccountId = await app.accountStore.save(
           jwt: jwt,
           provider: provider,
-          identity: identity,
+          identity: identity?.id,
+          displayName: identity?.displayName,
         );
         _diag('extract: saved account (provider=$provider)');
+        // 强刷抽屉电脑卡缓存：同 id 重登时 cache key 不变，非 force
+        // 刷新会短路跳过（昵称落库了卡片仍显示旧短码）。
+        app.refreshActiveAccountLabel(force: true);
       } catch (e) {
         _saveRetries++;
         _diag('extract: save FAILED retries=$_saveRetries $e');
@@ -485,7 +492,9 @@ class _LoginPageState extends State<LoginPage> {
   /// 读官方 `oauth:<provider>:user_info`（JSON 字符串）取稳定账号身份
   /// `id`（官方 UserInfo 形态，refs shared/oauth.ts:140）。读不到返回
   /// null（尽力而为：token 在而 user_info 缺失属异常窗口，调用方重试）。
-  Future<String?> _readUserIdentity(
+  /// 收割官方身份（user_info{id, username, displayName}）——昵称随
+  /// 2026-11-17 批入库（抽屉电脑卡展示用）；id 空仍视为收割失败。
+  Future<({String id, String displayName})?> _readUserIdentity(
     WebViewController controller,
     String provider,
   ) async {
@@ -495,12 +504,32 @@ class _LoginPageState extends State<LoginPage> {
       controller,
       'oauth:$safeProvider:user_info',
     );
+    // 无条件落原始载荷（截断 800）：键位/昵称皆展示信息非敏感——
+    // 此前只在解析成功路径打日志，官方页载荷形态变化时静默失败。
+    debugPrint(
+      '[login] user_info raw=${raw == null ? "null" : (raw.length > 800 ? raw.substring(0, 800) : raw)}',
+    );
     if (raw == null || raw.isEmpty) return null;
     try {
       final decoded = jsonDecode(raw);
       if (decoded is Map) {
-        final id = '${decoded['id'] ?? ''}'.trim();
-        return id.isEmpty ? null : id;
+        // id 真实键位=user_id（2026-11-17 实机日志实锤：官方 bigmodel
+        // 页写 user_id，读 'id' 恒空 → identity 恒 absent）。兼容 id。
+        final id =
+            '${decoded['user_id'] ?? decoded['id'] ?? ''}'.trim();
+        if (id.isEmpty) return null;
+        // 昵称多档回落（2026-11-17 实机日志实锤：bigmodel 载荷键位
+        // =user_id/email/avatar/name——昵称键是 name）：displayName →
+        // name → nickname → username。
+        final name =
+            '${decoded['displayName'] ?? decoded['name'] ?? decoded['nickname'] ?? ''}'
+                .trim();
+        final username = '${decoded['username'] ?? ''}'.trim();
+        debugPrint(
+          '[login] user_info keys=${decoded.keys.toList()} '
+          'displayName=$name username=$username',
+        );
+        return (id: id, displayName: name.isNotEmpty ? name : username);
       }
     } catch (_) {}
     return null;

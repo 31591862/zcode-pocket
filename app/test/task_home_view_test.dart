@@ -167,6 +167,20 @@ Future<void> _narrow(WidgetTester tester) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
 }
 
+// 抽屉化适配（2026-11-17）：项目视图迁入侧边抽屉——开抽屉 + 作用域
+// 限定器（项目组键/任务标题与主页最近档同文，查找必须限定抽屉内）。
+Future<void> _openDrawer(WidgetTester tester) async {
+  tester.state<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+  // 定帧泵（pumpAndSettle 会被运行中任务的 RunningPulseDot 永续动画
+  // 卡到超时）——抽屉滑入动画 ~246ms，8×50ms 足够。
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+Finder inDrawer(Finder f) =>
+    find.descendant(of: find.byType(Drawer), matching: f);
+
 void main() {
   final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -215,23 +229,33 @@ void main() {
     await tester.pumpWidget(_host(app));
     await tester.pump();
 
-    expect(find.text('最近'), findsOneWidget);
     expect(find.text('已置顶 1'), findsOneWidget);
     expect(find.text('项目A运行任务'), findsOneWidget);
     expect(find.text('无项目任务'), findsOneWidget);
     expect(find.text('项目A置顶任务'), findsOneWidget);
 
-    await tester.tap(find.text('项目'));
-    await tester.pump();
-    expect(find.byKey(const ValueKey('home-group:project:p1')), findsOneWidget);
-    expect(find.byKey(const ValueKey('home-group:project:p2')), findsOneWidget);
-    expect(find.byKey(const ValueKey('home-group:conversations')), findsOneWidget);
+    // 项目视图迁抽屉（2026-11-17 抽屉化）：开抽屉断言项目分组。
+    await _openDrawer(tester);
+    expect(
+      inDrawer(find.byKey(const ValueKey('home-group:project:p1'))),
+      findsOneWidget,
+    );
+    expect(
+      inDrawer(find.byKey(const ValueKey('home-group:project:p2'))),
+      findsOneWidget,
+    );
+    expect(
+      inDrawer(find.byKey(const ValueKey('home-group:conversations'))),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.byKey(const ValueKey('home-group:project:p1')));
+    await tester.tap(
+      inDrawer(find.byKey(const ValueKey('home-group:project:p1'))),
+    );
     await tester.pump();
-    expect(find.text('项目A运行任务'), findsNothing,
+    expect(inDrawer(find.text('项目A运行任务')), findsNothing,
         reason: '折叠普通项目组后隐藏组内任务');
-    expect(find.text('项目A置顶任务'), findsOneWidget,
+    expect(inDrawer(find.text('项目A置顶任务')), findsOneWidget,
         reason: '置顶区独立，不随项目组折叠');
   });
 
@@ -240,7 +264,9 @@ void main() {
     final app = _HomeApp()..tasks = rows();
     await tester.pumpWidget(_host(app));
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('new-session')));
+    // FAB 退役：新建=抽屉底部行（抽屉化批②）。
+    await _openDrawer(tester);
+    await tester.tap(find.byKey(const ValueKey('drawer-new-task')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
@@ -353,15 +379,26 @@ void main() {
       ];
     await tester.pumpWidget(_host(app));
     await tester.pump();
-    await tester.tap(find.text('项目'));
-    await tester.pump();
+    await _openDrawer(tester);
 
-    expect(find.byKey(const ValueKey('home-show-more-project:p1')), findsOneWidget);
-    expect(find.byKey(const ValueKey('home-expand-all-project:p1')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('home-expand-all-project:p1')));
+    expect(
+      inDrawer(find.byKey(const ValueKey('home-show-more-project:p1'))),
+      findsOneWidget,
+    );
+    expect(
+      inDrawer(find.byKey(const ValueKey('home-expand-all-project:p1'))),
+      findsOneWidget,
+    );
+    await tester.tap(
+      inDrawer(find.byKey(const ValueKey('home-expand-all-project:p1'))),
+    );
     await tester.pump();
-    await tester.scrollUntilVisible(find.text('长项目任务 9'), 120);
-    expect(find.text('长项目任务 9'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      inDrawer(find.text('长项目任务 9')),
+      120,
+      scrollable: inDrawer(find.byType(Scrollable)).first,
+    );
+    expect(inDrawer(find.text('长项目任务 9')), findsOneWidget);
   });
 
   testWidgets('新建搜索时键盘不遮项目选项（viewInsets 透传）', (tester) async {
@@ -372,7 +409,9 @@ void main() {
     final app = _HomeApp()..tasks = rows();
     await tester.pumpWidget(_host(app));
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('new-session')));
+    // FAB 退役：新建=抽屉底部行（抽屉化批②）。
+    await _openDrawer(tester);
+    await tester.tap(find.byKey(const ValueKey('drawer-new-task')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.enterText(
@@ -398,7 +437,9 @@ void main() {
       ..switchCompleter = Completer<void>();
     await tester.pumpWidget(_host(app));
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('new-session')));
+    // FAB 退役：新建=抽屉底部行（抽屉化批②）。
+    await _openDrawer(tester);
+    await tester.tap(find.byKey(const ValueKey('drawer-new-task')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(_sheetTile('示例项目B'));
@@ -423,7 +464,9 @@ void main() {
       ..errorAfterSwitch = '打开工作区失败：模拟';
     await tester.pumpWidget(_host(app));
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('new-session')));
+    // FAB 退役：新建=抽屉底部行（抽屉化批②）。
+    await _openDrawer(tester);
+    await tester.tap(find.byKey(const ValueKey('drawer-new-task')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(_sheetTile('示例项目B'));
@@ -443,19 +486,30 @@ void main() {
       ];
     await tester.pumpWidget(_host(app));
     await tester.pump();
-    await tester.tap(find.text('项目'));
-    await tester.pump();
+    await _openDrawer(tester);
 
-    expect(find.text('长项目任务 0'), findsOneWidget);
-    expect(find.text('长项目任务 2'), findsOneWidget);
-    expect(find.text('长项目任务 3'), findsNothing);
-    expect(find.byKey(const ValueKey('home-show-more-project:p1')), findsOneWidget);
+    expect(inDrawer(find.text('长项目任务 0')), findsOneWidget);
+    expect(inDrawer(find.text('长项目任务 2')), findsOneWidget);
+    expect(inDrawer(find.text('长项目任务 3')), findsNothing);
+    expect(
+      inDrawer(find.byKey(const ValueKey('home-show-more-project:p1'))),
+      findsOneWidget,
+    );
 
-    await tester.tap(find.byKey(const ValueKey('home-show-more-project:p1')));
+    await tester.tap(
+      inDrawer(find.byKey(const ValueKey('home-show-more-project:p1'))),
+    );
     await tester.pump();
-    await tester.scrollUntilVisible(find.text('长项目任务 7'), 120);
-    expect(find.text('长项目任务 7'), findsOneWidget);
-    expect(find.byKey(const ValueKey('home-show-more-project:p1')), findsNothing);
+    await tester.scrollUntilVisible(
+      inDrawer(find.text('长项目任务 7')),
+      120,
+      scrollable: inDrawer(find.byType(Scrollable)).first,
+    );
+    expect(inDrawer(find.text('长项目任务 7')), findsOneWidget);
+    expect(
+      inDrawer(find.byKey(const ValueKey('home-show-more-project:p1'))),
+      findsNothing,
+    );
   });
 
   testWidgets('时间桶可折叠+周月档渐进披露（优化批 #13）', (tester) async {

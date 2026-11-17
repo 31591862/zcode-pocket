@@ -273,31 +273,19 @@ class _PreHighlightBuilder extends MarkdownElementBuilder {
     final language = enabled ? languages[source.trim()] : null;
     final spans =
         language != null ? highlightCode(source, language, brightness: brightness) : null;
-    // 2026-10-23 用户反馈批：代码块右上角一键复制（官方
-    // CodeBlockCopyButton code-block.tsx:454 对位，复制代码原文非渲染
-    // 文本）。按钮浮在横向滚动壳之上，不随代码横向滚动。
-    return Stack(
+    // 2026-10-23 用户反馈批：代码块一键复制（官方 CodeBlockCopyButton
+    // code-block.tsx:454 对位，复制代码原文非渲染文本）。
+    // B 方案（2026-11-17 用户拍板）：语言标签+复制键改为代码块上方
+    // 独立头行（右对齐）——旧实现悬浮右上角与首行长文本重叠（单行
+    // 块 bash 命令等首屏即撞，用户实测）；头行在包的 codeblockDecoration
+    // 容器内，随代码卡同底色，永不遮内容。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _PreScroll(
-          padding: padding,
-          child: spans != null
-              ? Text.rich(
-                  TextSpan(style: baseStyle, children: spans),
-                  softWrap: false,
-                )
-              : Text(
-                  source,
-                  style: baseStyle,
-                  softWrap: false,
-                ),
-        ),
-        Positioned(
-          top: 0,
-          right: 0,
-          // 优化批 #5：复制键左侧加语言标签（等宽小号；语言表只在
-          // 高亮开启时预提取，禁用/流式态不显示——与高亮同开关）。
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 4, 0),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
               if (language != null)
                 Builder(
@@ -320,6 +308,19 @@ class _PreHighlightBuilder extends MarkdownElementBuilder {
               ),
             ],
           ),
+        ),
+        _PreScroll(
+          padding: padding,
+          child: spans != null
+              ? Text.rich(
+                  TextSpan(style: baseStyle, children: spans),
+                  softWrap: false,
+                )
+              : Text(
+                  source,
+                  style: baseStyle,
+                  softWrap: false,
+                ),
         ),
       ],
     );

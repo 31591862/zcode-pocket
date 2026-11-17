@@ -29,7 +29,9 @@ import 'conversation_page.dart';
 import 'pairing_page.dart';
 import 'profiles_sheet.dart';
 import 'settings_page.dart';
+import 'settings_style.dart';
 import 'task_home.dart';
+import 'top_notice.dart';
 
 /// 任务中心（home）：全部任务 + 最近｜项目分组（项目栏优化 B 方案）。
 /// 折叠/展开共用同一主页；项目成为分组与新建上下文，不再是常驻导航轨。
@@ -107,6 +109,11 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
   // 整体替换——State 级存放会让「最近/项目」页签与渐进披露计数在搜索
   // 开合/在线↔恢复切换时被静默重置。
   TaskHomeMode _homeMode = TaskHomeMode.recent;
+
+  /// 抽屉化（2026-11-17 用户拍板）：顶栏标题=抽屉把手（点按开抽屉），
+  /// 电脑/账号切换、项目列表、定时/归档/排序、设置全收抽屉——顶栏
+  /// 只剩 标题+搜索+刷新。
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final Map<String, int> _homeGroupVisibleCounts = {};
   final Set<String> _homeFullyExpandedGroups = {};
 
@@ -950,19 +957,41 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
             setState(() => _paneSelection = null);
           },
           child: Scaffold(
+            key: _scaffoldKey,
+            // 抽屉化：Eta 风侧边抽屉（电脑/账号区→项目列表→工具→设置
+            // →底部新建）——项目列表复用 _TaskHomeView 项目模式内嵌。
+            drawer: _HomeDrawer(
+              computerLabel:
+                  app.activeProfile?.label ?? 'ZCode Companion',
+              accountLabel: app.activeAccountLabel,
+              accountId: app.activeAccountId,
+              onManageComputers: () => showProfilesSheet(context),
+              // 与主页任务行同管道（跨工作区打开编排）——抽屉里点任务
+              // =主页点行，仅多一步先关抽屉。
+              onOpenTask: _openCrossWorkspaceTask,
+              onNewTask: _newSession,
+              onOpenAutomations: openAutomations,
+              onOpenSettings: openSettings,
+              onShowArchived: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ArchivedTasksPage()),
+              ),
+              onShowProjectOrder: () => showProjectOrderSheet(context),
+              groupVisibleCounts: _homeGroupVisibleCounts,
+              fullyExpandedGroups: _homeFullyExpandedGroups,
+              onProgressChanged: () => setState(() {}),
+              stale: app.phase != LinkPhase.online,
+              compact: _wideLayout,
+              selectedSessionId: _paneSelection?.sessionId,
+              now: widget.homeNow,
+            ),
             appBar: _GlassAppBar(
-              // multi-account-ux-1 批1（2026-11-04 拍板）：多账号时顶栏
-              // 显示「电脑名 · 账号显示名」（备注名优先）；单账号/无账号
-              // 维度维持电脑名。
-              title: app.activeAccountLabel == null
-                  ? (app.activeProfile?.label ?? 'ZCode Companion')
-                  : '${app.activeProfile?.label ?? 'ZCode Companion'} · '
-                        '${app.activeAccountLabel}',
-              subtitle: '任务主页',
-              onTitleTap: () => showProfilesSheet(context),
+              title: Text(
+                app.activeProfile?.label ?? 'ZCode Companion',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
               onRefresh: app.refreshWorkspaces,
-              onSettings: openSettings,
-              onAutomations: openAutomations,
               onSearchToggle: () {
                 // 关闭复用 _closeSearch——原实现只清
                 // query，在飞防抖 300ms 后照常发一次全文 RPC（结果被守卫
@@ -974,20 +1003,9 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                 }
               },
             ),
-            // 宽屏档无 FAB（新建入口=左栏「新建任务」行，防遮挡右栏输入栏）。
-            floatingActionButton: _wideLayout
-                ? null
-                : FloatingActionButton.extended(
-                    key: const ValueKey('new-session'),
-                    onPressed:
-                        app.conversation != null ||
-                            app.sidebarProjects.isNotEmpty ||
-                            app.workspaces.isNotEmpty
-                        ? _newSession
-                        : null,
-                    icon: const Icon(Icons.add),
-                    label: const Text('新建'),
-                  ),
+            // 抽屉化批②（2026-11-17 用户拍板）：FAB 全档退役——新建
+            // 统一走抽屉底部「新建任务」行（窄屏原 FAB/宽屏原左栏行
+            // 双轨并存观感割裂，且 FAB 悬浮遮挡列表尾）。
             body: !_wideLayout
                 ? homeColumn
                 : Row(
@@ -1275,25 +1293,16 @@ String? _workspaceLabelOf(Map<String, dynamic> ws) {
 /// 实体白 + 底 hairline——摘除模糊后仅剩的半透明白在纯白底上零收益）。
 /// 顶栏常驻当前电脑名，点击弹出档案面板。
 class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
-  final String title;
-  final String subtitle;
-  final VoidCallback onTitleTap;
+  /// 标题组件（批④ 2026-11-17 用户拍板：设备名退役，运行状态顶栏化
+  /// ——运行中任务数+脉冲点直接可见；空闲回落设备名保上下文）。
+  final Widget title;
   final VoidCallback onRefresh;
-  final VoidCallback? onSettings;
   final VoidCallback? onSearchToggle;
-
-  /// 定时任务列表入口（阶段 3 第三段；官方桌面在设置里，手机端放任务
-  /// 中心 AppBar 更贴任务域）。
-  final VoidCallback? onAutomations;
 
   const _GlassAppBar({
     required this.title,
-    required this.subtitle,
-    required this.onTitleTap,
     required this.onRefresh,
-    this.onSettings,
     this.onSearchToggle,
-    this.onAutomations,
   });
 
   @override
@@ -1310,73 +1319,13 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
       // ui-references §V1：AppBar 统一 52 高；会话页同款）。
       toolbarHeight: 52,
       titleSpacing: 8,
-      title: InkWell(
-        onTap: onTitleTap,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        child: Container(
-          // 批次A 触控（设计审计）：竖向命中垫 ≥48——minHeight 保证与
-          // 标题内容行数无关；AppBar 工具栏 56 容得下，文字仍居中。
-          constraints: const BoxConstraints(minHeight: 48),
-          // 左对齐（视觉验收 ：center 在展开态宽约束下把两行标题
-          // 漂到可用空间中央，与折叠态左对齐不一致）。
-          alignment: Alignment.centerLeft,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            title,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        const Icon(Icons.expand_more, size: 18),
-                      ],
-                    ),
-                    if (subtitle.isNotEmpty)
-                      Text(
-                        subtitle,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppType.uiXs,
-                          color: context.colors.foregroundSubtlest,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      title: title,
       actions: [
         if (onSearchToggle != null)
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: tr('搜索任务'),
             onPressed: onSearchToggle,
-          ),
-        if (onAutomations != null)
-          IconButton(
-            key: const ValueKey('open-automations'),
-            icon: const Icon(Icons.schedule),
-            tooltip: tr('定时任务'),
-            onPressed: onAutomations,
-          ),
-        if (onSettings != null)
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: tr('设置'),
-            onPressed: onSettings,
           ),
         IconButton(
           icon: const Icon(Icons.refresh),
@@ -1387,6 +1336,337 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1),
         child: Container(height: 1, color: context.colors.border),
+      ),
+    );
+  }
+}
+
+/// 首页侧边抽屉（抽屉化 2026-11-17 用户拍板）：收纳低频入口与项目
+/// 列表——顶栏从 4 图标瘦到 2（搜索/刷新），标题=抽屉把手；「最近/
+/// 项目」segmented 行与 ⋮ 菜单整行退役。结构（Eta 视觉语言）：
+/// 电脑/账号区 → 项目列表（复用 _TaskHomeView 项目模式内嵌）→
+/// 工具组（定时/归档/排序）→ 设置 → 底部新建。所有动作先关抽屉再
+/// 执行（push 页面后抽屉不残留半开态）。
+class _HomeDrawer extends StatefulWidget {
+  final String computerLabel;
+
+  /// 账号显示名（备注名 > 官方昵称 > 短码，AppState 缓存）。
+  final String? accountLabel;
+
+  /// 账号完整 id（同轮缓存；空/无账号维度不显示 ID 行）。
+  final String? accountId;
+  final VoidCallback onManageComputers;
+  final void Function(Map<String, dynamic> task) onOpenTask;
+  final VoidCallback onNewTask;
+  final VoidCallback onOpenAutomations;
+  final VoidCallback onOpenSettings;
+  final VoidCallback onShowArchived;
+  final VoidCallback onShowProjectOrder;
+  final Map<String, int> groupVisibleCounts;
+  final Set<String> fullyExpandedGroups;
+  final VoidCallback onProgressChanged;
+
+  /// 离线/恢复中预览清洗（与主列表同口径——缓存里的 running/waiting
+  /// 不得冒充当前状态）。
+  final bool stale;
+
+  /// 宽屏档沿用紧凑单行（与左栏同构）；窄屏抽屉=卡片。
+  final bool compact;
+
+  /// 右栏当前打开的会话（宽屏紧凑行选中填充）。
+  final String? selectedSessionId;
+
+  /// 注入时钟（测试钉时钟/相对时间一致性——不传=墙钟）。
+  final DateTime? now;
+
+  const _HomeDrawer({
+    required this.computerLabel,
+    required this.accountLabel,
+    this.accountId,
+    required this.onManageComputers,
+    required this.onOpenTask,
+    required this.onNewTask,
+    required this.onOpenAutomations,
+    required this.onOpenSettings,
+    required this.onShowArchived,
+    required this.onShowProjectOrder,
+    required this.groupVisibleCounts,
+    required this.fullyExpandedGroups,
+    required this.onProgressChanged,
+    required this.stale,
+    this.compact = false,
+    this.selectedSessionId,
+    this.now,
+  });
+
+  @override
+  State<_HomeDrawer> createState() => _HomeDrawerState();
+}
+
+/// 抽屉化批②（2026-11-17 用户拍板）：目录卡统一——项目区也按设置/
+/// 工具组同款白卡包裹，头行点按折叠/展开项目列表（默认展开）。
+/// 会话级记忆：Scaffold 常驻抽屉，抽屉开合不重置展开态。
+class _HomeDrawerState extends State<_HomeDrawer> {
+  bool _projectsExpanded = true;
+
+  /// 关抽屉→执行动作（push/弹层/开新会话）。
+  void _closeThen(BuildContext context, VoidCallback action) {
+    Navigator.of(context).pop();
+    action();
+  }
+
+  Widget _iconEntry(
+    BuildContext context,
+    IconData icon,
+    Color color,
+    String label,
+    VoidCallback action, {
+    Key? key,
+  }) => Expanded(
+        child: InkWell(
+          key: key,
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _closeThen(context, action),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 22, color: color),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: AppType.uiXs,
+                    color: context.colors.foregroundSubtle,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  /// 底部图标工具栏：定时/归档/排序/设置 四入口等宽一行。
+  Widget _bottomIconBar(BuildContext context, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? kSettingsCardDark : kSettingsCardLight,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Row(
+          children: [
+            _iconEntry(
+              context,
+              Icons.schedule_outlined,
+              kSettingsIconBlue,
+              tr('定时'),
+              widget.onOpenAutomations,
+              key: const ValueKey('drawer-automations'),
+            ),
+            _iconEntry(
+              context,
+              Icons.inventory_2_outlined,
+              kSettingsIconGreen,
+              tr('归档'),
+              widget.onShowArchived,
+              key: const ValueKey('drawer-archived'),
+            ),
+            _iconEntry(
+              context,
+              Icons.low_priority_outlined,
+              kSettingsIconOrange,
+              tr('排序'),
+              widget.onShowProjectOrder,
+              key: const ValueKey('drawer-project-order'),
+            ),
+            _iconEntry(
+              context,
+              Icons.settings_outlined,
+              kSettingsIconBlue,
+              tr('设置'),
+              widget.onOpenSettings,
+              key: const ValueKey('drawer-settings'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 项目面板：头行+项目列表一个白卡（与设置/工具组同视觉语言）。
+  /// 展开态由调用方以 Expanded 包裹（卡占满剩余高，列表滚动域=卡内）；
+  /// 收起态仅头行、卡随内在高。
+  Widget _projectPanel(BuildContext context, bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? kSettingsCardDark : kSettingsCardLight,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          children: [
+            ListTile(
+              leading: const Icon(
+                // category（非 folder）——folder_outlined 留给列表内
+                // 行卡语义（未归类测试断言列表域无 folder 图标）。
+                Icons.category_outlined,
+                size: 24,
+                color: kSettingsIconGreen,
+              ),
+              title: const Text(
+                '项目',
+                style: TextStyle(fontSize: AppType.uiBase),
+              ),
+              trailing: Icon(
+                _projectsExpanded ? Icons.expand_less : Icons.expand_more,
+                size: 22,
+              ),
+              onTap: () =>
+                  setState(() => _projectsExpanded = !_projectsExpanded),
+            ),
+            // 组内细分隔线（与 settingsGroupCard 同规格：54 缩进对齐
+            // ListTile 文字列）。
+            if (_projectsExpanded)
+              Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: 54,
+                color: isDark
+                    ? const Color(0x14FFFFFF)
+                    : const Color(0x0F000000),
+              ),
+            if (_projectsExpanded)
+              Expanded(
+                child: _TaskHomeView(
+                  onOpen:
+                      (task) => _closeThen(
+                        context,
+                        () => widget.onOpenTask(task),
+                      ),
+                  now: widget.now,
+                  stale: widget.stale,
+                  // 恒用紧凑行（批⑤ 用户反馈：抽屉白卡内再嵌白底
+                  // 边框卡=卡中卡割裂感；扁平单行才是设置卡同款
+                  // inset list 观感，宽窄档统一）。
+                  compact: true,
+                  selectedSessionId: widget.selectedSessionId,
+                  mode: TaskHomeMode.projects,
+                  onModeChanged: (_) {},
+                  groupVisibleCounts: widget.groupVisibleCounts,
+                  fullyExpandedGroups: widget.fullyExpandedGroups,
+                  onProgressChanged: widget.onProgressChanged,
+                  embedded: true,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Drawer(
+      backgroundColor: settingsPageBg(Theme.of(context).brightness),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── 电脑/账号区（原顶栏标题点按语义迁入）。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: settingsGroupCard(context, isDark, [
+                ListTile(
+                  leading: const Icon(
+                    Icons.computer_outlined,
+                    size: 24,
+                    color: kSettingsIconBlue,
+                  ),
+                  title: Text(
+                    widget.computerLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: AppType.uiBase,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  // 两行：账号昵称（批④ 2026-11-17 用户拍板：昵称+
+                  // 完整 ID 都要见）+ 完整 id（等宽小字，长 id 截断）。
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.accountLabel == null
+                            ? '点按切换电脑'
+                            : widget.accountLabel!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: AppType.uiCaption,
+                        ),
+                      ),
+                      if ((widget.accountId ?? '').trim().isNotEmpty)
+                        Text(
+                          'ID ${widget.accountId}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: AppType.uiXs,
+                            fontFamily: 'monospace',
+                            color: context.colors.foregroundSubtlest,
+                          ),
+                        ),
+                    ],
+                  ),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () => _closeThen(context, widget.onManageComputers),
+                ),
+              ]),
+            ),
+            // ── 新建任务（批⑤ 2026-11-17 用户拍板：账号与项目之间；
+            // FAB 已退役，全档唯一常驻新建入口）。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: FilledButton.tonalIcon(
+                key: const ValueKey('drawer-new-task'),
+                onPressed: () => _closeThen(context, widget.onNewTask),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('新建任务'),
+              ),
+            ),
+            // ── 项目面板（列表与头卡包进同一块白卡）。展开态占满
+            // 中部剩余高；收起态由 Spacer 顶底——图标工具栏**永久钉在
+            // 抽屉底部**（批⑤ 用户反馈：收起时上浮不好看）。
+            if (_projectsExpanded)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  child: _projectPanel(context, isDark),
+                ),
+              )
+            else ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                child: _projectPanel(context, isDark),
+              ),
+              const Spacer(),
+            ],
+            // ── 底部图标工具栏（永久钉底）。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              child: _bottomIconBar(context, isDark),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1619,6 +1899,10 @@ class _TaskHomeView extends StatefulWidget {
   /// r3：宽屏收起钮回调（「最近/项目」行尾渲染；null=窄屏不渲染）。
   final VoidCallback? onPaneCollapse;
 
+  /// 抽屉化（2026-11-17 用户拍板）：抽屉内嵌档——不渲染头行
+  ///（segmented/⋮/收起钮都是主页顶栏语义，抽屉里无意义）。
+  final bool embedded;
+
   const _TaskHomeView({
     required this.onOpen,
     this.now,
@@ -1640,6 +1924,7 @@ class _TaskHomeView extends StatefulWidget {
     // dual-pane-collapse-2 r3/r4（用户反馈：把手占左栏宽度不可取）——
     // 收起钮在「最近/项目」分段行尾（⋮ 右侧），宽屏恒可用。
     this.onPaneCollapse,
+    this.embedded = false,
   });
 
   @override
@@ -1903,80 +2188,24 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    // 抽屉化（2026-11-17 用户拍板）：最近/项目 segmented 与 ⋮（项目
+    // 排序/已归档）整行移除——项目列表与低频入口全迁侧边抽屉；头行
+    // 只在宽屏（左栏可收起）保留收起钮细行，窄屏零头行直达任务流。
+    if (widget.embedded || widget.onPaneCollapse == null) {
+      return const SizedBox.shrink();
+    }
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 8, 4, 8),
+      padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Expanded(
-            child: SegmentedButton<TaskHomeMode>(
-              showSelectedIcon: false,
-              expandedInsets: L10n.resolvedLocale == 'en-US'
-                  ? EdgeInsets.zero
-                  : null,
-              // 审美门建议①（用户拍板）：选中段默认色来自主题
-              // colorScheme（紫系）与全局「黑白骨架+智谱蓝点睛」离群，
-              // 且与 FAB 同屏双强调色——显式归一品牌蓝。
-              style: SegmentedButton.styleFrom(
-                padding: L10n.resolvedLocale == 'en-US'
-                    ? EdgeInsets.zero
-                    : null,
-                minimumSize: const Size(0, 40),
-                selectedBackgroundColor: context.colors.brandAccent.withValues(
-                  alpha: AppAlpha.faint,
-                ),
-                selectedForegroundColor: context.colors.brandAccent,
-              ),
-              segments: const [
-                ButtonSegment(
-                  value: TaskHomeMode.recent,
-                  label: Text(
-                    '最近',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                ButtonSegment(
-                  value: TaskHomeMode.projects,
-                  label: Text(
-                    '项目',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-              selected: {widget.mode},
-              onSelectionChanged: (selection) =>
-                  widget.onModeChanged(selection.first),
-            ),
+          IconButton(
+            key: const ValueKey('toggle-pane-expanded'),
+            tooltip: tr('收起任务列表'),
+            icon: const Icon(Icons.keyboard_double_arrow_left, size: 20),
+            visualDensity: VisualDensity.compact,
+            onPressed: widget.onPaneCollapse,
           ),
-          PopupMenuButton<String>(
-            key: const ValueKey('home-more'),
-            tooltip: tr('更多'),
-            icon: const Icon(Icons.more_vert, size: 20),
-            onSelected: (value) {
-              if (value == 'order') {
-                showProjectOrderSheet(context);
-              } else if (value == 'archived') {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ArchivedTasksPage()),
-                );
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'order', child: Text('项目排序')),
-              PopupMenuItem(value: 'archived', child: Text('已归档的任务')),
-            ],
-          ),
-          // r3（用户反馈：把手占左栏宽度不可取，按钮应在「最近/项目」行
-          // 右侧）：宽屏收起钮放 ⋮ 旁——不占列表空间，操作发生在左栏顶部。
-          if (widget.onPaneCollapse != null)
-            IconButton(
-              key: const ValueKey('toggle-pane-expanded'),
-              tooltip: tr('收起任务列表'),
-              icon: const Icon(Icons.keyboard_double_arrow_left, size: 20),
-              visualDensity: VisualDensity.compact,
-              onPressed: widget.onPaneCollapse,
-            ),
         ],
       ),
     );
@@ -2068,9 +2297,11 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
                 icon: Icons.chat_bubble_outline,
                 // 宽屏无 FAB（起）——空态
                 // 文案不得指向不存在的右下角按钮。
-                text: widget.compact
+                text: widget.embedded
+                    ? '该项目暂无任务'
+                    : widget.compact
                     ? '还没有任务\n点下方「新建任务」开始对话'
-                    : '还没有任务\n点右下角「新建」开始对话',
+                    : '还没有任务\n点抽屉底部「新建任务」开始对话',
               ),
             if (widget.showNewTaskNav && widget.onNew != null) ...[
               const SizedBox(height: 12),
@@ -2334,7 +2565,9 @@ class _HomeGroupHeader extends StatelessWidget {
                     ? Icons.chat_bubble_outline
                     : isRecentBucket
                     ? Icons.schedule
-                    : Icons.folder_outlined,
+                    : (item.collapsed
+                          ? Icons.folder_outlined
+                          : Icons.folder_open_outlined),
                 size: 17,
                 color: context.colors.foregroundSubtle,
               ),
@@ -3531,22 +3764,20 @@ void _showTaskActions(
                   run(() async {
                     await app.archiveTask(entry.sessionId);
                     if (!context.mounted) return;
-                    // 验收（用户两轮反馈不消失）：duration 显式 3s——旧的
-                    // 6s hideCurrentSnackBar 兜底会误关后续提示条，已移除。
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        behavior: SnackBarBehavior.floating,
-                        content: Text(
+                    // 顶部提示（批③ 2026-11-17）：Flutter 3.47 SnackBar
+                    // 带 action 默认 persist（duration 到时短路不关闭，
+                    // 用户实测永驻）——改自绘 TopNotice，3s 自动退场，
+                    // 撤销窗口期内仍可点。
+                    TopNotice.show(
+                      context,
+                      message:
                           '已归档「${entry.title.isEmpty ? '未命名任务' : entry.title}」',
-                        ),
-                        duration: const Duration(milliseconds: 3000),
-                        action: SnackBarAction(
-                          label: '撤销',
-                          onPressed: () => run(
-                            () => app.unarchiveTask(entry.sessionId),
-                            '撤销失败',
-                          ),
-                        ),
+                      icon: Icons.archive_outlined,
+                      iconColor: kSettingsIconGreen,
+                      actionLabel: '撤销',
+                      onAction: () => run(
+                        () => app.unarchiveTask(entry.sessionId),
+                        '撤销失败',
                       ),
                     );
                   }, '归档失败');
@@ -3939,6 +4170,7 @@ class _CompactTaskRow extends StatelessWidget {
   final bool unread;
   final int updatedAt;
 
+
   /// 闲时任务月亮标（官方对位）。
   final String? offPeakTaskId;
 
@@ -4024,7 +4256,9 @@ class _CompactTaskRow extends StatelessWidget {
       MediaQuery.textScalerOf(context),
     );
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      // 左 16 对齐组头图标缩进（抽屉嵌入批：旋转圈/文字列与文件夹
+      // 图标同轨；宽屏左栏同款受益）。
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Material(
         key: ValueKey('compact-task-row-$taskId'),
         color: selected ? context.colors.selected : Colors.transparent,
@@ -4061,10 +4295,13 @@ class _CompactTaskRow extends StatelessWidget {
                           : running
                           ? Center(
                               child: SizedBox(
+                                // 视觉直径对齐文件夹字形（17dp 图标的
+                                // 字形观感 ≈ 14dp 圆弧——圆弧满框无内距，
+                                // 17dp 圆视觉偏大，用户实测）；缩进已同轨。
                                 width: 14,
                                 height: 14,
                                 child: CircularProgressIndicator(
-                                  strokeWidth: 1.6,
+                                  strokeWidth: 2,
                                   color: context.colors.foregroundSubtle,
                                 ),
                               ),

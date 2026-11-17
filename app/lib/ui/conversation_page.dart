@@ -32,6 +32,8 @@ import 'brand_logo.dart';
 import 'attachments_compose.dart';
 import 'attachment_annotate_page.dart';
 import 'quota_banner.dart';
+import 'settings_style.dart';
+import 'top_notice.dart';
 import 'voice_input_sheet.dart';
 import '../state/cache_policy.dart';
 import '../state/draft_store.dart';
@@ -3154,25 +3156,25 @@ class _ConversationPageState extends State<ConversationPage>
       return;
     }
     final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger?.showSnackBar(
-      SnackBar(
-        key: const ValueKey('deeplink-prompt'),
-        duration: const Duration(seconds: 5),
-        content: const Text('已打开会话——要定位到产生通知的消息吗？'),
-        action: SnackBarAction(
-          label: tr('定位'),
-          onPressed: () {
-            if (!mounted) return;
-            if (!_jumpToRowStart(rowId)) {
-              // 目标不在当前窗口（更早历史）：提示而不静默失败。
-              // （外层 ?. 已把 messenger 提升为非空，此处直接调用。）
-              messenger.showSnackBar(
-                const SnackBar(content: Text('该消息在更早的历史中，请上滑加载')),
-              );
-            }
-          },
-        ),
-      ),
+    // 顶部提示（批③ 2026-11-17）：带 action 的 SnackBar 在 Flutter 3.47
+    // 默认 persist 永驻——改 TopNotice（5s 自动退场，定位窗口期内可点）。
+    TopNotice.show(
+      context,
+      key: const ValueKey('deeplink-prompt'),
+      message: '已打开会话——要定位到产生通知的消息吗？',
+      icon: Icons.notifications_active_outlined,
+      iconColor: kSettingsIconOrange,
+      actionLabel: tr('定位'),
+      onAction: () {
+        if (!mounted) return;
+        if (!_jumpToRowStart(rowId)) {
+          // 目标不在当前窗口（更早历史）：提示而不静默失败。
+          messenger?.showSnackBar(
+            const SnackBar(content: Text('该消息在更早的历史中，请上滑加载')),
+          );
+        }
+      },
+      duration: const Duration(seconds: 5),
     );
   }
 
@@ -4610,82 +4612,68 @@ class _ConversationPageState extends State<ConversationPage>
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: AppType.uiBase),
             ),
-            // Paseo 参考（2026-10-23）：副行标当前电脑——多电脑场景核心
-            // 诉求"这条会话连的是哪台"常驻可见（浅灰小字+电脑图标；
-            // 无活跃档案时不占位）。6.2 选分支：分支标签同排尾接
-            // （工作区级 git 状态；两者独立出现，任一存在即渲染本行；
-            // 非 git 仓库/加载失败分支段不占位；点按进分支弹层——draft
-            // 态切完再发消息=会话跑在新分支上）。
-            if (_deviceLabel != null || _branchCurrent != null)
+            // 副行只留分支标签（2026-11-17 用户拍板：设备名退役——
+            // 设备维度归抽屉电脑卡；运行状态由下方既有
+            // if (running) Text('运行中…') 常驻标题列，即用户记忆中的
+            // 那个元素）。点按进分支弹层——draft 态切完再发消息=
+            // 会话跑在新分支上。
+            // 运行中并入分支行尾（批⑤ 用户拍板：不单独起一行）。
+            if (running || _branchCurrent != null)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_deviceLabel != null) ...[
-                    Icon(
-                      Icons.computer,
-                      size: 10,
-                      color: context.colors.foregroundSubtlest,
-                    ),
-                    const SizedBox(width: 3),
-                    Flexible(
-                      child: Text(
-                        _deviceLabel!,
-                        translate: false,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: AppType.uiXs,
-                          color: context.colors.foregroundSubtle,
+                  if (_branchCurrent != null)
+                  Flexible(
+                    child: InkWell(
+                      key: const ValueKey('branch-entry'),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      onTap: () => _openBranchSheet(app2),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 2,
+                          horizontal: 4,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.call_split,
+                              size: 10,
+                              color: context.colors.foregroundSubtlest,
+                            ),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                _branchCurrent!,
+                                translate: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: AppType.uiXs,
+                                  color: context.colors.foregroundSubtle,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ],
-                  if (_branchCurrent != null) ...[
-                    if (_deviceLabel != null) const SizedBox(width: 8),
-                    Flexible(
-                      child: InkWell(
-                        key: const ValueKey('branch-entry'),
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        onTap: () => _openBranchSheet(app2),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 2,
-                            horizontal: 4,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.call_split,
-                                size: 10,
-                                color: context.colors.foregroundSubtlest,
-                              ),
-                              const SizedBox(width: 3),
-                              Flexible(
-                                child: Text(
-                                  _branchCurrent!,
-                                  translate: false,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: AppType.uiXs,
-                                    color: context.colors.foregroundSubtle,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                  ),
+                  if (running) ...[
+                    const SizedBox(width: 8),
+                    RunningPulseDot(
+                      color: context.colors.running,
+                      size: 8,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '运行中…',
+                      style: TextStyle(
+                        fontSize: AppType.uiXs,
+                        color: context.colors.foregroundSubtle,
                       ),
                     ),
                   ],
                 ],
-              ),
-            if (running)
-              Text(
-                '运行中…',
-                style: TextStyle(
-                  fontSize: AppType.uiXs,
-                  color: context.colors.foregroundSubtle,
-                ),
               ),
           ],
         ),
@@ -5794,13 +5782,6 @@ class _ConversationPageState extends State<ConversationPage>
             .trim();
     if (title.isNotEmpty) return title;
     return widget.title;
-  }
-
-  /// 当前电脑备注名（Paseo 参考 2026-10-23 顶栏副行）。
-  String? get _deviceLabel {
-    final label = '${AppStateScope.of(context).activeProfile?.label ?? ''}'
-        .trim();
-    return label.isEmpty ? null : label;
   }
 
   /// 草稿落点（2026-10-27 用户④）：新会话发送前必须能看出会建在

@@ -30,7 +30,6 @@ import '../core/theme.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../transport/id.dart' show generateUuid;
-import 'app_widgets.dart';
 import 'settings_security_page.dart';
 
 /// blockedReason → 人话（官方词表语义：running/in-use/not-found/
@@ -61,6 +60,7 @@ void resetDeletionPinLimiter() {
 Future<void> showPermanentDeletionFlow(
   BuildContext context, {
   required Map<String, dynamic> task,
+  Map<String, dynamic>? taskScope,
 }) async {
   final app = AppStateScope.of(context);
   final taskId = '${task['taskId']}';
@@ -70,7 +70,10 @@ Future<void> showPermanentDeletionFlow(
 
   // ── 第一段：范围预览（服务端权威——revision 指纹随范围变化）──
   // future 在 dialog 外创建（builder 重建不重发只读查询）。
-  final previewFuture = app.previewArchivedTaskDeletion(taskId);
+  final previewFuture = app.previewArchivedTaskDeletion(
+    taskId,
+    taskScope: taskScope,
+  );
   final verifyLabel = app.uiPrefs.appLockModeRaw == 'system'
       ? tr('继续（需系统验证）')
       : tr('继续（需验证 PIN）');
@@ -85,7 +88,13 @@ Future<void> showPermanentDeletionFlow(
             title: Text(tr('正在核对删除范围…')),
             content: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: [AppLoading('')],
+              children: [
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
             ),
           );
         }
@@ -131,6 +140,7 @@ Future<void> showPermanentDeletionFlow(
     taskId,
     revision: revision,
     operationId: generateUuid(),
+    taskScope: taskScope,
   );
   final dialogOpen = Completer<void>();
   unawaited(
@@ -141,9 +151,15 @@ Future<void> showPermanentDeletionFlow(
         canPop: false,
         child: AlertDialog(
           title: Text(tr('正在永久删除…')),
-          content: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [AppLoading('')],
+          content: const SizedBox(
+            height: 32,
+            child: Center(
+              child: SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
           ),
         ),
       ),

@@ -53,6 +53,16 @@ Widget _host(AppState app) => AppStateScope(
       child: MaterialApp(theme: buildAppTheme(), home: const TaskCenterPage()),
     );
 
+
+// 抽屉化批②（2026-11-17）：FAB 退役——新建入口=抽屉底部行。
+Future<void> _openDrawer(WidgetTester tester) async {
+  tester.state<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+  // 定帧泵（pumpAndSettle 会被运行中任务脉冲动画卡到超时）。
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
 void main() {
   testWidgets('新建项目：选择器行→名字对话框→键盘校验→创建+切换+进新会话', (tester) async {
     tester.view.physicalSize = const Size(375, 806);
@@ -63,7 +73,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     // 打开新建选择器。
-    await tester.tap(find.byKey(const ValueKey('new-session')));
+    // FAB 退役：新建=抽屉底部行（抽屉化批②）。
+    await _openDrawer(tester);
+    await tester.tap(find.byKey(const ValueKey('drawer-new-task')));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -126,7 +138,9 @@ void main() {
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    await tester.tap(find.byKey(const ValueKey('new-session')));
+    // FAB 退役：新建=抽屉底部行（抽屉化批②）。
+    await _openDrawer(tester);
+    await tester.tap(find.byKey(const ValueKey('drawer-new-task')));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }

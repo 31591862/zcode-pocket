@@ -54,7 +54,10 @@ class _DelApp extends AppState {
   LinkPhase get phase => LinkPhase.online;
 
   @override
-  Future<dynamic> previewArchivedTaskDeletion(String taskId) async {
+  Future<dynamic> previewArchivedTaskDeletion(
+    String taskId, {
+    Map<String, dynamic>? taskScope,
+  }) async {
     if (previewError != null) throw previewError!;
     return previewResult;
   }
@@ -64,6 +67,7 @@ class _DelApp extends AppState {
     String taskId, {
     required String revision,
     required String operationId,
+    Map<String, dynamic>? taskScope,
   }) async {
     if (executeError != null) throw executeError!;
     executes.add({

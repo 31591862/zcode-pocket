@@ -534,8 +534,13 @@ class TurnTailActionsState extends State<TurnTailActions> {
     // 扫掠 2.0 溢出 26px 修复（字号 2.0 档五行操作+时间标签超 343 视宽）：
     // FittedBox(scaleDown)——常态字号内在宽不足 343 时零缩放零影响，
     // 极端档整体等比收纳（2026-11-16 批修复回退后补回）。
+    // alignment: centerLeft（2026-11-17 用户反馈"一会中一会左"）：
+    // TurnBar 宿主 Column 是 stretch（紧约束）——FittedBox 默认 center
+    // 会把撑满宽的按钮行居中；start 宿主（松约束）则缩到内容宽靠左。
+    // 显式左对齐两宿主归一（改动前裸 Row 在 stretch 下本就左起）。
     return FittedBox(
       fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

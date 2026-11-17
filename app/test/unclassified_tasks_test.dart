@@ -98,6 +98,20 @@ Future<void> _narrow(WidgetTester tester) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
 }
 
+// 抽屉化适配（2026-11-17）：项目视图迁入侧边抽屉——开抽屉 + 作用域
+// 限定器（项目组键/任务标题与主页最近档同文，查找必须限定抽屉内）。
+Future<void> _openDrawer(WidgetTester tester) async {
+  tester.state<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+  // 定帧泵（pumpAndSettle 会被运行中任务的 RunningPulseDot 永续动画
+  // 卡到超时）——抽屉滑入动画 ~246ms，8×50ms 足够。
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+Finder inDrawer(Finder f) =>
+    find.descendant(of: find.byType(Drawer), matching: f);
+
 void main() {
   testWidgets('B：默认最近直接展示未归类任务，无 chip、无第二层路由', (tester) async {
     await _narrow(tester);
@@ -106,7 +120,8 @@ void main() {
     await tester.pumpWidget(_host(app));
     await tester.pump();
 
-    expect(find.text('最近'), findsOneWidget);
+    // 抽屉化：segmented 退役，主页直达最近任务流。
+    expect(find.text('最近'), findsNothing);
     expect(find.text('整理桌面'), findsOneWidget);
     expect(find.text('写周报'), findsOneWidget);
     expect(
@@ -130,17 +145,21 @@ void main() {
     ];
     await tester.pumpWidget(_host(app, now: now));
     await tester.pump();
-    await tester.tap(find.text('项目'));
-    await tester.pump();
+    // 项目视图迁抽屉（2026-11-17）：开抽屉断言未归类组。
+    await _openDrawer(tester);
 
-    expect(find.byKey(const ValueKey('home-group:conversations')), findsOneWidget);
-    expect(find.text('default'), findsNothing, reason: '目录名不得再作副标题');
-    expect(find.textContaining('1758000000'), findsNothing,
+    expect(
+      inDrawer(find.byKey(const ValueKey('home-group:conversations'))),
+      findsOneWidget,
+    );
+    expect(inDrawer(find.text('default')), findsNothing,
+        reason: '目录名不得再作副标题');
+    expect(inDrawer(find.textContaining('1758000000')), findsNothing,
         reason: '时间戳-uuid 目录名（用户口中的乱码）不得显示');
-    expect(find.byIcon(Icons.folder_outlined), findsNothing,
+    expect(inDrawer(find.byIcon(Icons.folder_outlined)), findsNothing,
         reason: '项目视图卡片不再重复显示来源；未归类组头是对话图标');
-    expect(find.text('刚刚'), findsOneWidget, reason: '相对时间保留');
-    expect(find.text('3 分钟前'), findsOneWidget);
+    expect(inDrawer(find.text('刚刚')), findsOneWidget, reason: '相对时间保留');
+    expect(inDrawer(find.text('3 分钟前')), findsOneWidget);
   });
 
   testWidgets('空态与数据到达刷新', (tester) async {

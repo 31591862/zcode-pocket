@@ -721,9 +721,15 @@ class AppState extends ChangeNotifier {
   }
 
   /// 活跃电脑所属账号的显示名（multi-account-ux-1 批1）：备注名优先，
-  /// 未设置回退短码；凭据已删→"账号已删除"；无账号维度→null（顶栏
-  /// 只显示电脑名）。异步从 AccountStore 取，缓存于 [_accountLabelCache]。
+  /// 未设置回退官方昵称/短码；凭据已删→"账号已删除"；无账号维度→null。
+  /// 异步从 AccountStore 取，缓存于 [_accountLabelCache]。
   String? get activeAccountLabel => _accountLabelCache;
+
+  /// 活跃账号完整 id（2026-11-17 批：抽屉电脑卡"ID xxx"行；与显示名
+  /// 同一轮刷新缓存，清空/代际逻辑同 activeAccountLabel）。
+  String? get activeAccountId => _activeAccountIdCache;
+
+  String? _activeAccountIdCache;
 
   String? _accountLabelCache;
 
@@ -746,8 +752,9 @@ class AppState extends ChangeNotifier {
       _accountLabelKey = null;
       _accountLabelLoading = false;
       _accountLabelGeneration++;
-      if (_accountLabelCache != null) {
+      if (_accountLabelCache != null || _activeAccountIdCache != null) {
         _accountLabelCache = null;
+        _activeAccountIdCache = null;
         notifyListeners();
       }
       return;
@@ -759,17 +766,21 @@ class AppState extends ChangeNotifier {
     _accountLabelLoading = true;
     unawaited(() async {
       String? label;
+      String? accountIdResolved;
       try {
         final accounts = await accountStore.listAccounts();
         final match = accounts.where((a) => a.id == accountId).firstOrNull;
         label = match?.displayName ?? (accounts.isEmpty ? null : '账号已删除');
+        accountIdResolved = match?.id;
       } catch (_) {
         label = null;
       }
       if (_disposed || generation != _accountLabelGeneration) return;
       _accountLabelLoading = false;
-      if (_accountLabelCache != label) {
+      if (_accountLabelCache != label ||
+          _activeAccountIdCache != accountIdResolved) {
         _accountLabelCache = label;
+        _activeAccountIdCache = accountIdResolved;
         notifyListeners();
       }
     }());
@@ -1206,6 +1217,88 @@ class AppState extends ChangeNotifier {
   List<Map<String, dynamic>> get archivedTasks =>
       _active?.archivedTasks ?? const [];
 
+  // ── 归档区全局化（2026-11-17 用户 bug 实证）：归档页改为跨全部
+  // 工作区拉取（空 scope=桌面端放行过滤，契约见 task_catalog）；
+  // 恢复/删除按任务行自身 scope 定位（跨工作区任务此前打偏）。
+
+  /// 全工作区归档任务（归档页自管加载入口）。
+  Future<List<Map<String, dynamic>>> loadArchivedTasksGlobal() async {
+    final stack = _active;
+    if (stack == null) throw StateError('no active computer');
+    return stack.listArchivedTasksGlobal();
+  }
+
+  /// 跨工作区恢复（scope=任务行自身归属；恢复后该任务回到其原生
+  /// 工作区的任务列表——首页只在对应工作区可见，官方语义）。
+  Future<dynamic> unarchiveTaskInScope(Map<String, dynamic> task) async {
+    final stack = _active;
+    if (stack == null) throw StateError('no active computer');
+    final res = await stack.unarchiveTaskInScope(task);
+    stack.reloadTaskIndex();
+    return res;
+  }
+
+  /// 跨工作区删除单个归档任务（scope=任务行自身归属；联动清草稿/排队）。
+  Future<dynamic> deleteArchivedTaskInScope(Map<String, dynamic> task) async {
+    final stack = _active;
+    if (stack == null) throw StateError('no active computer');
+    final res = await stack.deleteArchivedTaskInScope(task);
+    final sid = stack.profile.deviceSid;
+    final taskId = '${task['taskId'] ?? ''}';
+    await Future.wait<void>([
+      if (draftStore != null) draftStore!.removeSession(sid, taskId),
+      if (sendQueue != null) sendQueue!.removeSession(sid, taskId),
+    ]);
+    stack.reloadTaskIndex();
+    return res;
+  }
+
+  /// 任务行自带 scope（归档页把行传给恢复/删除/永久删除前构造定位）。
+  Map<String, dynamic> taskRowScopeOf(Map<String, dynamic> task) {
+    final stack = _active;
+    if (stack == null) return {'taskId': '${task['taskId'] ?? ''}'};
+    return stack.taskRowScope(task);
+  }
+
+  /// 跨工作区批量删除（按 workspace_key 分组逐 scope 发；草稿/排队
+  /// 清理只针对聚合回执里真正删除的 id——与单工作域版同纪律）。
+  Future<dynamic> deleteArchivedTasksGlobal(
+    List<Map<String, dynamic>> tasks,
+  ) async {
+    final stack = _active;
+    if (stack == null) throw StateError('no active computer');
+    final receipts = await stack.deleteArchivedTasksInScope(tasks);
+    final deleted = <String>{};
+    final skipped = <String>{};
+    final failed = <String>{};
+    for (final r in receipts) {
+      final resMap = r is Map ? r : null;
+      Set<String> readSet(String key) => resMap != null && resMap[key] is List
+          ? (resMap[key] as List).map((e) => '$e').toSet()
+          : const <String>{};
+      deleted.addAll(readSet('deletedTaskIds'));
+      skipped.addAll(readSet('skippedTaskIds'));
+      failed.addAll(readSet('failedTaskIds'));
+    }
+    final sid = stack.profile.deviceSid;
+    final removed = deleted.isNotEmpty
+        ? deleted
+        : [
+            for (final t in tasks)
+              if (!skipped.contains('${t['taskId']}') &&
+                  !failed.contains('${t['taskId']}'))
+                '${t['taskId']}',
+          ];
+    await Future.wait<void>([
+      for (final taskId in removed) ...[
+        if (draftStore != null) draftStore!.removeSession(sid, taskId),
+        if (sendQueue != null) sendQueue!.removeSession(sid, taskId),
+      ],
+    ]);
+    stack.reloadTaskIndex();
+    return receipts;
+  }
+
   /// 重拉任务索引三列表（归档区/任务列表刷新入口）。
   void reloadTaskIndex() => _active?.reloadTaskIndex();
 
@@ -1256,16 +1349,20 @@ class AppState extends ChangeNotifier {
   /// ③ 会话永久删除两阶段（早前批次）：preview 出范围+revision 指纹；
   /// execute 回传 revision+operationId。UI 侧 PIN 防呆通过后才可调
   /// execute（用户拍板：不可恢复操作须输密码确认）。
-  Future<dynamic> previewArchivedTaskDeletion(String taskId) async {
+  Future<dynamic> previewArchivedTaskDeletion(
+    String taskId, {
+    Map<String, dynamic>? taskScope,
+  }) async {
     final stack = _active;
     if (stack == null) throw StateError('no active computer');
-    return stack.previewArchivedTaskDeletion(taskId);
+    return stack.previewArchivedTaskDeletion(taskId, taskScope: taskScope);
   }
 
   Future<dynamic> permanentlyDeleteArchivedTask(
     String taskId, {
     required String revision,
     required String operationId,
+    Map<String, dynamic>? taskScope,
   }) async {
     final stack = _active;
     if (stack == null) throw StateError('no active computer');
@@ -1273,6 +1370,7 @@ class AppState extends ChangeNotifier {
       taskId,
       revision: revision,
       operationId: operationId,
+      taskScope: taskScope,
     );
     // deleted 才联动清本地（草稿/排队——归档时已清过，此处兜底重删幂等）。
     if (res is Map && res['status'] == 'deleted') {

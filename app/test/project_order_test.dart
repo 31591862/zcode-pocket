@@ -64,6 +64,19 @@ Widget _host(AppState app) => AppStateScope(
       ),
     );
 
+// 抽屉化适配（2026-11-17）：排序入口迁侧边抽屉；项目分组断言限定抽屉。
+Future<void> _openDrawer(WidgetTester tester) async {
+  tester.state<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+  // 定帧泵（pumpAndSettle 会被运行中任务的 RunningPulseDot 永续动画
+  // 卡到超时）——抽屉滑入动画 ~246ms，8×50ms 足够。
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+Finder inDrawer(Finder f) =>
+    find.descendant(of: find.byType(Drawer), matching: f);
+
 void main() {
   test('applyProjectOrder：命中按序/未记录追加/伪项目恒尾/null 原序', () {
     final entries = <Map<String, dynamic>>[
@@ -83,18 +96,19 @@ void main() {
   });
 
   testWidgets('主页更多菜单排序入口开弹层，拖动即存并即时生效', (tester) async {
-    tester.view.physicalSize = const Size(375, 806);
+    // 抽屉化批②：项目组断言在抽屉列表内——画布加高保证四个组头
+    // 都在懒构建视口内（806 下第四组在视口外不挂载）。
+    tester.view.physicalSize = const Size(375, 1500);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final app = _OrderApp();
     await tester.pumpWidget(_host(app));
     await tester.pump();
 
-    // B 方案：排序从「更多」进入，不再依赖横向 chip 行尾。
+    // B 方案：排序入口迁抽屉（原「更多」菜单退役）。
     expect(find.byKey(const ValueKey('project-order-entry')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('home-more')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('项目排序'));
+    await _openDrawer(tester);
+    await tester.tap(find.byKey(const ValueKey('drawer-project-order')));
     await tester.pumpAndSettle();
     expect(find.text('调整项目顺序'), findsOneWidget);
 
@@ -112,10 +126,11 @@ void main() {
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('项目'));
-    await tester.pump();
-    double groupY(String id) =>
-        tester.getTopLeft(find.byKey(ValueKey('home-group:project:$id'))).dy;
+    // 项目分组视图迁抽屉：开抽屉断言项目组按新顺序即时重排。
+    await _openDrawer(tester);
+    double groupY(String id) => tester
+        .getTopLeft(inDrawer(find.byKey(ValueKey('home-group:project:$id'))))
+        .dy;
     expect(groupY('p-2') < groupY('p-3'), isTrue);
     expect(groupY('p-3') < groupY('p-1'), isTrue);
     expect(groupY('p-1') < groupY('p-4'), isTrue,

@@ -711,22 +711,49 @@ class ComputerStack extends ChangeNotifier {
 
   /// ③ 会话永久删除两阶段（早前批次，官方 previewArchivedTaskDeletion/
   /// permanentlyDeleteArchivedTask）。
-  Future<dynamic> previewArchivedTaskDeletion(String taskId) =>
-      _taskCatalog.previewArchivedTaskDeletion(taskId);
+  Future<dynamic> previewArchivedTaskDeletion(
+    String taskId, {
+    Map<String, dynamic>? taskScope,
+  }) => _taskCatalog.previewArchivedTaskDeletion(taskId, taskScope: taskScope);
 
   Future<dynamic> permanentlyDeleteArchivedTask(
     String taskId, {
     required String revision,
     required String operationId,
+    Map<String, dynamic>? taskScope,
   }) => _taskCatalog.permanentlyDeleteArchivedTask(
         taskId,
         revision: revision,
         operationId: operationId,
+        taskScope: taskScope,
       );
 
   /// 取消归档（撤销入口，snackbar 撤销用）。
   Future<dynamic> unarchiveTask(String taskId) =>
       _taskCatalog.unarchiveTask(taskId);
+
+  // ── 归档区全局化（2026-11-17 用户 bug 实证，契约见 task_catalog）。
+
+  /// 全工作区归档任务（空 scope=桌面端放行 workspace 过滤）。
+  Future<List<Map<String, dynamic>>> listArchivedTasksGlobal() =>
+      _taskCatalog.listArchivedTasksGlobal();
+
+  /// 跨工作区恢复/删除（scope=任务行自身归属）。
+  Future<dynamic> unarchiveTaskInScope(Map<String, dynamic> task) =>
+      _taskCatalog.unarchiveTaskInScope(task);
+
+  Future<dynamic> deleteArchivedTaskInScope(Map<String, dynamic> task) =>
+      _taskCatalog.deleteArchivedTaskInScope(task);
+
+  /// 跨工作区批量删除（按 workspace_key 分组逐 scope 发）。
+  Future<List<dynamic>> deleteArchivedTasksInScope(
+    List<Map<String, dynamic>> tasks,
+  ) => _taskCatalog.deleteArchivedTasksInScope(tasks);
+
+  /// 任务行自带 scope（页面侧恢复/删除/永久删除定位用；缺归属回退
+  /// 当前活跃工作区）。
+  Map<String, dynamic> taskRowScope(Map<String, dynamic> task) =>
+      _taskCatalog.taskRowScope(task);
 
   /// 删除（不可逆，UI 必须二次确认）。
   Future<dynamic> deleteTask(String taskId) => _taskCatalog.deleteTask(taskId);

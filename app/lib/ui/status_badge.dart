@@ -22,8 +22,12 @@ import 'motion.dart';
         label: '运行中',
       ),
     'completedSuccess' => (
-        color: colors.success,
-        surface: colors.success.withValues(alpha: AppAlpha.light),
+        // 抽屉化降噪批（2026-11-17 用户拍板）：完成态是列表多数派，
+        // 绿 chip 满屏=视觉噪音（9 卡 8 完成的实拍）——降为灰调
+        // （draft 同款 subtle 形态），让 运行中/待处理/失败/已停止
+        // 成为唯一色彩焦点。
+        color: colors.foregroundSubtle,
+        surface: colors.surface,
         label: '完成',
       ),
     'completedInterrupted' => (

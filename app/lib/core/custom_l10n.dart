@@ -319,6 +319,10 @@ const _customEn = <String, String>{
   '未连接电脑': 'No computer connected',
   '刷新工作区列表': 'Refresh workspace list',
   '没有归档任务': 'No archived tasks',
+  '归档列表加载失败，请下拉重试': 'Failed to load archived tasks—pull down to retry',
+  '含全部工作区的归档任务；可恢复或删除': 'Archived tasks across all workspaces; restore or delete them',
+  '来源': 'Source',
+  '归档于': 'Archived',
   '已归档任务': 'Archived tasks',
   '复制全部': 'Copy all',
   '还没有通知事件\n连接电脑并产生任务活动后，这里会逐条记录': 'No notification events yet\nConnect a computer and task activity will be recorded here',
@@ -781,6 +785,8 @@ const _customEn = <String, String>{
   // ── 任务管理优化批（#13 时间桶渐进披露 / #22 批量操作）──
   '取消': 'Cancel',
   '归档': 'Archive',
+  '定时': 'Schedule',
+  '排序': 'Sort',
   '标已读': 'Mark as read',
   '选择任务': 'Select tasks',
   '多选任务批量归档/标已读/删除':
@@ -1235,6 +1241,17 @@ final _customPatterns = <_L10nPattern>[
     'count': 1,
   }),
   _L10nPattern(RegExp(r'^归档于 ([\s\S]+)$'), 'Archived {time}', {'time': 1}),
+  // 全局化批（2026-11-17）：归档行副标题「来源 X · 归档于 Y/已归档」。
+  _L10nPattern(
+    RegExp(r'^来源 ([\s\S]+) · 归档于 ([\s\S]+)$'),
+    '{source} · Archived {time}',
+    {'source': 1, 'time': 2},
+  ),
+  _L10nPattern(
+    RegExp(r'^来源 ([\s\S]+) · 已归档$'),
+    '{source} · Archived',
+    {'source': 1},
+  ),
   _L10nPattern(RegExp(r'^(\d+) 分钟后$'), 'In {count} min', {'count': 1}),
   _L10nPattern(RegExp(r'^(\d+) 小时后$'), 'In {count} hr', {'count': 1}),
   _L10nPattern(RegExp(r'^(\d+) 天后$'), 'In {count} days', {'count': 1}),

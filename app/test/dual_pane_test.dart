@@ -134,6 +134,20 @@ Future<void> _pump(WidgetTester tester, AppState app) async {
 double paneWidthOf(double windowWidth) =>
     (windowWidth * 0.34).clamp(232.0, 320.0);
 
+// 抽屉化适配（2026-11-17）：项目视图迁侧边抽屉（宽屏档抽屉沿用紧凑
+// 单行）——开抽屉 + 作用域限定器。
+Future<void> _openDrawer(WidgetTester tester) async {
+  tester.state<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+  // 定帧泵（pumpAndSettle 会被运行中任务的 RunningPulseDot 永续动画
+  // 卡到超时）——抽屉滑入动画 ~246ms，8×50ms 足够。
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+Finder inDrawer(Finder f) =>
+    find.descendant(of: find.byType(Drawer), matching: f);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -238,12 +252,13 @@ void main() {
     expect(navDy, greaterThan(taskRowDy),
         reason: '新建任务行在任务分组之下（验收反馈①）');
 
-    // 窄屏：FAB 保留原行为。
+    // 窄屏：FAB 亦退役（抽屉化批②，新建=抽屉底部行，全档唯一）。
     await tester.binding.setSurfaceSize(const Size(375, 806));
     for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(find.byKey(const ValueKey('new-session')), findsOneWidget);
+    expect(find.byKey(const ValueKey('new-session')), findsNothing,
+        reason: 'FAB 全档退役（抽屉化批② 用户拍板）');
     expect(find.byKey(const ValueKey('home-new-task-nav')), findsNothing);
   });
 
@@ -331,14 +346,12 @@ void main() {
     );
     await _pump(tester, app);
 
-    // 切到项目视图：「任务」未归类组默认 3 条 + 展开控件。
-    await tester.tap(find.text('项目').first);
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
+    // 项目视图迁抽屉（2026-11-17）：宽屏档抽屉沿用紧凑单行——
+    // 「任务」未归类组默认 3 条 + 展开控件。
+    await _openDrawer(tester);
 
     // 未读行：行首图标槽 6dp 蓝点（宽屏紧凑行唯一行首标记）。
-    final dotRow = find.byKey(const ValueKey('compact-task-row-u-1'));
+    final dotRow = inDrawer(find.byKey(const ValueKey('compact-task-row-u-1')));
     expect(dotRow, findsOneWidget);
     expect(
       find.descendant(of: dotRow, matching: find.byType(Container)),
@@ -348,7 +361,7 @@ void main() {
     // 普通行槽位无标记。
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('compact-task-row-u-2')),
+        of: inDrawer(find.byKey(const ValueKey('compact-task-row-u-2'))),
         matching: find.byType(Container),
       ),
       findsNothing,
@@ -358,7 +371,7 @@ void main() {
     final titleText = tester.widget<Text>(
       find
           .descendant(
-            of: find.byKey(const ValueKey('compact-task-row-u-0')),
+            of: inDrawer(find.byKey(const ValueKey('compact-task-row-u-0'))),
             matching: find.byType(Text),
           )
           .first,
@@ -367,7 +380,7 @@ void main() {
     expect(titleText.overflow, TextOverflow.ellipsis);
 
     // 「展开剩余 N 项」= 灰字文字钮（紧凑档不再用品牌色实心钮）。
-    final more = find.text('展开剩余 3 项');
+    final more = inDrawer(find.text('展开剩余 3 项'));
     expect(more, findsOneWidget);
     expect(
       find.ancestor(of: more, matching: find.byType(TextButton)),
