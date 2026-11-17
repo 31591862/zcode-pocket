@@ -969,6 +969,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
               // 与主页任务行同管道（跨工作区打开编排）——抽屉里点任务
               // =主页点行，仅多一步先关抽屉。
               onOpenTask: _openCrossWorkspaceTask,
+              onTaskMenu: _openTaskActionsMenu,
               onNewTask: _newSession,
               onOpenAutomations: openAutomations,
               onOpenSettings: openSettings,
@@ -1357,6 +1358,9 @@ class _HomeDrawer extends StatefulWidget {
   final String? accountId;
   final VoidCallback onManageComputers;
   final void Function(Map<String, dynamic> task) onOpenTask;
+
+  /// 长按任务菜单（与主页行同权——抽屉扁平行长按弹操作菜单）。
+  final void Function(Map<String, dynamic> task) onTaskMenu;
   final VoidCallback onNewTask;
   final VoidCallback onOpenAutomations;
   final VoidCallback onOpenSettings;
@@ -1385,6 +1389,7 @@ class _HomeDrawer extends StatefulWidget {
     this.accountId,
     required this.onManageComputers,
     required this.onOpenTask,
+    required this.onTaskMenu,
     required this.onNewTask,
     required this.onOpenAutomations,
     required this.onOpenSettings,
@@ -1549,6 +1554,9 @@ class _HomeDrawerState extends State<_HomeDrawer> {
                         context,
                         () => widget.onOpenTask(task),
                       ),
+                  // 长按任务菜单（批⑤ 补线）：抽屉扁平行与主页行同权
+                  // ——此前抽屉实例漏传，长按无反应（用户实测）。
+                  onLongPress: widget.onTaskMenu,
                   now: widget.now,
                   stale: widget.stale,
                   // 恒用紧凑行（批⑤ 用户反馈：抽屉白卡内再嵌白底
