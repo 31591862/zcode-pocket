@@ -220,10 +220,13 @@ void main() {
     ];
     await _pumpPage(tester, tall);
     final scrollable = tester.state<ScrollableState>(
-      find.descendant(
-        of: find.byKey(const ValueKey('chat-scroll')),
-        matching: find.byType(Scrollable),
-      ),
+      // 划选化后行内 EditableText 自带 Scrollable——取 .first=列表本体。
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('chat-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     scrollable.position.jumpTo(scrollable.position.maxScrollExtent * 0.3);
     await _pump(tester, frames: 5);
@@ -242,10 +245,13 @@ void main() {
     final rows = _rows().sublist(2); // 从上一回合中段开始（半截窗口）
     await _pumpPage(tester, rows);
     final scrollable = tester.state<ScrollableState>(
-      find.descendant(
-        of: find.byKey(const ValueKey('chat-scroll')),
-        matching: find.byType(Scrollable),
-      ),
+      // 划选化后行内 EditableText 自带 Scrollable——取 .first=列表本体。
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('chat-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     scrollable.position.jumpTo(scrollable.position.minScrollExtent);
     await _pump(tester, frames: 5);

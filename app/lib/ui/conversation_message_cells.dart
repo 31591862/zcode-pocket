@@ -138,7 +138,6 @@ List<InlineSpan> buildSearchHighlightSpans(
   return spans;
 }
 
-
 class AssistantText extends StatelessWidget {
   final String text;
   final bool streaming;
@@ -211,8 +210,8 @@ class AssistantText extends StatelessWidget {
             // 且输入为空时传 ''（非 null），缺非空守卫会让全部助手正文
             // 从 markdown 降级纯文本（与 UserBubble 的 isNotEmpty 守卫
             // 及上方注释契约对齐）。
-            childBuilder: () => (searchQuery != null &&
-                    searchQuery!.trim().isNotEmpty)
+            childBuilder: () =>
+                (searchQuery != null && searchQuery!.trim().isNotEmpty)
                 // 搜索激活预览（优化批 #25）：markdown 源文本直出+
                 // 命中词底色高亮（不改 MarkdownView 内部——关闭搜索
                 // 即恢复原渲染）。
@@ -472,7 +471,8 @@ class TurnTailActionsState extends State<TurnTailActions> {
       _forking = false;
       _snack(tr('该行缺少协议标识，无法创建分支'));
       return;
-    }    try {
+    }
+    try {
       final res = await app.forkAssistant(widget.sessionId!, target);
       if (!mounted) return;
       if (!_ackOk(res)) {
@@ -531,77 +531,84 @@ class TurnTailActionsState extends State<TurnTailActions> {
         icon: Icon(icon),
       ),
     );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // 目检修正（2026-10-23）：复制钮外套 28 紧盒（IconButton 内部
-        // 密度会外扩致首间隙偏大 9dp）——四钮等距。
-        SizedBox(
-          width: 28,
-          height: 28,
-          child: CopyIconButton(
-            text: (widget.copyText?.trim().isNotEmpty ?? false)
-                ? widget.copyText!
-                : '${widget.row['text'] ?? ''}',
-            tooltip: tr('复制这条回复'),
-            compact: true,
-            iconSize: 14,
-          ),
-        ),
-        // 重试这轮（2026-11-16 批）：正文 selectable 化后长按行操作菜单
-        // 移除——重试从此处承接（仅长按菜单曾有的动作，防丢失）。
-        ghost(
-          Icons.refresh,
-          '重试这轮',
-          canCommand ? () => _retry(AppStateScope.of(context)) : null,
-        ),
-        ghost(
-          feedback == 'like' ? Icons.thumb_up : Icons.thumb_up_outlined,
-          feedback == 'like' ? '取消点赞' : '点赞',
-          canCommand
-              ? () => _sendFeedback(
-                  AppStateScope.of(context),
-                  feedback == 'like' ? null : 'like',
-                )
-              : null,
-          color: feedback == 'like' ? context.colors.brandAccent : null,
-        ),
-        ghost(
-          feedback == 'dislike' ? Icons.thumb_down : Icons.thumb_down_outlined,
-          feedback == 'dislike' ? '取消点踩' : '点踩',
-          canCommand
-              ? () => _sendFeedback(
-                  AppStateScope.of(context),
-                  feedback == 'dislike' ? null : 'dislike',
-                )
-              : null,
-          color: feedback == 'dislike' ? context.colors.brandAccent : null,
-        ),
-        ghost(
-          Icons.account_tree_outlined,
-          '从这里分支',
-          canCommand ? () => _fork(AppStateScope.of(context)) : null,
-        ),
-        // 优化批 #27：行最右侧 subtle 时间标签（今天 HH:mm/今年 M月d日/
-        // 往年 yyyy/M/d）——回看长会话时"这轮是什么时候"不再需要猜。
-        // createdAtMs 缺席（旧快照/夹具）不显示；纯日期数字，en 走 tr
-        // 日期形态自动转「Oct 5」。
-        if (turnTailTimestampLabel(widget.createdAtMs) case final clock?)
-          Padding(
-            padding: const EdgeInsets.only(left: 6),
-            child: Text(
-              clock,
-              style: TextStyle(
-                fontSize: AppType.uiXs,
-                color: context.colors.foregroundSubtlest,
-              ),
+    // 扫掠 2.0 溢出 26px 修复（字号 2.0 档五行操作+时间标签超 343 视宽）：
+    // FittedBox(scaleDown)——常态字号内在宽不足 343 时零缩放零影响，
+    // 极端档整体等比收纳（2026-11-16 批修复回退后补回）。
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 目检修正（2026-10-23）：复制钮外套 28 紧盒（IconButton 内部
+          // 密度会外扩致首间隙偏大 9dp）——四钮等距。
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: CopyIconButton(
+              text: (widget.copyText?.trim().isNotEmpty ?? false)
+                  ? widget.copyText!
+                  : '${widget.row['text'] ?? ''}',
+              tooltip: tr('复制这条回复'),
+              compact: true,
+              iconSize: 14,
             ),
           ),
-      ],
+          // 重试这轮（2026-11-16 批）：正文 selectable 化后长按行操作菜单
+          // 移除——重试从此处承接（仅长按菜单曾有的动作，防丢失）。
+          ghost(
+            Icons.refresh,
+            '重试这轮',
+            canCommand ? () => _retry(AppStateScope.of(context)) : null,
+          ),
+          ghost(
+            feedback == 'like' ? Icons.thumb_up : Icons.thumb_up_outlined,
+            feedback == 'like' ? '取消点赞' : '点赞',
+            canCommand
+                ? () => _sendFeedback(
+                    AppStateScope.of(context),
+                    feedback == 'like' ? null : 'like',
+                  )
+                : null,
+            color: feedback == 'like' ? context.colors.brandAccent : null,
+          ),
+          ghost(
+            feedback == 'dislike'
+                ? Icons.thumb_down
+                : Icons.thumb_down_outlined,
+            feedback == 'dislike' ? '取消点踩' : '点踩',
+            canCommand
+                ? () => _sendFeedback(
+                    AppStateScope.of(context),
+                    feedback == 'dislike' ? null : 'dislike',
+                  )
+                : null,
+            color: feedback == 'dislike' ? context.colors.brandAccent : null,
+          ),
+          ghost(
+            Icons.account_tree_outlined,
+            '从这里分支',
+            canCommand ? () => _fork(AppStateScope.of(context)) : null,
+          ),
+          // 优化批 #27：行最右侧 subtle 时间标签（今天 HH:mm/今年 M月d日/
+          // 往年 yyyy/M/d）——回看长会话时"这轮是什么时候"不再需要猜。
+          // createdAtMs 缺席（旧快照/夹具）不显示；纯日期数字，en 走 tr
+          // 日期形态自动转「Oct 5」。
+          if (turnTailTimestampLabel(widget.createdAtMs) case final clock?)
+            Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Text(
+                clock,
+                style: TextStyle(
+                  fontSize: AppType.uiXs,
+                  color: context.colors.foregroundSubtlest,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
-
 
 class UserBubble extends StatelessWidget {
   final String text;
@@ -677,15 +684,13 @@ class UserBubble extends StatelessWidget {
               children: buildSearchHighlightSpans(
                 data,
                 q,
-                base: const TextStyle(
-                  fontSize: AppType.uiBase,
-                  height: 1.5,
-                ),
+                base: const TextStyle(fontSize: AppType.uiBase, height: 1.5),
                 hit: TextStyle(
                   fontSize: AppType.uiBase,
                   height: 1.5,
-                  backgroundColor: context.colors.brandAccent
-                      .withValues(alpha: AppAlpha.mid),
+                  backgroundColor: context.colors.brandAccent.withValues(
+                    alpha: AppAlpha.mid,
+                  ),
                 ),
               ),
             ),
@@ -868,7 +873,8 @@ class UserBubble extends StatelessWidget {
                           ),
                           child: FoldableUserText(
                             text: text,
-                            selectable: (data) => _selectableText(context, data),
+                            selectable: (data) =>
+                                _selectableText(context, data),
                             searchReveal: searchReveal,
                             searchQuery: searchQuery,
                           ),

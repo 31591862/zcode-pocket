@@ -11,7 +11,7 @@ import '../core/theme.dart';
 import '../platform/capabilities.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
-import 'app_widgets.dart' show AppSectionHeader;
+import 'settings_style.dart';
 
 class SettingsSecurityPage extends StatefulWidget {
   const SettingsSecurityPage({super.key});
@@ -212,18 +212,18 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
     final app = AppStateScope.of(context);
     final ui = app.uiPrefs;
     final mode = _mode;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: context.colors.background,
+      backgroundColor: settingsPageBg(Theme.of(context).brightness),
       appBar: AppBar(
-        title: Text(tr('应用锁'), style: const TextStyle(fontSize: AppType.uiLg)),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: context.colors.border),
-        ),
+        title:
+            Text(tr('应用锁'), style: const TextStyle(fontSize: AppType.uiLg)),
+        backgroundColor: settingsPageBg(Theme.of(context).brightness),
       ),
       body: ListenableBuilder(
         listenable: ui,
         builder: (context, _) => ListView(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
           children: [
             // 损坏态横幅：mode=pin 但材料缺失/垃圾——旧验证路径
             // 必然死路；横幅明示可直接重设（切换/重设流程已跳过验旧 PIN）。
@@ -231,14 +231,16 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
                 !pinMaterialHealthy(
                   ui.appLockPinSalt,
                   ui.appLockPinHash,
-                )) ...[
+                ))
               Container(
-                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                margin: const EdgeInsets.only(top: 12),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: context.colors.warning.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  border: Border.all(color: context.colors.warning),
+                  color: isDark ? kSettingsCardDark : kSettingsCardLight,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: context.colors.warning.withValues(alpha: 0.6),
+                  ),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -260,15 +262,15 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
                   ],
                 ),
               ),
-            ],
-            const SizedBox(height: 8),
-            AppSectionHeader(tr('解锁方式')),
-            _modeTile(app, AppLockMode.none, tr('关闭'), tr('不使用应用锁')),
-            _modeTile(
-                app, AppLockMode.system, tr('系统锁屏'), tr('指纹 / 面容 / 图案 / PIN（跟随系统锁设置）')),
-            _modeTile(app, AppLockMode.pin, tr('PIN 码'), tr('应用内独立 PIN 码')),
+            settingsGroupLabel(context, tr('解锁方式')),
+            settingsGroupCard(context, isDark, [
+              _modeTile(app, AppLockMode.none, tr('关闭'), tr('不使用应用锁')),
+              _modeTile(
+                  app, AppLockMode.system, tr('系统锁屏'), tr('指纹 / 面容 / 图案 / PIN（跟随系统锁设置）')),
+              _modeTile(app, AppLockMode.pin, tr('PIN 码'), tr('应用内独立 PIN 码')),
+            ]),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              padding: const EdgeInsets.fromLTRB(4, 8, 16, 8),
               child: Text(
                 tr('开启后每次冷启动需验证；切换或关闭应用锁需先通过当前方式验证。'),
                 style: TextStyle(
@@ -279,83 +281,93 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
               ),
             ),
             if (mode != AppLockMode.none) ...[
-              AppSectionHeader(tr('自动锁定')),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SegmentedButton<int>(
-                  showSelectedIcon: false,
-                  segments: [
-                    ButtonSegment(value: 0, label: Text(tr('立即'))),
-                    ButtonSegment(value: 30, label: Text(tr('30 秒'))),
-                    ButtonSegment(value: 60, label: Text(tr('1 分钟'))),
-                    ButtonSegment(value: 300, label: Text(tr('5 分钟'))),
-                  ],
-                  selected: {ui.appLockAutoLockSeconds},
-                  onSelectionChanged: (s) {
-                    ui.setAppLockAutoLockSeconds(s.first);
-                    app.appLock.loadFromPrefs(
-                      mode: mode,
-                      autoLockSeconds: s.first,
-                      secureFlagPref: ui.appLockSecureFlag,
-                      pinSalt: ui.appLockPinSalt,
-                      pinHash: ui.appLockPinHash,
-                    );
-                  },
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                child: Text(
-                  tr('冷启动始终需要验证；此处控制切后台多久后需要重新验证。'),
-                  style: TextStyle(
-                    fontSize: AppType.uiCaption,
-                    color: context.colors.foregroundSubtle,
+              settingsGroupLabel(context, tr('自动锁定')),
+              settingsGroupCard(context, isDark, [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: SegmentedButton<int>(
+                    showSelectedIcon: false,
+                    segments: [
+                      ButtonSegment(value: 0, label: Text(tr('立即'))),
+                      ButtonSegment(value: 30, label: Text(tr('30 秒'))),
+                      ButtonSegment(value: 60, label: Text(tr('1 分钟'))),
+                      ButtonSegment(value: 300, label: Text(tr('5 分钟'))),
+                    ],
+                    selected: {ui.appLockAutoLockSeconds},
+                    onSelectionChanged: (s) {
+                      ui.setAppLockAutoLockSeconds(s.first);
+                      app.appLock.loadFromPrefs(
+                        mode: mode,
+                        autoLockSeconds: s.first,
+                        secureFlagPref: ui.appLockSecureFlag,
+                        pinSalt: ui.appLockPinSalt,
+                        pinHash: ui.appLockPinHash,
+                      );
+                    },
                   ),
                 ),
-              ),
-              // iOS 隐藏（早前批次 对抗审查）：FLAG_SECURE 无
-              // iOS 等价（setSecureFlag 通道 no-op）——开着=假开关违反
-              // 「UI 不撒谎」红线。切换器遮罩的降级形态实现后再以
-              // supportsSecureFlag 语义回归（留项）。
-              if (ZpCapabilities.supportsSecureFlag)
-                SwitchListTile(
-                value: ui.appLockSecureFlag,
-                onChanged: (v) {
-                  ui.setAppLockSecureFlag(v);
-                  app.appLock.loadFromPrefs(
-                    mode: mode,
-                    autoLockSeconds: ui.appLockAutoLockSeconds,
-                    secureFlagPref: v,
-                    pinSalt: ui.appLockPinSalt,
-                    pinHash: ui.appLockPinHash,
-                  );
-                },
-                title: Text(tr('锁定时防截屏与缩略图')),
-                subtitle: Text(
-                  tr('仅锁定界面期间生效；解锁后可正常截屏'),
-                  style: TextStyle(
-                    fontSize: AppType.uiCaption,
-                    color: context.colors.foregroundSubtle,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Text(
+                    tr('冷启动始终需要验证；此处控制切后台多久后需要重新验证。'),
+                    style: TextStyle(
+                      fontSize: AppType.uiCaption,
+                      color: context.colors.foregroundSubtle,
+                    ),
                   ),
                 ),
-              ),
+                // iOS 隐藏（早前批次 对抗审查）：FLAG_SECURE 无
+                // iOS 等价（setSecureFlag 通道 no-op）——开着=假开关违反
+                // 「UI 不撒谎」红线。切换器遮罩的降级形态实现后再以
+                // supportsSecureFlag 语义回归（留项）。
+                if (ZpCapabilities.supportsSecureFlag)
+                  SwitchListTile(
+                    value: ui.appLockSecureFlag,
+                    onChanged: (v) {
+                      ui.setAppLockSecureFlag(v);
+                      app.appLock.loadFromPrefs(
+                        mode: mode,
+                        autoLockSeconds: ui.appLockAutoLockSeconds,
+                        secureFlagPref: v,
+                        pinSalt: ui.appLockPinSalt,
+                        pinHash: ui.appLockPinHash,
+                      );
+                    },
+                    secondary: const Icon(Icons.phonelink_lock_outlined,
+                        size: 24, color: kSettingsIconBlue),
+                    title: Text(tr('锁定时防截屏与缩略图')),
+                    subtitle: Text(
+                      tr('仅锁定界面期间生效；解锁后可正常截屏'),
+                      style: TextStyle(
+                        fontSize: AppType.uiCaption,
+                        color: context.colors.foregroundSubtle,
+                      ),
+                    ),
+                  ),
+              ]),
             ],
-            if (mode == AppLockMode.pin)
-              ListTile(
-                key: const ValueKey('settings-change-pin'),
-                leading: const Icon(Icons.pin_outlined),
-                title: Text(tr('修改 PIN 码')),
-                onTap: () => _changePin(app),
-              ),
+            if (mode == AppLockMode.pin) ...[
+              settingsGroupLabel(context, tr('PIN 管理')),
+              settingsGroupCard(context, isDark, [
+                ListTile(
+                  key: const ValueKey('settings-change-pin'),
+                  leading: const Icon(Icons.pin_outlined,
+                      size: 24, color: kSettingsIconOrange),
+                  title: Text(tr('修改 PIN 码')),
+                  onTap: () => _changePin(app),
+                ),
+              ]),
+            ],
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
                 child: Text(
                   _error!,
-                  style: TextStyle(fontSize: AppType.uiCaption, color: context.colors.destructive),
+                  style: TextStyle(
+                      fontSize: AppType.uiCaption,
+                      color: context.colors.destructive),
                 ),
               ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -376,7 +388,6 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
         ),
       ),
       controlAffinity: ListTileControlAffinity.trailing,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
     );
   }
 }

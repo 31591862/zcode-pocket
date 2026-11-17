@@ -313,20 +313,47 @@ void main() {
     // 注：点击到达处理函数并提前返回已在开发期插桩验证（widget 测试
     // 光栅化字体下 span 命中区与绘制区错位，回调级断言不稳定，故只
     // 断言可见行为=无 SnackBar）。
-    final rp = tester.renderObject<RenderParagraph>(
-        find.textContaining('theme.dart', findRichText: true));
-    final text = rp.text.toPlainText();
+    // 划选化后 markdown 块落 SelectableText→EditableText：Flutter 3.47
+    // 里 EditableText 的 renderObject 是 _RenderCompositionCallback 代理
+    // 壳——沿渲染树向下取真正的正文节点（selectable 路径=RenderEditable，
+    // 非 selectable=RenderParagraph），两形态命中盒 API 略异，分流处理。
+    final ro = tester
+        .renderObject(find.textContaining('theme.dart', findRichText: true));
+    RenderObject? inner;
+    void walk(RenderObject n) {
+      if (inner != null) return;
+      if (n is RenderEditable || n is RenderParagraph) {
+        inner = n;
+        return;
+      }
+      n.visitChildren(walk);
+    }
+
+    walk(ro);
+    final node = inner;
+    if (node == null) {
+      fail('链接正文的渲染对象形态变化：${ro.runtimeType}');
+    }
+    final String text;
+    final Rect Function(TextSelection) boxOf;
+    final Offset Function(Offset) toGlobal;
+    if (node is RenderParagraph) {
+      text = node.text.toPlainText();
+      boxOf = (sel) => node.getBoxesForSelection(sel).first.toRect();
+      toGlobal = node.localToGlobal;
+    } else {
+      final editable = node as RenderEditable;
+      text = editable.plainText;
+      boxOf = (sel) => editable.getBoxesForSelection(sel).first.toRect();
+      toGlobal = editable.localToGlobal;
+    }
     final i = text.indexOf('theme.dart');
-    final b = rp
-        .getBoxesForSelection(
-          TextSelection(baseOffset: i, extentOffset: i + 'theme.dart'.length),
-        )
-        .first
-        .toRect();
+    final b = boxOf(
+      TextSelection(baseOffset: i, extentOffset: i + 'theme.dart'.length),
+    );
     // 覆盖整个链接区域逐点尝试（测试字体命中盒偏移的兜底）。
     for (var dx = 0.0; dx <= b.width; dx += 7) {
-      await tester
-          .tapAt(rp.localToGlobal(b.topLeft) + Offset(dx, b.height / 2));
+      await tester.tapAt(toGlobal(b.topLeft) + Offset(dx, b.height / 2));
     }
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(SnackBar), findsNothing);

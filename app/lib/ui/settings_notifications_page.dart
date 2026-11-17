@@ -7,25 +7,25 @@ import '../platform/capabilities.dart';
 import '../state/app_state_scope.dart';
 import 'notify_guide_page.dart';
 import 'notify_ledger_page.dart';
+import 'settings_style.dart';
 
 /// 通知设置子页（2026-10-20）：审批提醒总开关 + 等审批/任务
 /// 完成/目标进展三个通道开关 + 后台保障设置/通知台账两个入口——六项
 /// 原样自 settings_page 一级页迁入（文案/存储 key/控件行为不变，阶段 3
-/// 第二段的"零漏发"链路不动）。子页骨架同 notify_ledger_page。
+/// 第二段的"零漏发"链路不动）。2026-11-16 骨架换 Eta 风格分组卡
+///（settings_style，与一级页同铺）；内容与回调不动。
 class SettingsNotificationsPage extends StatelessWidget {
   const SettingsNotificationsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     final app = AppStateScope.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: context.colors.background,
+      backgroundColor: settingsPageBg(Theme.of(context).brightness),
       appBar: AppBar(
         title: const Text('通知', style: TextStyle(fontSize: AppType.uiLg)),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: context.colors.border),
-        ),
+        backgroundColor: settingsPageBg(Theme.of(context).brightness),
       ),
       body: ListenableBuilder(
         // alertsError 挂在 AppState（fullsweep-1108：通知权限被拒时
@@ -33,135 +33,164 @@ class SettingsNotificationsPage extends StatelessWidget {
         listenable: Listenable.merge([app, app.uiPrefs]),
         builder: (context, _) => ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
           children: [
             if (app.alertsError != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Row(
-                  children: [
-                    Icon(Icons.notifications_off_outlined,
-                        size: 16, color: context.colors.warning),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        app.alertsError!,
-                        style: TextStyle(
-                            fontSize: AppType.uiCaption,
-                            color: context.colors.warning),
-                      ),
+                padding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? kSettingsCardDark : kSettingsCardLight,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: context.colors.warning.withValues(alpha: 0.6),
                     ),
-                    // iOS 出口（早前批次 对抗审查）：
-                    // Android 的「去系统设置」由 OEM 引导页承载（notify_
-                    // guide），iOS 无该页（supportsOemPowerGuide=false）——
-                    // 权限被拒后在这里给直达按钮（companion/notify 的
-                    // openNotificationSettings iOS 真实现交付）。
-                    if (!ZpCapabilities.supportsOemPowerGuide)
-                      TextButton(
-                        onPressed: () => MethodChannel(
-                          'companion/notify',
-                        ).invokeMethod('openNotificationSettings').catchError(
-                              (_) {},
-                            ),
-                        child: Text(tr('去设置')),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.notifications_off_outlined,
+                          size: 16, color: context.colors.warning),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          app.alertsError!,
+                          style: TextStyle(
+                              fontSize: AppType.uiCaption,
+                              color: context.colors.warning),
+                        ),
                       ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      onPressed: app.clearAlertsError,
-                      icon: Icon(Icons.close,
-                          size: 16, color: context.colors.foregroundSubtle),
-                    ),
-                  ],
+                      // iOS 出口（早前批次 对抗审查）：
+                      // Android 的「去系统设置」由 OEM 引导页承载（notify_
+                      // guide），iOS 无该页（supportsOemPowerGuide=false）——
+                      // 权限被拒后在这里给直达按钮（companion/notify 的
+                      // openNotificationSettings iOS 真实现交付）。
+                      if (!ZpCapabilities.supportsOemPowerGuide)
+                        TextButton(
+                          onPressed: () => MethodChannel(
+                            'companion/notify',
+                          ).invokeMethod('openNotificationSettings').catchError(
+                                (_) {},
+                              ),
+                          child: Text(tr('去设置')),
+                        ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        onPressed: app.clearAlertsError,
+                        icon: Icon(Icons.close,
+                            size: 16, color: context.colors.foregroundSubtle),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            SwitchListTile(
-              value: app.uiPrefs.alertsEnabled,
-              onChanged: (v) => app.setAlertsEnabled(v),
-              title: const Text(
-                '审批提醒',
-                style: TextStyle(fontSize: AppType.uiBase),
-              ),
-              // 文案分档（早前批次）：Android=前台服务保活语义；
-              // iOS 无保活（supportsBackgroundKeepAlive=false）按「前台
-              // 实时+回前台对账」档呈现，不承诺后台实时通知。
-              subtitle: Text(
-                ZpCapabilities.supportsBackgroundKeepAlive
-                    ? '开启后后台保持连接，任务完成/失败/等审批实时通知'
-                        '（首次开启建议先过一遍下方「后台保障设置」）；'
-                        '关闭时退到后台约一分半钟自动断开省电，回前台数秒恢复'
-                    : '开启后使用期间实时通知任务完成/失败/等待审批；'
-                        'iOS 后台不保持连接，回到 App 时自动补齐错过的事件并通知',
-                style: const TextStyle(fontSize: AppType.uiCaption),
-              ),
-            ),
-            SwitchListTile(
-              value: !app.uiPrefs.muteApprovals,
-              onChanged: (v) => app.uiPrefs.setChannelMute('approvals', !v),
-              title: const Text(
-                '等审批通知',
-                style: TextStyle(fontSize: AppType.uiBase),
-              ),
-              subtitle: const Text(
-                '会话等待你审批或输入时提醒',
-                style: TextStyle(fontSize: AppType.uiCaption),
-              ),
-            ),
-            SwitchListTile(
-              value: !app.uiPrefs.muteTasks,
-              onChanged: (v) => app.uiPrefs.setChannelMute('tasks', !v),
-              title: const Text(
-                '任务完成通知',
-                style: TextStyle(fontSize: AppType.uiBase),
-              ),
-              subtitle: const Text(
-                '任务完成/失败时提醒（含离线期间的完成汇总）',
-                style: TextStyle(fontSize: AppType.uiCaption),
-              ),
-            ),
-            SwitchListTile(
-              value: !app.uiPrefs.muteGoals,
-              onChanged: (v) => app.uiPrefs.setChannelMute('goals', !v),
-              title: const Text(
-                '目标进展通知',
-                style: TextStyle(fontSize: AppType.uiBase),
-              ),
-              subtitle: const Text(
-                '目标模式达成/未达成结论时提醒',
-                style: TextStyle(fontSize: AppType.uiCaption),
-              ),
-            ),
-            // OEM 省电白名单引导（notify-guide-oem-1）：iOS 无此概念
-            // （结构性，supportsOemPowerGuide）入口隐藏（早前批次）。
-            if (ZpCapabilities.supportsOemPowerGuide)
-              ListTile(
-                leading: const Icon(Icons.tune_outlined, size: 20),
+            // 组标签避免与组内开关标题「审批提醒」重名（测试 find.text
+            // 单匹配断言 + 一级页入口行文案同名撞车）。
+            settingsGroupLabel(context, '通知渠道'),
+            settingsGroupCard(context, isDark, [
+              SwitchListTile(
+                value: app.uiPrefs.alertsEnabled,
+                onChanged: (v) => app.setAlertsEnabled(v),
+                secondary: const Icon(Icons.notifications_outlined,
+                    size: 24, color: kSettingsIconOrange),
                 title: const Text(
-                  '后台保障设置',
+                  '审批提醒',
+                  style: TextStyle(fontSize: AppType.uiBase),
+                ),
+                // 文案分档（早前批次）：Android=前台服务保活语义；
+                // iOS 无保活（supportsBackgroundKeepAlive=false）按「前台
+                // 实时+回前台对账」档呈现，不承诺后台实时通知。
+                subtitle: Text(
+                  ZpCapabilities.supportsBackgroundKeepAlive
+                      ? '开启后后台保持连接，任务完成/失败/等审批实时通知'
+                          '（首次开启建议先过一遍下方「后台保障设置」）；'
+                          '关闭时退到后台约一分半钟自动断开省电，回前台数秒恢复'
+                      : '开启后使用期间实时通知任务完成/失败/等待审批；'
+                          'iOS 后台不保持连接，回到 App 时自动补齐错过的事件并通知',
+                  style: const TextStyle(fontSize: AppType.uiCaption),
+                ),
+              ),
+              SwitchListTile(
+                value: !app.uiPrefs.muteApprovals,
+                onChanged: (v) => app.uiPrefs.setChannelMute('approvals', !v),
+                secondary: const Icon(Icons.hourglass_top_outlined,
+                    size: 24, color: kSettingsIconBlue),
+                title: const Text(
+                  '等审批通知',
                   style: TextStyle(fontSize: AppType.uiBase),
                 ),
                 subtitle: const Text(
-                  '部分手机的省电白名单（开"审批提醒"前配一次）',
+                  '会话等待你审批或输入时提醒',
+                  style: TextStyle(fontSize: AppType.uiCaption),
+                ),
+              ),
+              SwitchListTile(
+                value: !app.uiPrefs.muteTasks,
+                onChanged: (v) => app.uiPrefs.setChannelMute('tasks', !v),
+                secondary: const Icon(Icons.task_alt_outlined,
+                    size: 24, color: kSettingsIconGreen),
+                title: const Text(
+                  '任务完成通知',
+                  style: TextStyle(fontSize: AppType.uiBase),
+                ),
+                subtitle: const Text(
+                  '任务完成/失败时提醒（含离线期间的完成汇总）',
+                  style: TextStyle(fontSize: AppType.uiCaption),
+                ),
+              ),
+              SwitchListTile(
+                value: !app.uiPrefs.muteGoals,
+                onChanged: (v) => app.uiPrefs.setChannelMute('goals', !v),
+                secondary: const Icon(Icons.flag_outlined,
+                    size: 24, color: kSettingsIconBlue),
+                title: const Text(
+                  '目标进展通知',
+                  style: TextStyle(fontSize: AppType.uiBase),
+                ),
+                subtitle: const Text(
+                  '目标模式达成/未达成结论时提醒',
+                  style: TextStyle(fontSize: AppType.uiCaption),
+                ),
+              ),
+            ]),
+            // OEM 省电白名单引导（notify-guide-oem-1）：iOS 无此概念
+            //（结构性，supportsOemPowerGuide）入口隐藏（早前批次）。
+            settingsGroupLabel(context, '台账与保障'),
+            settingsGroupCard(context, isDark, [
+              if (ZpCapabilities.supportsOemPowerGuide)
+                ListTile(
+                  leading: const Icon(Icons.tune_outlined,
+                      size: 24, color: kSettingsIconOrange),
+                  title: const Text(
+                    '后台保障设置',
+                    style: TextStyle(fontSize: AppType.uiBase),
+                  ),
+                  subtitle: const Text(
+                    '部分手机的省电白名单（开"审批提醒"前配一次）',
+                    style: TextStyle(fontSize: AppType.uiCaption),
+                  ),
+                  trailing: const Icon(Icons.chevron_right, size: 18),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const NotifyGuidePage()),
+                  ),
+                ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long_outlined,
+                    size: 24, color: kSettingsIconBlue),
+                title: const Text(
+                  '通知台账',
+                  style: TextStyle(fontSize: AppType.uiBase),
+                ),
+                subtitle: const Text(
+                  '逐条核对"零漏发"（事件/处置结果/点开记录）',
                   style: TextStyle(fontSize: AppType.uiCaption),
                 ),
                 trailing: const Icon(Icons.chevron_right, size: 18),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const NotifyGuidePage()),
+                  MaterialPageRoute(builder: (_) => const NotifyLedgerPage()),
                 ),
               ),
-            ListTile(
-              leading: const Icon(Icons.receipt_long_outlined, size: 20),
-              title: const Text(
-                '通知台账',
-                style: TextStyle(fontSize: AppType.uiBase),
-              ),
-              subtitle: const Text(
-                '逐条核对"零漏发"（事件/处置结果/点开记录）',
-                style: TextStyle(fontSize: AppType.uiCaption),
-              ),
-              trailing: const Icon(Icons.chevron_right, size: 18),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const NotifyLedgerPage()),
-              ),
-            ),
+            ]),
           ],
         ),
       ),

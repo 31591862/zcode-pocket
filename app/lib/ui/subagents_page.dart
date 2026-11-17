@@ -8,6 +8,7 @@ import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/channel_client.dart';
 import 'app_widgets.dart';
+import 'settings_style.dart';
 
 // 优化批 #3：异常→人话映射（原始异常仍在调用方 debugPrint 留痕）。
 String friendlyError(Object e) {
@@ -410,6 +411,9 @@ class _SubagentsPageState extends State<SubagentsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Eta 风格套壳（2026-11-16）：灰底+同色 AppBar，分组标签+代理卡
+      // 在灰底上自然成 Eta 分组观感；结构与回调不动。
+      backgroundColor: settingsPageBg(Theme.of(context).brightness),
       appBar: AppBar(
         title: _searchOpen
             ? TextField(
@@ -423,6 +427,7 @@ class _SubagentsPageState extends State<SubagentsPage> {
                 onChanged: (v) => setState(() => _searchQuery = v),
               )
             : const Text('子智能体', style: TextStyle(fontSize: AppType.uiLg)),
+        backgroundColor: settingsPageBg(Theme.of(context).brightness),
         actions: [
           // 列表搜索（官方 SubagentsSection 搜索框
           // 对位，名称/描述过滤三段）。
@@ -436,10 +441,6 @@ class _SubagentsPageState extends State<SubagentsPage> {
           ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: context.colors.border),
-        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         key: const ValueKey('subagent-new'),

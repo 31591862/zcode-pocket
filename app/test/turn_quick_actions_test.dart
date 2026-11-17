@@ -94,10 +94,13 @@ void main() {
     );
     await _pump(tester);
     final scroll = tester.state<ScrollableState>(
-      find.descendant(
-      of: find.byKey(const ValueKey('chat-scroll')),
-      matching: find.byType(Scrollable),
-      ),
+      // 划选化后行内 EditableText 自带 Scrollable——取 .first=列表本体。
+      find
+          .descendant(
+          of: find.byKey(const ValueKey('chat-scroll')),
+          matching: find.byType(Scrollable),
+          )
+          .first,
     );
     scroll.position.jumpTo(scroll.position.maxScrollExtent * 0.5);
     await tester.pump(const Duration(milliseconds: 100));

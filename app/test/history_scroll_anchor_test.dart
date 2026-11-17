@@ -92,10 +92,14 @@ List<Map<String, dynamic>> _turns({
 ];
 
 ScrollableState _scrollable(WidgetTester tester) => tester.state(
-  find.descendant(
-    of: find.byKey(const ValueKey('chat-scroll')),
-    matching: find.byType(Scrollable),
-  ),
+  // 正文划选化后行内 EditableText 自带 Scrollable——取 .first=会话列表
+  // 本体（对齐 keyboard_and_stick 适配批口径）。
+  find
+      .descendant(
+        of: find.byKey(const ValueKey('chat-scroll')),
+        matching: find.byType(Scrollable),
+      )
+      .first,
 );
 
 Future<void> _pump(WidgetTester tester) async {

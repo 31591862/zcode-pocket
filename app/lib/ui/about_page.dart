@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import 'app_widgets.dart';
 import 'markdown_view.dart';
+import 'settings_style.dart';
 
 /// 关于 ZCode Pocket（2026-11-04 开源说明聚合批）：
 /// 设置-关于组的唯一入口——把原先散落在 README / LICENSE /
@@ -45,23 +46,21 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: context.colors.background,
+      backgroundColor: settingsPageBg(Theme.of(context).brightness),
       appBar: AppBar(
         title: Text(
           tr('关于 ZCode Pocket'),
           style: const TextStyle(fontSize: AppType.uiLg),
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: context.colors.border),
-        ),
+        backgroundColor: settingsPageBg(Theme.of(context).brightness),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
         children: [
           _header(context),
-          const AppSectionHeader('声明'),
+          settingsGroupLabel(context, tr('声明')),
           _paragraph(
             context,
             tr('本项目为社区驱动的第三方客户端，与 ZCode / 智谱无关联、'
@@ -73,7 +72,7 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
             tr('使用本应用连接 ZCode 官方服务时，须自行遵守官方服务条款：'
                 '现行条款默认限非商业的个人研究学习用途，商业使用需与官方另行约定。'),
           ),
-          const AppSectionHeader('隐私'),
+          settingsGroupLabel(context, tr('隐私')),
           _paragraph(
             context,
             tr('本应用无遥测、无第三方统计；聊天与任务数据只连你配置的 '
@@ -92,97 +91,102 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
             tr('任务与用量快照、会话缓存以明文 JSON 存于应用私有目录，'
                 '不参与系统备份；可随时清除，重新打开各页面时自动重建。'),
           ),
-          ListTile(
-            key: const ValueKey('about-clear-cache'),
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.cleaning_services_outlined, size: 20),
-            title: Text(
-              tr('清除本地缓存'),
-              style: const TextStyle(fontSize: AppType.uiBase),
+          settingsGroupLabel(context, tr('维护')),
+          settingsGroupCard(context, isDark, [
+            ListTile(
+              key: const ValueKey('about-clear-cache'),
+              leading: const Icon(Icons.cleaning_services_outlined,
+                  size: 24, color: kSettingsIconOrange),
+              title: Text(
+                tr('清除本地缓存'),
+                style: const TextStyle(fontSize: AppType.uiBase),
+              ),
+              subtitle: Text(
+                tr('删除任务/会话快照与通知台账；不影响草稿、排队消息、账号与设置'),
+                style: TextStyle(
+                  fontSize: AppType.uiCaption,
+                  color: context.colors.foregroundSubtle,
+                ),
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => _confirmClearCache(context),
             ),
-            subtitle: Text(
-              tr('删除任务/会话快照与通知台账；不影响草稿、排队消息、账号与设置'),
-              style: TextStyle(
-                fontSize: AppType.uiCaption,
-                color: context.colors.foregroundSubtle,
+          ]),
+          settingsGroupLabel(context, tr('开源')),
+          settingsGroupCard(context, isDark, [
+            ListTile(
+              key: const ValueKey('about-project-license'),
+              leading: const Icon(Icons.description_outlined,
+                  size: 24, color: kSettingsIconBlue),
+              title: Text(
+                tr('项目许可证（Apache 2.0）'),
+                style: const TextStyle(fontSize: AppType.uiBase),
+              ),
+              subtitle: Text(
+                tr('Apache License 2.0 全文随包分发'),
+                style: TextStyle(
+                  fontSize: AppType.uiCaption,
+                  color: context.colors.foregroundSubtle,
+                ),
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => _openText(
+                context,
+                asset: 'LICENSE',
+                title: tr('项目许可证'),
+                markdown: false,
               ),
             ),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => _confirmClearCache(context),
-          ),
-          const AppSectionHeader('开源'),
-          ListTile(
-            key: const ValueKey('about-project-license'),
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.description_outlined, size: 20),
-            title: Text(
-              tr('项目许可证（Apache 2.0）'),
-              style: const TextStyle(fontSize: AppType.uiBase),
-            ),
-            subtitle: Text(
-              tr('Apache License 2.0 全文随包分发'),
-              style: TextStyle(
-                fontSize: AppType.uiCaption,
-                color: context.colors.foregroundSubtle,
+            ListTile(
+              key: const ValueKey('about-third-party-notices'),
+              leading: const Icon(Icons.handshake_outlined,
+                  size: 24, color: kSettingsIconGreen),
+              title: Text(
+                tr('第三方来源声明'),
+                style: const TextStyle(fontSize: AppType.uiBase),
+              ),
+              subtitle: Text(
+                tr('移植来源、品牌图标与商标说明'),
+                style: TextStyle(
+                  fontSize: AppType.uiCaption,
+                  color: context.colors.foregroundSubtle,
+                ),
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => _openText(
+                context,
+                asset: 'THIRD-PARTY-NOTICES.md',
+                title: tr('第三方来源声明'),
+                markdown: true,
               ),
             ),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => _openText(
-              context,
-              asset: 'LICENSE',
-              title: tr('项目许可证'),
-              markdown: false,
-            ),
-          ),
-          ListTile(
-            key: const ValueKey('about-third-party-notices'),
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.handshake_outlined, size: 20),
-            title: Text(
-              tr('第三方来源声明'),
-              style: const TextStyle(fontSize: AppType.uiBase),
-            ),
-            subtitle: Text(
-              tr('移植来源、品牌图标与商标说明'),
-              style: TextStyle(
-                fontSize: AppType.uiCaption,
-                color: context.colors.foregroundSubtle,
+            ListTile(
+              key: const ValueKey('about-dependency-licenses'),
+              leading: const Icon(Icons.inventory_2_outlined,
+                  size: 24, color: kSettingsIconBlue),
+              title: Text(
+                tr('开源依赖许可'),
+                style: const TextStyle(fontSize: AppType.uiBase),
+              ),
+              subtitle: Text(
+                tr('随安装包分发的第三方依赖许可文本'),
+                style: TextStyle(
+                  fontSize: AppType.uiCaption,
+                  color: context.colors.foregroundSubtle,
+                ),
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => showLicensePage(
+                context: context,
+                applicationName: 'ZCode Pocket',
+                applicationLegalese:
+                    tr('非官方第三方客户端，与 ZCode/智谱无关联。') +
+                    '\n' +
+                    tr('第三方来源详见仓库 THIRD-PARTY-NOTICES.md。'),
               ),
             ),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => _openText(
-              context,
-              asset: 'THIRD-PARTY-NOTICES.md',
-              title: tr('第三方来源声明'),
-              markdown: true,
-            ),
-          ),
-          ListTile(
-            key: const ValueKey('about-dependency-licenses'),
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.inventory_2_outlined, size: 20),
-            title: Text(
-              tr('开源依赖许可'),
-              style: const TextStyle(fontSize: AppType.uiBase),
-            ),
-            subtitle: Text(
-              tr('随安装包分发的第三方依赖许可文本'),
-              style: TextStyle(
-                fontSize: AppType.uiCaption,
-                color: context.colors.foregroundSubtle,
-              ),
-            ),
-            trailing: const Icon(Icons.chevron_right, size: 18),
-            onTap: () => showLicensePage(
-              context: context,
-              applicationName: 'ZCode Pocket',
-              applicationLegalese:
-                  tr('非官方第三方客户端，与 ZCode/智谱无关联。') +
-                  '\n' +
-                  tr('第三方来源详见仓库 THIRD-PARTY-NOTICES.md。'),
-            ),
-          ),
-          const AppSectionHeader('版权'),
+          ]),
+          settingsGroupLabel(context, tr('版权')),
           _paragraph(context, 'Copyright © 2026 JZYLukis and ZCode Pocket contributors'),
         ],
       ),

@@ -418,13 +418,21 @@ void main() {
       ));
       await _pump(tester);
 
-      // 展开末轮后长按助手正文出行操作菜单。
+      // 划选化后长按行操作菜单移除（ac505f1）——协议动作门控现挂轮尾
+      // TurnTailActions：缺 entityId 的旧快照行复制可用，协议钮在场但
+      // 禁用（onPressed=null，对齐 canCommand）。
       await tester.tap(find.text('已处理'));
       await _pump(tester, 6);
-      await tester.longPress(find.text('答'), warnIfMissed: false);
-      await _pump(tester, 6);
-      expect(find.text('复制'), findsOneWidget, reason: '纯本地操作保留');
-      expect(find.text('重试这轮'), findsNothing,
+      IconButton tailButton(String tooltip) => tester.widget<IconButton>(
+            find.ancestor(
+              of: find.byTooltip(tooltip),
+              matching: find.byType(IconButton),
+            ).first,
+          );
+      expect(find.byTooltip('复制这条回复'), findsOneWidget,
+          reason: '纯本地操作保留');
+      expect(tailButton('复制这条回复').onPressed, isNotNull);
+      expect(tailButton('重试这轮').onPressed, isNull,
           reason: '缺 entityId 时协议 target 必被 strict 拒绝（对齐 canCommand）');
       // 编辑并重发对 userInput 行用同一 hasEntity 门控（缺 entityId 的旧
       // 快照行同样禁用）——该路径由 SelectionArea 长按菜单转交，行为与

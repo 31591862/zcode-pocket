@@ -8,9 +8,9 @@ import '../state/account_store.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../transport/z_transport.dart';
-import 'app_widgets.dart';
 import 'login_page.dart';
 import 'pairing_page.dart';
+import 'settings_style.dart';
 
 /// 账号管理页（多账号批 2026-10-25，multi-account-plan）：账号
 /// 清单（provider+短标签+绑定电脑数）、添加账号（官方 OAuth）、设为
@@ -181,7 +181,7 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
           Icon(
             Icons.account_circle_outlined,
             size: 22,
-            color: context.colors.foregroundSubtle,
+            color: kSettingsIconBlue,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -335,15 +335,34 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
   @override
   Widget build(BuildContext context) {
     final app = AppStateScope.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(title: const Text('账号管理')),
+      backgroundColor: settingsPageBg(Theme.of(context).brightness),
+      appBar: AppBar(
+        title:
+            const Text('账号管理', style: TextStyle(fontSize: AppType.uiLg)),
+        backgroundColor: settingsPageBg(Theme.of(context).brightness),
+      ),
       body: ListView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: [
-          const AppSectionHeader('账号'),
-          for (final account in _accounts) _buildAccountRow(app, account),
-          const SizedBox(height: 8),
+          settingsGroupLabel(context, '账号'),
+          settingsGroupCard(context, isDark, [
+            if (_accounts.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  '暂无账号——点下方「添加账号」用官方登录',
+                  style: TextStyle(
+                    fontSize: AppType.uiCaption,
+                    color: context.colors.foregroundSubtle,
+                  ),
+                ),
+              ),
+            for (final account in _accounts) _buildAccountRow(app, account),
+          ]),
+          const SizedBox(height: 16),
           OutlinedButton.icon(
             key: const ValueKey('account-add'),
             onPressed: _addAccount,

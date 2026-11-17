@@ -126,51 +126,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('长按菜单：复制后出 SnackBar 反馈', (tester) async {
-    String? copied;
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied = (call.arguments as Map)['text'] as String?;
-        }
-        return null;
-      },
-    );
-    final app = _RowsApp(
-      [
-        {'rowId': 1, 'kind': 'userInput', 'text': '问'},
-        {'rowId': 2, 'kind': 'turnHeader', 'state': 'completedSuccess'},
-        {'rowId': 3, 'kind': 'assistantText', 'state': 'complete', 'text': '答'},
-      ],
-      'idle',
-    );
-    await tester.pumpWidget(_host(
-        app, const ConversationPage(sessionId: 's1', title: '复制回填')));
-    for (var i = 0; i < 15; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    // 完成轮默认收起（2026-10-26 澄清语义）——先点开轮，行操作菜单挂
-    // 展开态正文上。
-    await tester.tap(find.text('已处理'));
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    // 长按助手正文（RenderParagraph 命中区在测试字体下有偏移，用
-    // warnIfMissed:false+长按中心点；菜单为底部弹层）。
-    final rp = find.text('答');
-    await tester.longPress(rp, warnIfMissed: false);
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    final copyItem = find.text('复制');
-    expect(copyItem, findsOneWidget, reason: '长按应出行操作菜单');
-    await tester.tap(copyItem, warnIfMissed: false);
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(copied, '答');
-    expect(find.text('已复制'), findsOneWidget,
-        reason: '2026-10-23 批：长按复制不再静默');
-  });
+  // 长按行操作菜单的复制反馈用例已随划选化改造移除（ac505f1 用户拍板：
+  // 助手正文长按菜单删除，复制走自由划选 + 轮尾 CopyIconButton 承接）。
+  // 复制反馈行为由上方「尾部常显复制」用例同源覆盖（同一组件同一
+  // SnackBar 路径），不再为已删除的入口重复断言。
 }

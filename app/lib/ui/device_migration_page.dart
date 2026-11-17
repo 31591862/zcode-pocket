@@ -20,6 +20,7 @@ import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../state/device_backup_service.dart';
+import 'settings_style.dart';
 
 /// 入口语义决定页面形态（2026-11-16 用户拍板）：
 /// - export：设置入口（已登录=本机有数据，只导出）；
@@ -251,7 +252,13 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('换机助手')),
+      // Eta 风格套壳（2026-11-16）：灰底+同色 AppBar——导出/导入卡
+      // 自带 context.colors.card 底色与边框，在灰底上即成 Eta 卡观感。
+      backgroundColor: settingsPageBg(Theme.of(context).brightness),
+      appBar: AppBar(
+        title: const Text('换机助手', style: TextStyle(fontSize: AppType.uiLg)),
+        backgroundColor: settingsPageBg(Theme.of(context).brightness),
+      ),
       body: AbsorbPointer(
         absorbing: _busy,
         child: Stack(

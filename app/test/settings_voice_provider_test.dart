@@ -18,15 +18,15 @@ void main() {
     await tester.pumpWidget(
       AppStateScope(app: app, child: const MaterialApp(home: SettingsPage())),
     );
-    // 一级页点"语音输入"入口进语音子页。
+    // 一级页点"语音输入"入口进语音子页（分组卡改版后入口在首屏折叠线
+    // 下方——ensureVisible 真正滚进视口；scrollUntilVisible 的循环用
+    // evaluate 判定，条目在缓存区内即算可见，视口外点击会落空）。
+    await tester.ensureVisible(find.text('语音输入'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('语音输入'));
     await tester.pumpAndSettle();
-    // 语音区在列表深处——滚动到目标（revealSetting 同款手法）。
-    await tester.scrollUntilVisible(
-      find.text('整理服务提供商'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
+    // 语音子页内的提供商段同样 ensureVisible 滚进视口。
+    await tester.ensureVisible(find.text('整理服务提供商'));
     await tester.pump();
   }
 

@@ -153,11 +153,16 @@ List<Map<String, dynamic>> _longRows() => [
     ];
 
 ScrollableState _scrollable(WidgetTester tester) => tester.state(
-      find.descendant(
-      of: find.byKey(const ValueKey('chat-scroll')),
-      matching: find.byType(Scrollable),
-      ),
-    );
+  // 正文划选化后行内 EditableText 自带 Scrollable——descendant 匹配
+  // 不再唯一，.single 抛 Too many elements；取 .first=会话列表本体
+  //（对齐 keyboard_and_stick 适配批口径）。
+  find
+      .descendant(
+        of: find.byKey(const ValueKey('chat-scroll')),
+        matching: find.byType(Scrollable),
+      )
+      .first,
+);
 
 void main() {
   testWidgets('落点裁决：滚动序列落点离底>48 → 解除跟随出 FAB（原仅拖拽可解）',

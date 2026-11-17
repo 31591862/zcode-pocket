@@ -15,6 +15,7 @@ import 'conversation_page.dart' show inferEntPlanKind;
 import '../transport/channel_client.dart';
 import '../transport/companion_client.dart';
 import 'coding_plan_reset.dart';
+import 'settings_style.dart';
 import 'usage_charts.dart';
 
 /// 用量数据短缓存（2026-10-26 真机验收④）：此前 cp/app 缓存按档**永久**
@@ -895,8 +896,12 @@ class _UsagePageState extends State<UsagePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Eta 风格套壳（2026-11-16）：灰底+同色 AppBar——额度卡/图表卡
+      // 自带 context.colors.card 底色，在灰底上自然分层；Tab/图表逻辑不动。
+      backgroundColor: settingsPageBg(Theme.of(context).brightness),
       appBar: AppBar(
         title: const Text('使用统计', style: TextStyle(fontSize: AppType.uiLg)),
+        backgroundColor: settingsPageBg(Theme.of(context).brightness),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

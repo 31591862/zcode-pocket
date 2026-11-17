@@ -75,10 +75,13 @@ bool bottomVisible(WidgetTester tester, Finder f) {
 /// 打开不保证初始就在底部）。
 Future<void> scrollListToBottom(WidgetTester tester) async {
   final scroll = tester.state<ScrollableState>(
-    find.descendant(
-      of: find.byKey(const ValueKey('chat-scroll')),
-      matching: find.byType(Scrollable),
-    ),
+    // 划选化后行内 EditableText 自带 Scrollable——取 .first=列表本体。
+    find
+        .descendant(
+          of: find.byKey(const ValueKey('chat-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first,
   );
   scroll.position.jumpTo(scroll.position.maxScrollExtent);
   await tester.pump(const Duration(milliseconds: 100));
