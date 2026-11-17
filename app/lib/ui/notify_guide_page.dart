@@ -266,6 +266,7 @@ class _StepCard extends StatelessWidget {
             Align(
               alignment: Alignment.centerRight,
               child: FilledButton.tonal(
+                style: tonalFilledStyle(context),
                 onPressed: onAction,
                 child: Text(actionLabel!, style: const TextStyle(fontSize: AppType.uiBase)),
               ),

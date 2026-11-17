@@ -1139,6 +1139,7 @@ class _DualPaneEmpty extends StatelessWidget {
           if (collapsed) ...[
             const SizedBox(height: 16),
             FilledButton.tonalIcon(
+              style: tonalFilledStyle(context),
               key: const ValueKey('empty-expand-pane'),
               onPressed: onExpand,
               icon: const Icon(Icons.keyboard_double_arrow_right, size: 18),
@@ -1645,6 +1646,7 @@ class _HomeDrawerState extends State<_HomeDrawer> {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
               child: FilledButton.tonalIcon(
+                style: tonalFilledStyle(context),
                 key: const ValueKey('drawer-new-task'),
                 onPressed: () => _closeThen(context, widget.onNewTask),
                 icon: const Icon(Icons.add, size: 18),
@@ -2832,6 +2834,7 @@ class _TaskList extends StatelessWidget {
             if (notOwned) ...[
               const SizedBox(height: 12),
               FilledButton.tonalIcon(
+                style: tonalFilledStyle(context),
                 key: const ValueKey('switch-account-retry'),
                 onPressed: () async {
                   final result = await Navigator.of(
@@ -5306,10 +5309,7 @@ class _ProjectOrderSheetState extends State<_ProjectOrderSheet> {
             child: SizedBox(
               width: double.infinity,
               child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: context.colors.brand,
-                  foregroundColor: context.colors.onBrand,
-                ),
+                style: tonalFilledStyle(context),
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('完成'),
               ),

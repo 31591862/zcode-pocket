@@ -320,6 +320,7 @@ class _LockScreenState extends State<_LockScreen> {
                             ),
                             const SizedBox(height: 8),
                             FilledButton.tonalIcon(
+                              style: tonalFilledStyle(context),
                               key: const ValueKey('app-lock-open-security-settings'),
                               onPressed: _openSecuritySettings,
                               icon: const Icon(Icons.settings_outlined, size: 18),

@@ -613,9 +613,12 @@ ThemeData buildAppTheme([Brightness brightness = Brightness.light]) {
     // 背景之一（本机 3.47.7 默认 PredictiveBack→程序化 push 回退
     // FadeForwards）。换经典 Zoom 300ms（缩放+淡入更干脆；iOS 保持
     // 出厂）。
+    // 2026-11-17 用户拍板（Eta 对标）：页面过渡全面换 Eta 式——
+    // 新页右缘不透明滑入 + 旧页视差 25% 压暗 0.1 + 进入页前缘圆角
+    // 裁剪。淡入段透底的亮度震荡根除（抽屉/遮罩场景闪现）。
     pageTransitionsTheme: const PageTransitionsTheme(
       builders: {
-        TargetPlatform.android: ZoomPageTransitionsBuilder(),
+        TargetPlatform.android: SlideParallaxPageTransitionsBuilder(),
       },
     ),
     colorScheme: base.colorScheme.copyWith(
@@ -744,4 +747,100 @@ ThemeData buildAppTheme([Brightness brightness = Brightness.light]) {
     ),
     extensions: [spec],
   );
+}
+
+/// FilledButton.tonal 的显式样式（2026-11-17 批）：filledButtonTheme
+/// 把整个 FilledButton 家族钉在 c.brand 黑白反转——tonal 的
+/// secondaryContainer 语义被架空（深色=纯白扎眼，用户实测）。五处
+/// tonal 入口（抽屉新建/引导页等）显式走回 secondaryContainer 配色：
+/// 浅=蓝 10%（E8EDFF）、深=c.selected（白 10% 灰）。
+ButtonStyle tonalFilledStyle(BuildContext context) {
+  final colorScheme = Theme.of(context).colorScheme;
+  return FilledButton.styleFrom(
+    backgroundColor: colorScheme.secondaryContainer,
+    foregroundColor: colorScheme.onSecondaryContainer,
+    // 形状与 filledButtonTheme 同规（否则 tonal 回退 M3 出厂药丸形）。
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(AppRadius.sm)),
+    ),
+  );
+}
+
+
+/// Eta 式页面过渡（2026-11-17 用户拍板，对标 Mangi-11/Eta 的 miuix
+/// NavTransitions.MiuixDefault）：
+/// - 进入页：右缘整宽**不透明滑入**（无淡入段——淡入透底是抽屉/遮罩
+///   场景"过渡闪一下"的根因；不透明滑入从机制上根除）
+/// - 被覆盖页：视差缩退 25% 宽 + 压暗 0.1（eta coverProgress 同款线性）
+/// - 进入期前缘圆角裁剪 24dp→0（贴齐系统屏幕圆角观感，落定无裁剪）
+/// 几何/压暗均线性于驱动值，尊重系统"减弱动画"（直通）。
+/// 注意：时长沿用 MaterialPageRoute 默认 300ms（Eta 为 500ms，其
+/// 代价是全库替换自定义 Route——第一批不做）。
+class SlideParallaxPageTransitionsBuilder extends PageTransitionsBuilder {
+  const SlideParallaxPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    // 系统"减弱动画"开启：直通无动效（与 motion.dart 家族同纪律）。
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+
+    // 关键：主/副两侧必须用同一条曲线——返回（pop）时顶页滑出与
+    // 底页视差回位由同一进度驱动，曲线不对称会脱节露出导航器黑底
+    //（断层割裂感，用户实测：easeInCubic/easeOut 组合在 pop 30% 处
+    // 露出 10% 黑条）。同曲线下 home.right-top.left = 0.75·f ≥ 0
+    // 恒成立（f=曲线值），全程粘合无缝。
+    final curve = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+    );
+    final cover = CurvedAnimation(
+      parent: secondaryAnimation,
+      curve: Curves.easeOutCubic,
+    );
+    final slideIn = Tween<Offset>(
+      begin: const Offset(1, 0),
+      end: Offset.zero,
+    ).animate(curve);
+    final parallax = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(-0.25, 0),
+    ).animate(cover);
+
+    return AnimatedBuilder(
+      animation: Listenable.merge([curve, cover]),
+      builder: (context, _) {
+        final settle = curve.value; // 1=完全在场，0=完全离场
+        final coverT = cover.value;
+        Widget page = child;
+        // 被上层覆盖：视差缩退 25% 宽。
+        if (coverT > 0) {
+          page = FractionalTranslation(
+            translation: parallax.value,
+            child: page,
+          );
+          // 压暗 0.1（浅深两套同值——观感对齐 eta dimAmount）。
+          page = DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.1 * coverT),
+            ),
+            child: page,
+          );
+        }
+        // 进入期前缘圆角：滑入段 24dp→0（落定后无裁剪层开销）。
+        if (settle < 1) {
+          page = ClipRRect(
+            borderRadius: BorderRadius.circular(24 * (1 - settle)),
+            child: page,
+          );
+        }
+        return SlideTransition(position: slideIn, child: page);
+      },
+    );
+  }
 }

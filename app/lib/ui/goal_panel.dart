@@ -340,10 +340,7 @@ class _AdvanceDialogState extends State<_AdvanceDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: context.colors.brand,
-            foregroundColor: context.colors.onBrand,
-          ),
+          style: tonalFilledStyle(context),
           onPressed: () {
             final text = _controller.text.trim();
             if (text.isEmpty) return;

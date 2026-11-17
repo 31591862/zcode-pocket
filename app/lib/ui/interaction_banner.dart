@@ -1000,10 +1000,10 @@ class _InteractionCardState extends State<_InteractionCard> {
                               ),
                             )
                           : FilledButton(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: context.colors.brand,
-                                foregroundColor: context.colors.onBrand,
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                              style: tonalFilledStyle(context).copyWith(
+                                padding: const WidgetStatePropertyAll(
+                                  EdgeInsets.symmetric(vertical: 8),
+                                ),
                               ),
                               onPressed: (_qIndex + 1 < questions.length)
                                   ? () => setState(() => _qIndex += 1)
@@ -1164,10 +1164,7 @@ class _InteractionCardState extends State<_InteractionCard> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: context.colors.brand,
-                        foregroundColor: context.colors.onBrand,
-                      ),
+                      style: tonalFilledStyle(context),
                       onPressed: _busy
                           ? null
                           // 官方自由输入只发

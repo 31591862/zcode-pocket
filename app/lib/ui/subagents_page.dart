@@ -1262,10 +1262,7 @@ class _AgentEditorSheetState extends State<_AgentEditorSheet> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: context.colors.brand,
-                  foregroundColor: context.colors.onBrand,
-                ),
+                style: tonalFilledStyle(context),
                 onPressed: () {
                   // 官方校验（SubagentsSection.tsx:929-959）。
                   final name = _name.text.trim();
