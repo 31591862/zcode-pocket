@@ -249,6 +249,17 @@ Future<void> showModelSheet(
   );
 }
 
+/// 目录集合指纹：后台刷新完成后据此判断是否需要静默替换列表
+/// （value=providerId/modelId + provider 元数据；顺序敏感，目录顺序
+/// 本身也是展示行为的一部分）。
+String _optionsSignature(List<dynamic> options) => [
+  for (final o in options)
+    if (o is ConfigOption)
+      for (final v in o.options)
+        '${v.value}|${v.modelProviderId}|${v.modelAccessMode}|'
+            '${v.modelAccessAccountType}',
+].join('\u0000');
+
 class _ModelSheetLoader extends StatefulWidget {
   final dynamic app;
   final String? sessionId;
@@ -281,9 +292,15 @@ class _ModelSheetLoader extends StatefulWidget {
 class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
   WorkspacePrep? _prep;
   List<dynamic> _taskOptions = const [];
+
+  /// 会话目录原始值（未经 getView 白名单过滤）——后台刷新后重算用。
+  List<dynamic> _rawTaskOptions = const [];
   List<(String, String)> _thoughtOptions = const [];
   Object? _error;
   bool _loading = true;
+
+  /// 每次 _fetch 自增：迟到的后台刷新不得覆盖新一轮加载结果。
+  int _loadEpoch = 0;
 
   @override
   void initState() {
@@ -404,6 +421,9 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
   }
 
   Future<void> _fetch() async {
+    final epoch = ++_loadEpoch;
+    // 目录刷新与首屏目录并行发起：首屏照常秒开，刷新完成后再静默校准。
+    final refreshFuture = _startCatalogRefresh();
     setState(() {
       _loading = true;
       _error = null;
@@ -427,6 +447,7 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
               _taskOptions = view;
               _loading = false;
             });
+            _scheduleCatalogRefresh(epoch, refreshFuture);
           }
           return;
         }
@@ -449,9 +470,11 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
           _thoughtOptions = _thoughtFrom(taskOptions);
           if (mounted) {
             setState(() {
+              _rawTaskOptions = taskOptions;
               _taskOptions = _augmentOptions(augmented, meta);
               _loading = false;
             });
+            _scheduleCatalogRefresh(epoch, refreshFuture);
           }
           return;
         }
@@ -473,6 +496,55 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
           _loading = false;
         });
       }
+    }
+  }
+
+  /// 发起桌面端 Provider 注册表刷新（失败静默，返回 false）。
+  Future<bool> _startCatalogRefresh() async {
+    try {
+      return await widget.app.refreshProviderCatalog();
+    } catch (_) {
+      return false; // 老宿主/无连接：静默保持当前列表。
+    }
+  }
+
+  /// 目录新鲜度（stale-while-revalidate）：面板先按当前 getView 秒开，
+  /// 再后台调 provider-settings.refresh 强制桌面端重读内置/账号 Provider
+  /// 源（与桌面「模型设置」页刷新同一条 RPC）；完成后重读目录，集合有
+  /// 变化才静默替换——过期 start-plan 之类失效 provider 由此消失。
+  Future<void> _scheduleCatalogRefresh(
+    int epoch,
+    Future<bool> refresher,
+  ) async {
+    final refreshed = await refresher;
+    if (!mounted || epoch != _loadEpoch || !refreshed) return;
+    try {
+      if (widget.sessionId == null) {
+        final fresh = await widget.app.modelSelectionOptions();
+        if (!mounted || epoch != _loadEpoch) return;
+        if (fresh is List &&
+            fresh.isNotEmpty &&
+            _optionsSignature(fresh) != _optionsSignature(_taskOptions)) {
+          _thoughtOptions = await _draftThoughtOptions();
+          if (!mounted || epoch != _loadEpoch) return;
+          setState(() => _taskOptions = fresh);
+        }
+      } else {
+        final view = await widget.app.modelSelectionView();
+        if (!mounted || epoch != _loadEpoch) return;
+        final fresh = _augmentOptions(
+          [
+            for (final o in _rawTaskOptions)
+              if (o is ConfigOption) o,
+          ],
+          _metaFromView(view),
+        );
+        if (_optionsSignature(fresh) != _optionsSignature(_taskOptions)) {
+          setState(() => _taskOptions = fresh);
+        }
+      }
+    } catch (_) {
+      // 静默：刷新链路的任何失败都保持旧列表（fail-open）。
     }
   }
 

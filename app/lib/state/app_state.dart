@@ -376,6 +376,55 @@ class AppState extends ChangeNotifier {
     return conv.modelSelectionOptions();
   }
 
+  // ── 模型目录新鲜度 ────────────────────────────────────────────────
+  // 背景：桌面端 `model-selection.getView` 只投影内存注册表，自身不刷新；
+  // 失效账号（如过期 BigModel start-plan）要等桌面「模型设置」页调
+  // `provider-settings.refresh` 才会被剔除。手机没有设置页，故由面板
+  // 主动触发同一条 RPC（远程 RPC v1 契约已开放该通道）。
+  static const _providerRefreshTtl = Duration(minutes: 2);
+  ConversationTransport? _providerRefreshConv;
+  DateTime? _providerRefreshAt;
+  Future<bool>? _providerRefreshInFlight;
+
+  /// 强制刷新桌面端 Provider 注册表（provider-settings.refresh）。
+  /// 返回 true=本次确实完成了刷新，调用方可据此重读目录；TTL 内/无连接/
+  /// 刷新失败返回 false（fail-open，保持现有目录不变）。
+  ///
+  /// TTL 默认 2 分钟且并发单飞：模型面板秒开路径可无脑调用。
+  Future<bool> refreshProviderCatalog({bool force = false}) {
+    final conv = _conv;
+    if (conv == null) return Future.value(false);
+    // 换电脑/换连接：刷新账本作废（不同桌面端的目录不能互相担保）。
+    if (!identical(_providerRefreshConv, conv)) {
+      _providerRefreshConv = conv;
+      _providerRefreshAt = null;
+      _providerRefreshInFlight = null;
+    }
+    final inFlight = _providerRefreshInFlight;
+    if (inFlight != null) return inFlight;
+    final last = _providerRefreshAt;
+    if (!force &&
+        last != null &&
+        DateTime.now().difference(last) < _providerRefreshTtl) {
+      return Future.value(false);
+    }
+    _providerRefreshAt = DateTime.now();
+    final future = conv
+        .refreshProviderSettings()
+        .then((_) => true)
+        .catchError((Object e) {
+          _log('[catalog] provider-settings.refresh 失败（保持旧目录）: $e');
+          return false;
+        })
+        .whenComplete(() {
+          if (identical(_providerRefreshConv, conv)) {
+            _providerRefreshInFlight = null;
+          }
+        });
+    _providerRefreshInFlight = future;
+    return future;
+  }
+
   /// 工作区技能列表（官方 skills.list，composer 以 `$name` 触发——
   /// 桌面「添加」弹层 footer「$ 选择技能」的手机端等价物）。
   Future<List<SkillEntry>> listSkills() async {

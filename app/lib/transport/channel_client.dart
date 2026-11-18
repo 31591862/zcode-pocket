@@ -236,6 +236,10 @@ class Channels {
   static const oauth = 'oauth';
   static const modelProvider = 'model-provider';
   static const modelSelection = 'model-selection';
+
+  /// 官方 ProviderSettings 通道（远程 RPC v1 契约开放）：模型目录新鲜度
+  /// 修复用——`refresh` 强制桌面端重读内置/账号 Provider 配置。
+  static const providerSettings = 'provider-settings';
   static const usageStats = 'usage-stats';
   static const codingPlanSubscription = 'coding-plan-subscription';
   static const skills = 'skills';

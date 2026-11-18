@@ -105,7 +105,7 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
       if (saveUri == null) return; // 用户取消
       messenger.showSnackBar(
         SnackBar(
-          content: Text('已保存到 $saveUri'),
+          content: Text('已保存到所选位置'),
           duration: const Duration(seconds: 4),
         ),
       );

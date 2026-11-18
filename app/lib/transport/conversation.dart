@@ -1458,6 +1458,24 @@ class ConversationTransport {
     return res is Map ? res.cast<String, dynamic>() : null;
   }
 
+  /// 官方 provider-settings.refresh（远程 RPC v1 契约开放）——目录新鲜度
+  /// 修复：强制桌面端重读内置/账号 Provider 源并重建注册表（桌面「模型
+  /// 设置」页的刷新即同一条 RPC）。失效/过期账号（entitled=false）的
+  /// provider 只有刷新后才会从 model-selection.getView 中消失。
+  ///
+  /// 副作用型调用：返回的 provider-settings 大载荷（模板/配置）不用；
+  /// 刷新可能触发一次远程配置拉取，超时由调用方兜底。
+  Future<void> refreshProviderSettings({
+    String reason = 'pocket-model-sheet',
+  }) async {
+    await _channels.call(
+      Channels.providerSettings,
+      'refresh',
+      [reason],
+      timeout: const Duration(seconds: 20),
+    );
+  }
+
   /// getView → ConfigOption 形状（模型面板直用；value=providerId/modelId）。
   Future<List<ConfigOption>> modelSelectionOptions() async {
     final view = await modelSelectionView();
