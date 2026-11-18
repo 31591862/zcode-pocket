@@ -696,6 +696,12 @@ ThemeData buildAppTheme([Brightness brightness = Brightness.light]) {
           ? c.card
           : const Color(0xFFF6F8FF), // 蓝 4%（=surfaceContainerLow）
       dragHandleColor: c.foregroundSubtle,
+      // 2026-11-18 用户拍板：弹层统一贴合屏幕两边——M3 默认
+      // maxWidth 640 在宽逻辑宽度设备上居中限宽留出两侧空隙。
+      constraints: const BoxConstraints(
+        minWidth: double.infinity,
+        maxWidth: double.infinity,
+      ),
     ),
     popupMenuTheme: isDark ? PopupMenuThemeData(color: c.card) : null,
     // 文本选区（路B 顺带收口）：深色下默认=primary 纯白块压浅字不可读，

@@ -4,6 +4,7 @@ import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import 'pairing_page.dart';
 import 'task_center_page.dart';
+import 'top_notice.dart';
 
 /// 根入口：无任何档案 → 全屏配对页；有档案 → 任务中心（档案切换在
 /// 任务中心顶栏一级入口， 裁决）。
@@ -22,6 +23,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final app = AppStateScope.of(context);
+    TopNotice.attach(context);
     return ListenableBuilder(
       listenable: app,
       builder: (context, _) {

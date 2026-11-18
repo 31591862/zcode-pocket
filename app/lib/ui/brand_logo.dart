@@ -173,10 +173,10 @@ class BrandLogoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
-    final tint = asset != null
-        ? resolveBrandColor(asset!, brightness)
-        : null;
+    // 圆底=品牌原色（深浅同色——圆底语义≠字标染色，深色下深色圆+
+    // 白字标观感与 Eta 一致）。resolveBrandColor 的深色提亮是为字标
+    // 染色设计的，圆底不需要。
+    final tint = asset != null ? _brandColors[asset] : null;
     final bg = tint ?? Theme.of(context).colorScheme.secondaryContainer;
     final glyphColor = tint != null
         ? Colors.white

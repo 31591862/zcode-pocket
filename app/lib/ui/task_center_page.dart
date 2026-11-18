@@ -3780,7 +3780,6 @@ void _showTaskActions(
                     // 用户实测永驻）——改自绘 TopNotice，3s 自动退场，
                     // 撤销窗口期内仍可点。
                     TopNotice.show(
-                      context,
                       message:
                           '已归档「${entry.title.isEmpty ? '未命名任务' : entry.title}」',
                       icon: Icons.archive_outlined,

@@ -298,7 +298,7 @@ class TimelineMarkerDivider extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          const Expanded(child: Divider(height: 1, thickness: 0.5)),
+          const Expanded(child: Divider(height: 1, thickness: 0.4)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
@@ -320,7 +320,7 @@ class TimelineMarkerDivider extends StatelessWidget {
               ],
             ),
           ),
-          const Expanded(child: Divider(height: 1, thickness: 0.5)),
+          const Expanded(child: Divider(height: 1, thickness: 0.4)),
         ],
       ),
     );

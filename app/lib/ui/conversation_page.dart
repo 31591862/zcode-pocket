@@ -592,6 +592,10 @@ class _ConversationPageState extends State<ConversationPage>
   /// 持久标记，这里只防同页多帧重复查）。
   bool _fabHintChecked = false;
 
+  /// 悬浮球引导卡可见（批①：黑条 SnackBar 改悬浮卡）。
+  bool _fabHintVisible = false;
+  Timer? _fabHintTimer;
+
   /// 正在等目标工作区就绪（loading 副文案切换用）。
   bool _waitingWorkspace = false;
 
@@ -3159,7 +3163,6 @@ class _ConversationPageState extends State<ConversationPage>
     // 顶部提示（批③ 2026-11-17）：带 action 的 SnackBar 在 Flutter 3.47
     // 默认 persist 永驻——改 TopNotice（5s 自动退场，定位窗口期内可点）。
     TopNotice.show(
-      context,
       key: const ValueKey('deeplink-prompt'),
       message: '已打开会话——要定位到产生通知的消息吗？',
       icon: Icons.notifications_active_outlined,
@@ -5155,26 +5158,20 @@ class _ConversationPageState extends State<ConversationPage>
                               final app = AppStateScope.of(context);
                               if (app.uiPrefs.fabMenuHintShown) return;
                               app.uiPrefs.setFabMenuHintShown();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                // 独立视觉复核必修1（2026-11-07）：默认
-                                // fixed 行为整条压住输入栏（实测盖掉输入
-                                // 框 78%+整颗发送键）——floating+底缘
-                                // margin 抬到输入栏之上。
-                                SnackBar(
-                                  behavior: SnackBarBehavior.floating,
-                                  margin: const EdgeInsets.only(
-                                    left: 16,
-                                    right: 16,
-                                    bottom: 96,
-                                  ),
-                                  content: const Text(
-                                    // 晚到一路复核必修2：原 20 字在
-                                    // 343dp 宽度换行出单字孤行——去两「本」。
-                                    '长按悬浮球：回到回合开始 / 收起输出',
-                                  ),
-                                  duration: const Duration(seconds: 4),
-                                ),
-                              );
+                              // 引导改悬浮卡（批①）：黑条 SnackBar 改与
+                              // 被引导对象（悬浮球）同位的悬浮小卡。
+                              if (mounted) {
+                                setState(() => _fabHintVisible = true);
+                                _fabHintTimer?.cancel();
+                                _fabHintTimer = Timer(
+                                  const Duration(seconds: 4),
+                                  () {
+                                    if (mounted) {
+                                      setState(() => _fabHintVisible = false);
+                                    }
+                                  },
+                                );
+                              }
                             });
                           }
                           return AnimatedPositioned(
@@ -5312,6 +5309,49 @@ class _ConversationPageState extends State<ConversationPage>
                             ),
                           );
                         }(),
+                    // 引导悬浮卡（批① 2026-11-18）：挂在悬浮球正上方。
+                    if (_fabHintVisible)
+                      Positioned(
+                        left: (viewportCons.maxWidth - 48 - 14 - 36).clamp(
+                          8.0,
+                          viewportCons.maxWidth - 230,
+                        ),
+                        top: (viewportCons.maxHeight - 48 - 14 - 44).clamp(
+                          8.0,
+                          viewportCons.maxHeight - 90,
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: context.colors.card,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: context.colors.borderFaint,
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.touch_app_outlined,
+                                size: 13,
+                                color: context.colors.brandAccent,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '长按悬浮球：回到回合开始 / 收起输出',
+                                style: TextStyle(
+                                  fontSize: AppType.uiXs,
+                                  color: context.colors.foreground,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 );

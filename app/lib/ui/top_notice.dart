@@ -18,11 +18,34 @@ import 'settings_style.dart';
 class TopNotice {
   TopNotice._();
 
+  static OverlayState? _rootOverlay;
   static OverlayEntry? _entry;
   static _TopNoticeCardState? _state;
 
-  static void show(
-    BuildContext context, {
+  /// 根 Overlay 挂载（HomeShell 首帧调用一次；幂等）。挂载后全库
+  /// 任意位置（含 post-await/源页已退场场景）可弹——失败类提示的
+  /// 源页面可能已退场，走根 Overlay 无生命周期断点。
+  static void attach(BuildContext context) {
+    _rootOverlay = Overlay.maybeOf(context, rootOverlay: true);
+  }
+
+  /// 失败/错误提示快捷入口（红色图标，destructive 色）。
+  static void error(String message) {
+    Color? iconColor;
+    final overlay = _rootOverlay;
+    if (overlay != null) {
+      try {
+        iconColor = overlay.context.colors.destructive;
+      } catch (_) {}
+    }
+    show(
+      message: message,
+      icon: Icons.error_outline,
+      iconColor: iconColor,
+    );
+  }
+
+  static void show({
     required String message,
     IconData icon = Icons.info_outline,
     Color? iconColor,
@@ -31,7 +54,7 @@ class TopNotice {
     VoidCallback? onAction,
     Duration duration = const Duration(seconds: 3),
   }) {
-    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    final overlay = _rootOverlay;
     if (overlay == null) return;
     _discard();
     // 先声明后赋值：onDismissed 闭包要读同一变量（identical 防新条

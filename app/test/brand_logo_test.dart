@@ -80,12 +80,17 @@ void main() {
           Brightness.light), isNull);
     });
 
-    test('勘误（2026-10-26 用户复核）：智谱/OpenAI 归单色类——官方桌面'
-        '图标实测全单色（zai 黑/bigmodel 白/OpenAI 黑），不采公司色',
+    test('勘误沿革：OpenAI 保持单色类；智谱 2026-11-18 圆底徽标批起'
+        '入黑圆底色（Eta zai 圆同款，深浅同色——深色下黑圆沉底但白字标可见）',
         () {
-      // 不入色表=两模式都走前景色兜底（浅色近黑可见）。
+      // 浅色=黑圆底（圆底徽标批的 _brandColors 直查）；深色仍 null
+      //（resolveBrandColor 的近黑过滤是为字标染色设计的——圆底徽标
+      // BrandLogoChip 直查 _brandColors 绕过此函数）。
       expect(resolveBrandColor('assets/brand_logos/zhipu.svg',
-          Brightness.light), isNull);
+          Brightness.light), const Color(0xFF1C1C1E));
+      expect(resolveBrandColor('assets/brand_logos/zhipu.svg',
+          Brightness.dark), isNull);
+      // OpenAI 保持单色类：不入色表=前景色兜底。
       expect(resolveBrandColor('assets/brand_logos/openai.svg',
           Brightness.dark), isNull);
     });

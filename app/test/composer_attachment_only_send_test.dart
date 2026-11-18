@@ -91,7 +91,7 @@ void main() {
     expect(sent, 0);
   });
 
-  testWidgets('运行中+托盘附件：保持发送键（发送即排队），描边停止键并排照旧', (tester) async {
+  testWidgets('运行中+托盘附件：只显示发送键（发送即排队，描边停止键退役）', (tester) async {
     var sent = 0;
     var stopped = 0;
     final controller = TextEditingController();
@@ -108,15 +108,14 @@ void main() {
       onStop: () => stopped++,
       onVoice: () {},
     );
-    // 运行中+有草稿（附件=发送意图）：主键=发送（不进"实心停止键"独占态），
-    // 描边停止键并排（V2 单键切换的既有设计）。
+    // 运行中+有草稿：只显示发送键（发送即排队），描边停止键退役
+    //（批⑥ 2026-11-18 用户拍板"输入框有文字时不显示停止按钮"）。
     expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('send-button')));
     await tester.pump();
     expect(sent, 1, reason: '运行中点发送=排队语义保留');
-    await tester.tap(find.byKey(const ValueKey('stop-button')));
-    await tester.pump();
-    expect(stopped, 1, reason: '描边停止键并排照旧');
+    expect(find.byKey(const ValueKey('stop-button')), findsNothing,
+        reason: '描边停止键退役（批⑥ 用户拍板）');
   });
 
   testWidgets('运行中+无附件空文本：停止键照旧', (tester) async {

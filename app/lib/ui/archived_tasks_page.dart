@@ -65,7 +65,6 @@ class _ArchivedTasksPageState extends State<ArchivedTasksPage> {
       final res = await action();
       if (mounted) {
         TopNotice.show(
-          context,
           message: okText,
           icon: Icons.check_circle_outline,
           iconColor: kSettingsIconGreen,
@@ -74,7 +73,6 @@ class _ArchivedTasksPageState extends State<ArchivedTasksPage> {
             res['skippedTaskIds'] is List &&
             (res['skippedTaskIds'] as List).isNotEmpty) {
           TopNotice.show(
-            context,
             message: '部分任务已不在归档态，跳过',
             icon: Icons.info_outline,
             iconColor: kSettingsIconOrange,
@@ -85,7 +83,6 @@ class _ArchivedTasksPageState extends State<ArchivedTasksPage> {
     } catch (e) {
       if (mounted) {
         TopNotice.show(
-          context,
           message: '操作失败：$e',
           icon: Icons.error_outline,
           iconColor: context.colors.destructive,

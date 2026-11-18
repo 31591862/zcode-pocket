@@ -615,6 +615,7 @@ class _VoiceInputSheetState extends State<VoiceInputSheet> {
             const SizedBox(height: 12),
             if (phase == _VoicePhase.listening) ...[
               FilledButton(
+                style: tonalFilledStyle(context),
                 key: const ValueKey('voice-finish'),
                 onPressed: _finish,
                 child: const Text('说完了'),

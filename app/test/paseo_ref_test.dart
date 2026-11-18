@@ -168,9 +168,8 @@ void main() {
     await tester.pumpWidget(
         _host(app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')));
     await _pump(tester);
-    expect(find.text('MBP-工作机'), findsOneWidget,
-        reason: 'Paseo 参考：多电脑场景顶栏常驻当前电脑名');
-    expect(find.byIcon(Icons.computer), findsOneWidget);
+    // 设备名退役（批④ 2026-11-17 用户拍板）：副行只留分支+运行状态，
+    // 设备维度归抽屉电脑卡。
   });
 
   testWidgets('DiffViewer：目录行增删合计', (tester) async {
@@ -275,7 +274,7 @@ void main() {
     await tester.pumpWidget(_host(
         app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')));
     await _pump(tester);
-    expect(find.byType(BrandLogo), findsOneWidget,
+    expect(find.byType(BrandLogoChip), findsOneWidget,
         reason: 'Paseo 参考：GLM 模型应显示官方 Z 字标（单色矢量）');
     expect(find.text('glm-5.3F'), findsOneWidget, reason: '模型名主文字（亮，保留 id 大小写）');
     expect(find.text('高'), findsOneWidget, reason: '思考档次级文字（暗一档）');
@@ -309,7 +308,7 @@ void main() {
     await tester.pumpWidget(_host(
         app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')));
     await _pump(tester);
-    expect(find.byType(BrandLogo), findsNothing,
-        reason: '无资产品牌回退纯文字');
+    expect(find.byType(BrandLogoChip), findsOneWidget,
+        reason: '未知品牌回落中性圆+首字母（2026-11-18 圆底徽标批）');
   });
 }
