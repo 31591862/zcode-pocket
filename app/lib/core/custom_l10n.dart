@@ -67,6 +67,10 @@ const _customEn = <String, String>{
   '隐私': 'Privacy',
   '开源': 'Open source',
   '版权': 'Copyright',
+  '本应用是 ZCode Pocket 的下游改版（fork）：上游 JZYLukis/zcode-pocket，下游 31591862/zcode-pocket。在上游基础上包含 UI/UX 调整；上游版权归 JZYLukis 及 ZCode Pocket contributors，本 fork 沿用 Apache-2.0。':
+      'This app is a downstream fork of ZCode Pocket: upstream JZYLukis/zcode-pocket, fork 31591862/zcode-pocket. It carries UI/UX changes on top of upstream. Upstream copyright remains with JZYLukis and ZCode Pocket contributors; this fork is distributed under Apache-2.0.',
+  '下游改版 Copyright © 2026 31591862':
+      'Downstream fork Copyright © 2026 31591862',
   '本项目为社区驱动的第三方客户端，与 ZCode / 智谱无关联、未经其授权或认可；ZCode 名称归其所有者。':
       'This is a community-driven third-party client. It is not affiliated with, authorized by, or endorsed by ZCode or Zhipu. The ZCode name belongs to its owner.',
   '使用本应用连接 ZCode 官方服务时，须自行遵守官方服务条款：现行条款默认限非商业的个人研究学习用途，商业使用需与官方另行约定。':

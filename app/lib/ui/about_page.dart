@@ -63,6 +63,14 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
           settingsGroupLabel(context, tr('声明')),
           _paragraph(
             context,
+            tr('本应用是 ZCode Pocket 的下游改版（fork）：上游 '
+                'JZYLukis/zcode-pocket，下游 31591862/zcode-pocket。'
+                '在上游基础上包含 UI/UX 调整；上游版权归 JZYLukis 及 '
+                'ZCode Pocket contributors，本 fork 沿用 Apache-2.0。'),
+          ),
+          const SizedBox(height: 8),
+          _paragraph(
+            context,
             tr('本项目为社区驱动的第三方客户端，与 ZCode / 智谱无关联、'
                 '未经其授权或认可；ZCode 名称归其所有者。'),
           ),
@@ -188,6 +196,7 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
           ]),
           settingsGroupLabel(context, tr('版权')),
           _paragraph(context, 'Copyright © 2026 JZYLukis and ZCode Pocket contributors'),
+          _paragraph(context, tr('下游改版 Copyright © 2026 31591862')),
         ],
       ),
     );
