@@ -8,6 +8,7 @@ import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../state/marketing_catalog.dart';
 import 'aliyun_captcha_page.dart';
+import 'background_captcha.dart';
 import 'app_widgets.dart' show showConfirmDialog;
 import 'settings_style.dart';
 
@@ -66,34 +67,84 @@ class _DrawerClaimCardState extends State<DrawerClaimCard> {
     if (plan == null || _claiming) return;
     setState(() => _claiming = true);
     final app = AppStateScope.of(context);
-    dynamic result;
-    String? firstError;
+
+    Map<String, dynamic>? config;
     try {
-      result = await app.claimManualPlan(plan.planId);
-    } catch (e) {
-      firstError = '$e';
+      config = await app.requestVerificationConfig();
+    } catch (_) {}
+    final region = '${config?['region'] ?? ''}'.trim();
+    final prefix = '${config?['prefix'] ?? ''}'.trim();
+    final sceneId = '${config?['sceneId'] ?? ''}'.trim();
+    final captchaReady =
+        config?['enabled'] != false &&
+        region.isNotEmpty &&
+        prefix.isNotEmpty &&
+        sceneId.isNotEmpty;
+
+    String? captchaParam;
+    String? captchaRegion;
+    if (captchaReady) {
+      // 先尝试后台（1x1 不可见 WebView）无感验证；失败才拉起可见验证页。
+      final background = await runTracelessCaptcha(
+        context,
+        region: region,
+        prefix: prefix,
+        sceneId: sceneId,
+        language: region == 'cn' ? 'cn' : 'en',
+      );
+      if (background != null) {
+        captchaParam = background;
+        captchaRegion = region;
+      } else {
+        final solved = await _solveCaptcha(
+          app,
+          config: config,
+          autoTraceless: false,
+        );
+        if (solved == null) {
+          if (mounted) setState(() => _claiming = false);
+          return;
+        }
+        captchaParam = solved.param;
+        captchaRegion = solved.region;
+      }
     }
-    final needCaptcha =
-        firstError?.toLowerCase().contains('captcha') == true ||
-        (result is Map &&
-            '${result['message'] ?? ''}'.toLowerCase().contains('captcha'));
-    if (needCaptcha) {
-      final param = await _solveCaptcha(app);
-      if (param == null) {
+
+    dynamic result;
+    String? error;
+    try {
+      result = await app.claimManualPlan(
+        plan.planId,
+        captchaVerifyParam: captchaParam,
+        captchaRegion: captchaRegion,
+      );
+    } catch (e) {
+      error = '$e';
+    }
+    // 配置判断失准时按服务端错误兜底：再走一次可见验证码。
+    if (captchaParam == null &&
+        error?.toLowerCase().contains('captcha') == true) {
+      final solved = await _solveCaptcha(
+        app,
+        config: config,
+        autoTraceless: false,
+      );
+      if (solved == null) {
         if (mounted) setState(() => _claiming = false);
         return;
       }
       try {
         result = await app.claimManualPlan(
           plan.planId,
-          captchaVerifyParam: param.param,
-          captchaRegion: param.region,
+          captchaVerifyParam: solved.param,
+          captchaRegion: solved.region,
         );
-        firstError = null;
+        error = null;
       } catch (e) {
-        firstError = '$e';
+        error = '$e';
       }
     }
+
     final ok = result is Map && result['success'] == true;
     if (!mounted) return;
     if (ok) {
@@ -109,18 +160,24 @@ class _DrawerClaimCardState extends State<DrawerClaimCard> {
     }
     setState(() => _claiming = false);
     final message =
-        firstError ?? (result is Map ? '${result['message'] ?? ''}' : '');
+        error ?? (result is Map ? '${result['message'] ?? ''}' : '');
     unawaited(_showFailure(message));
   }
 
-  Future<({String param, String region})?> _solveCaptcha(AppState app) async {
-    Map<String, dynamic>? config;
-    try {
-      config = await app.requestVerificationConfig();
-    } catch (_) {}
-    final region = '${config?['region'] ?? ''}'.trim();
-    final prefix = '${config?['prefix'] ?? ''}'.trim();
-    final sceneId = '${config?['sceneId'] ?? ''}'.trim();
+  Future<({String param, String region})?> _solveCaptcha(
+    AppState app, {
+    Map<String, dynamic>? config,
+    bool autoTraceless = true,
+  }) async {
+    var resolved = config;
+    if (resolved == null) {
+      try {
+        resolved = await app.requestVerificationConfig();
+      } catch (_) {}
+    }
+    final region = '${resolved?['region'] ?? ''}'.trim();
+    final prefix = '${resolved?['prefix'] ?? ''}'.trim();
+    final sceneId = '${resolved?['sceneId'] ?? ''}'.trim();
     if (region.isEmpty || prefix.isEmpty || sceneId.isEmpty) return null;
     if (!mounted) return null;
     final param = await Navigator.of(context).push<String>(
@@ -130,6 +187,7 @@ class _DrawerClaimCardState extends State<DrawerClaimCard> {
           prefix: prefix,
           sceneId: sceneId,
           language: region == 'cn' ? 'cn' : 'en',
+          autoTraceless: autoTraceless,
         ),
       ),
     );

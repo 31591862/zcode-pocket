@@ -17,6 +17,7 @@ class AliyunCaptchaPage extends StatefulWidget {
   final String prefix;
   final String sceneId;
   final String language; // cn / en
+  final bool autoTraceless;
 
   const AliyunCaptchaPage({
     super.key,
@@ -24,6 +25,7 @@ class AliyunCaptchaPage extends StatefulWidget {
     required this.prefix,
     required this.sceneId,
     this.language = 'cn',
+    this.autoTraceless = true,
   });
 
   @override
@@ -72,7 +74,11 @@ class _AliyunCaptchaPageState extends State<AliyunCaptchaPage> {
           setState(() => _error = '验证结果为空，请重试');
         }
         break;
+      case 'traceless_failed':
       case 'fail':
+        // 无感失败/交互失败：保留页面与「开始验证」按钮，不弹全屏错误。
+        if (mounted) setState(() => _loading = false);
+        break;
       case 'error':
       case 'init_error':
         if (mounted) {
@@ -90,6 +96,7 @@ class _AliyunCaptchaPageState extends State<AliyunCaptchaPage> {
     final prefix = jsonEncode(widget.prefix);
     final sceneId = jsonEncode(widget.sceneId);
     final language = jsonEncode(widget.language);
+    final auto = widget.autoTraceless ? 'true' : 'false';
     return '''
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -102,13 +109,20 @@ class _AliyunCaptchaPageState extends State<AliyunCaptchaPage> {
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
   #wrap { display:flex; flex-direction:column; align-items:center;
     justify-content:center; min-height:100%; padding:24px; box-sizing:border-box; }
+  #auto { display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .spinner { width:24px; height:24px; border:2px solid #e5e5e5;
+    border-top-color:#111; border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .auto-text { font-size:13px; color:#666; }
+  #manual { display:none; flex-direction:column; align-items:center; }
   h1 { font-size:17px; font-weight:600; margin:0 0 10px; color:#111; }
   p { font-size:13px; line-height:1.6; color:#666; text-align:center;
     margin:0 0 22px; max-width:320px; }
   button { appearance:none; border:0; border-radius:24px; background:#111;
     color:#fff; font-size:15px; padding:12px 44px; }
   #captcha-element { width:100%; }
-  #status { margin-top:14px; font-size:12px; color:#999; min-height:16px; }
+  #status { margin-top:14px; font-size:12px; color:#999; min-height:16px;
+    text-align:center; }
 </style>
 <script>
 window.AliyunCaptchaConfig = {region: $region, prefix: $prefix};
@@ -117,18 +131,36 @@ window.AliyunCaptchaConfig = {region: $region, prefix: $prefix};
 </head>
 <body>
 <div id="wrap">
-  <h1>安全验证</h1>
-  <p>为保障账号安全，领取前需要完成一次验证。</p>
-  <button id="captcha-btn" type="button">开始验证</button>
-  <div id="captcha-element"></div>
-  <div id="status"></div>
+  <div id="auto">
+    <div class="spinner"></div>
+    <div class="auto-text">正在验证…</div>
+  </div>
+  <div id="manual">
+    <h1>安全验证</h1>
+    <p>为保障账号安全，领取前需要完成一次验证。</p>
+    <button id="captcha-btn" type="button">开始验证</button>
+    <div id="captcha-element"></div>
+    <div id="status"></div>
+  </div>
 </div>
 <script>
 function send(obj) {
   try { CaptchaBridge.postMessage(JSON.stringify(obj)); } catch (e) {}
 }
+var fallbackTimer = null;
+var manualShown = false;
+function showManual(text) {
+  if (manualShown) {
+    if (text) document.getElementById('status').textContent = text;
+    return;
+  }
+  manualShown = true;
+  if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
+  document.getElementById('auto').style.display = 'none';
+  document.getElementById('manual').style.display = 'flex';
+  document.getElementById('status').textContent = text || '';
+}
 window.addEventListener('load', function () {
-  var status = document.getElementById('status');
   try {
     initAliyunCaptcha({
       SceneId: $sceneId,
@@ -141,24 +173,43 @@ window.addEventListener('load', function () {
       button: '#captcha-btn',
       getInstance: function (instance) {
         window.__captchaInstance = instance;
-        status.textContent = '点击上方按钮开始验证';
         send({type: 'ready'});
+        // 先走无感验证（与桌面端一致）；通过则静默返回参数。
+        if ($auto && typeof instance.startTracelessVerification === 'function') {
+          window.__tracelessTried = true;
+          try {
+            instance.startTracelessVerification();
+            // 4 秒内无 success/fail：保底露出手动入口。
+            fallbackTimer = setTimeout(function () {
+              showManual('自动验证未通过，请点击上方按钮开始验证');
+            }, 4000);
+          } catch (e) {
+            showManual('点击上方按钮开始验证');
+          }
+        } else {
+          showManual('点击上方按钮开始验证');
+        }
       },
       success: function (param) {
-        status.textContent = '验证通过，正在领取…';
+        if (manualShown) document.getElementById('status').textContent = '验证通过，正在领取…';
         send({type: 'success', param: param});
       },
       fail: function (err) {
-        status.textContent = '验证未通过，请重试';
-        send({type: 'fail', error: String((err && err.message) || err || '验证未通过')});
+        var message = String((err && err.message) || err || '验证未通过');
+        if (window.__tracelessTried) {
+          showManual('自动验证未通过，请点击上方按钮开始验证');
+          send({type: 'traceless_failed', error: message});
+          return;
+        }
+        showManual('验证未通过，请重试');
+        send({type: 'fail', error: message});
       },
       onError: function (err) {
-        status.textContent = '验证组件异常，请重试';
-        send({type: 'error', error: String((err && err.message) || err || '验证组件异常')});
+        var message = String((err && err.message) || err || '验证组件异常');
+        send({type: 'error', error: message});
       }
     });
   } catch (e) {
-    status.textContent = '验证组件初始化失败';
     send({type: 'init_error', error: String((e && e.message) || e)});
   }
 });
