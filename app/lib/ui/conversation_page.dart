@@ -667,15 +667,9 @@ class _ConversationPageState extends State<ConversationPage>
     'guarded': '有风险时询问',
     'yolo': '减少确认次数',
   };
-  static const _thoughtNames = <String, String>{
-    'low': '低',
-    'medium': '中',
-    'high': '高',
-    'max': '最高',
-    'off': '关闭',
-    'none': '无',
-    'minimal': '极少',
-  };
+  /// 与模型面板同源（turn_model.submitConfigValueZh）——此前是手抄
+  /// 子集，新增 disabled/enabled/on/xhigh/ultra 档时 pill 漏译成英文。
+  static const _thoughtNames = submitConfigValueZh;
 
   @override
   void initState() {
