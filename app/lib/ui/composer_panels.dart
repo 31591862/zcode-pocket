@@ -302,6 +302,12 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
   /// 每次 _fetch 自增：迟到的后台刷新不得覆盖新一轮加载结果。
   int _loadEpoch = 0;
 
+  /// 会话目录短缓存（同会话 60s）：桌面 getTaskConfigOptions 实测
+  /// 2–5.7s，每次开面板都等它没有意义；先渲染 host getView，再后台校准。
+  static final _taskCatalogCache =
+      <String, ({DateTime at, List<dynamic> options})>{};
+  static const _taskCatalogTtl = Duration(seconds: 60);
+
   @override
   void initState() {
     super.initState();
@@ -422,8 +428,8 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
 
   Future<void> _fetch() async {
     final epoch = ++_loadEpoch;
-    // 目录刷新与首屏目录并行发起：首屏照常秒开，刷新完成后再静默校准。
-    final refreshFuture = _startCatalogRefresh();
+    Future<bool>? refreshFuture;
+    Future<bool> ensureRefresh() => refreshFuture ??= _startCatalogRefresh();
     setState(() {
       _loading = true;
       _error = null;
@@ -447,20 +453,55 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
               _taskOptions = view;
               _loading = false;
             });
-            _scheduleCatalogRefresh(epoch, refreshFuture);
+            _scheduleCatalogRefresh(epoch, ensureRefresh());
           }
           return;
         }
       } catch (_) {}
     } else {
-      // 会话路径元数据（2026-11-05 反馈④）与目录并行拉。
+      final sessionId = widget.sessionId!;
+      // 会话路径元数据与任务目录并行拉。
       final metaFuture = widget.app
           .modelSelectionView()
           .catchError((Object _) => null);
+      final cached = _taskCatalogCache[sessionId];
+      final useCache =
+          cached != null &&
+          DateTime.now().difference(cached.at) < _taskCatalogTtl;
+      final taskFuture = useCache
+          ? Future<List<dynamic>>.value(cached.options)
+          : widget.app
+                .getTaskConfigOptions(sessionId)
+                .then((options) {
+                  if (options.isNotEmpty) {
+                    _taskCatalogCache[sessionId] = (
+                      at: DateTime.now(),
+                      options: options,
+                    );
+                  }
+                  return options;
+                })
+                .catchError((Object _) => const <dynamic>[]);
+      // 快路径：host getView 通常 <20ms，先渲染列表；任务目录后台校准。
       try {
-        final taskOptions = await widget.app
-            .getTaskConfigOptions(widget.sessionId!)
-            .catchError((Object _) => const []);
+        final hostOptions = await widget.app.modelSelectionOptions().catchError(
+          (Object _) => const [],
+        );
+        if (hostOptions is List && hostOptions.isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              _taskOptions = hostOptions;
+              _loading = false;
+            });
+            _scheduleCatalogRefresh(epoch, ensureRefresh());
+          }
+          unawaited(_applyTaskCatalog(epoch, taskFuture, metaFuture));
+          return;
+        }
+      } catch (_) {}
+      // 快路径失败：退回等待任务目录（旧行为）。
+      try {
+        final taskOptions = await taskFuture;
         if (taskOptions is List && taskOptions.isNotEmpty) {
           final meta = _metaFromView(await metaFuture);
           final augmented = [
@@ -474,7 +515,7 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
               _taskOptions = _augmentOptions(augmented, meta);
               _loading = false;
             });
-            _scheduleCatalogRefresh(epoch, refreshFuture);
+            _scheduleCatalogRefresh(epoch, ensureRefresh());
           }
           return;
         }
@@ -488,6 +529,7 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
           _prep = prep;
           _loading = false;
         });
+        _scheduleCatalogRefresh(epoch, ensureRefresh());
       }
     } catch (e) {
       if (mounted) {
@@ -497,6 +539,32 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
         });
       }
     }
+  }
+
+  /// 后台把任务级目录校准到快路径列表（不阻塞首屏）。
+  Future<void> _applyTaskCatalog(
+    int epoch,
+    Future<List<dynamic>> taskFuture,
+    Future<Map<String, dynamic>?> metaFuture,
+  ) async {
+    try {
+      final taskOptions = await taskFuture;
+      if (!mounted || epoch != _loadEpoch || taskOptions.isEmpty) return;
+      final meta = _metaFromView(await metaFuture);
+      if (!mounted || epoch != _loadEpoch) return;
+      final fresh = _augmentOptions(
+        [
+          for (final o in taskOptions)
+            if (o is ConfigOption) o,
+        ],
+        meta,
+      );
+      _rawTaskOptions = taskOptions;
+      _thoughtOptions = _thoughtFrom(taskOptions);
+      if (_optionsSignature(fresh) != _optionsSignature(_taskOptions)) {
+        setState(() => _taskOptions = fresh);
+      }
+    } catch (_) {}
   }
 
   /// 发起桌面端 Provider 注册表刷新（失败静默，返回 false）。
@@ -530,6 +598,17 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
           setState(() => _taskOptions = fresh);
         }
       } else {
+        if (_rawTaskOptions.isEmpty) {
+          // 任务目录尚未到达：用刷新后的 host 快照校准，别清空快路径列表。
+          final host = await widget.app.modelSelectionOptions();
+          if (!mounted || epoch != _loadEpoch) return;
+          if (host is List &&
+              host.isNotEmpty &&
+              _optionsSignature(host) != _optionsSignature(_taskOptions)) {
+            setState(() => _taskOptions = host);
+          }
+          return;
+        }
         final view = await widget.app.modelSelectionView();
         if (!mounted || epoch != _loadEpoch) return;
         final fresh = _augmentOptions(

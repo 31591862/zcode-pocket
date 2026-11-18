@@ -381,7 +381,7 @@ class AppState extends ChangeNotifier {
   // 失效账号（如过期 BigModel start-plan）要等桌面「模型设置」页调
   // `provider-settings.refresh` 才会被剔除。手机没有设置页，故由面板
   // 主动触发同一条 RPC（远程 RPC v1 契约已开放该通道）。
-  static const _providerRefreshTtl = Duration(minutes: 2);
+  static const _providerRefreshTtl = Duration(minutes: 10);
   ConversationTransport? _providerRefreshConv;
   DateTime? _providerRefreshAt;
   Future<bool>? _providerRefreshInFlight;
@@ -390,7 +390,7 @@ class AppState extends ChangeNotifier {
   /// 返回 true=本次确实完成了刷新，调用方可据此重读目录；TTL 内/无连接/
   /// 刷新失败返回 false（fail-open，保持现有目录不变）。
   ///
-  /// TTL 默认 2 分钟且并发单飞：模型面板秒开路径可无脑调用。
+  /// TTL 默认 10 分钟且并发单飞：模型面板秒开路径可无脑调用。
   Future<bool> refreshProviderCatalog({bool force = false}) {
     final conv = _conv;
     if (conv == null) return Future.value(false);
