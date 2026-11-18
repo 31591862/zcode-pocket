@@ -425,6 +425,52 @@ class AppState extends ChangeNotifier {
     return future;
   }
 
+  // ── 营销投放 / 领取（手机触发，PC 执行） ─────────────────────────
+  // 全部走 PC 端 RPC：手机只触发与展示，领取由桌面端用其登录态执行。
+  Future<dynamic> claimManualPlan(
+    String planId, {
+    String? captchaVerifyParam,
+    String? captchaRegion,
+  }) {
+    final conv = _conv;
+    if (conv == null) throw StateError('no active computer');
+    return conv.claimManualPlan(
+      planId,
+      captchaVerifyParam: captchaVerifyParam,
+      captchaRegion: captchaRegion,
+    );
+  }
+
+  Future<Map<String, dynamic>?> requestVerificationConfig() {
+    final conv = _conv;
+    if (conv == null) throw StateError('no active computer');
+    return conv.requestVerificationConfig();
+  }
+
+  Map<String, dynamic>? bridgeInfo() {
+    final conv = _conv;
+    if (conv == null) return null;
+    return conv.bridgeInfo();
+  }
+
+  Future<Map<String, dynamic>?> systemInfo() {
+    final conv = _conv;
+    if (conv == null) throw StateError('no active computer');
+    return conv.systemInfo();
+  }
+
+  Future<Map<String, dynamic>?> readTextFileAbsolute(String path) {
+    final conv = _conv;
+    if (conv == null) throw StateError('no active computer');
+    return conv.readTextFileAbsolute(path);
+  }
+
+  Future<String?> loadCredential(String key) {
+    final conv = _conv;
+    if (conv == null) throw StateError('no active computer');
+    return conv.loadCredential(key);
+  }
+
   /// 工作区技能列表（官方 skills.list，composer 以 `$name` 触发——
   /// 桌面「添加」弹层 footer「$ 选择技能」的手机端等价物）。
   Future<List<SkillEntry>> listSkills() async {

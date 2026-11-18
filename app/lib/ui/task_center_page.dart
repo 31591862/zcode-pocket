@@ -26,6 +26,7 @@ import 'status_badge.dart';
 import 'archived_tasks_page.dart';
 import 'automation_page.dart';
 import 'conversation_page.dart';
+import 'drawer_claim_card.dart';
 import 'pairing_page.dart';
 import 'profiles_sheet.dart';
 import 'settings_page.dart';
@@ -1671,6 +1672,7 @@ class _HomeDrawerState extends State<_HomeDrawer> {
               const Spacer(),
             ],
             // ── 底部图标工具栏（永久钉底）。
+            const DrawerClaimCard(),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
               child: _bottomIconBar(context, isDark),

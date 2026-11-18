@@ -1476,6 +1476,71 @@ class ConversationTransport {
     );
   }
 
+  /// 官方 coding-plan-subscription.claimManualPlan：由桌面端用其登录态
+  /// 执行领取（手机只负责触发与展示结果）。[captchaVerifyParam] /
+  /// [captchaRegion] 来自手机侧阿里云验证码。
+  Future<dynamic> claimManualPlan(
+    String planId, {
+    String? captchaVerifyParam,
+    String? captchaRegion,
+  }) {
+    return _channels.call(
+      Channels.codingPlanSubscription,
+      'claimManualPlan',
+      [
+        {
+          'planId': planId,
+          if (captchaVerifyParam != null && captchaVerifyParam.isNotEmpty)
+            'captchaVerifyParam': captchaVerifyParam,
+          if (captchaRegion != null && captchaRegion.isNotEmpty)
+            'captchaRegion': captchaRegion,
+        },
+      ],
+      timeout: const Duration(seconds: 30),
+    );
+  }
+
+  /// 官方 getRequestVerificationConfig：领取前的阿里云验证码配置
+  /// （region/prefix/sceneId；当前手机侧仅展示，用于判断验证是否强制）。
+  Future<Map<String, dynamic>?> requestVerificationConfig() async {
+    final res = await _channels.call(
+      Channels.codingPlanSubscription,
+      'getRequestVerificationConfig',
+      [{}],
+      timeout: const Duration(seconds: 20),
+    );
+    return res is Map ? res.cast<String, dynamic>() : null;
+  }
+
+  /// 桌面桥信息（握手下发）：workspace 标识等；可能含桌面版本字段。
+  Map<String, dynamic> bridgeInfo() => session.bridge;
+
+  /// 官方 system.info：桌面端 homedir/platform（临时探测用）。
+  Future<Map<String, dynamic>?> systemInfo() async {
+    final res = await _channels.call(Channels.system, 'info', [
+      {},
+    ], timeout: const Duration(seconds: 15));
+    return res is Map ? res.cast<String, dynamic>() : null;
+  }
+
+  /// 官方 file.readTextFile：读取桌面端绝对路径文本（临时探测用）。
+  Future<Map<String, dynamic>?> readTextFileAbsolute(
+    String path, {
+    int length = 65536,
+  }) async {
+    final res = await _channels.call(Channels.file, 'readTextFile', [
+      {'path': path, 'offset': 0, 'length': length},
+    ], timeout: const Duration(seconds: 15));
+    return res is Map ? res.cast<String, dynamic>() : null;
+  }
+
+  /// 官方 credential.load：读取桌面端登录凭据（临时探测用）。
+  Future<String?> loadCredential(String key) async {
+    final res = await _channels.call(Channels.credential, 'load', [key],
+        timeout: const Duration(seconds: 15));
+    return res is String && res.trim().isNotEmpty ? res : null;
+  }
+
   /// getView → ConfigOption 形状（模型面板直用；value=providerId/modelId）。
   Future<List<ConfigOption>> modelSelectionOptions() async {
     final view = await modelSelectionView();
