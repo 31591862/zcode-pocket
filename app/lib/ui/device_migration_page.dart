@@ -8,14 +8,14 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart' hide Text;
-import 'package:path_provider/path_provider.dart';
 
 import '../core/backup_codec.dart';
-import '../core/artifact_share.dart';
 import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
@@ -93,25 +93,20 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
         includeSendQueue: _includeQueue,
         includeV1Profiles: _includeV1,
       );
-      final cacheDir = await getTemporaryDirectory();
-      final target = artifactShareTarget(
-        cacheDir,
-        'zcode-pocket-backup-${DateTime.now().millisecondsSinceEpoch}.json',
+      // 2026-11-18 用户拍板：导出改本地保存（选位置），不走系统分享。
+      // file_picker v13 saveFile：静态方法，自带 bytes 写入+位置选择。
+      final saveUri = await FilePicker.saveFile(
+        dialogTitle: '选择保存位置',
+        fileName:
+            'zcode-pocket-backup-${DateTime.now().millisecondsSinceEpoch}.json',
+        bytes: Uint8List.fromList(utf8.encode(json)),
       );
-      // FileProvider 只授权 cache/artifacts/ 子目录——首装该目录尚不存在
-      // （writeAsString 不建父目录；真机实测 PathNotFoundException）。
-      // 对齐 share_flow 的建目录惯例。
-      await target.parent.create(recursive: true);
-      await target.writeAsString(json, flush: true);
-      final ok = await shareArtifactFile(target.path);
       if (!mounted) return;
+      if (saveUri == null) return; // 用户取消
       messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            ok
-                ? '已调起系统分享。请发送/保存后及时删除该文件'
-                : '分享面板调起失败；文件已写入缓存，可稍后重试',
-          ),
+          content: Text('已保存到 $saveUri'),
+          duration: const Duration(seconds: 4),
         ),
       );
     } on Object catch (e) {
