@@ -2,6 +2,14 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
+> **Downstream fork notice**: This repository is a downstream fork of
+> [JZYLukis/zcode-pocket](https://github.com/JZYLukis/zcode-pocket), maintained at
+> [31591862/zcode-pocket](https://github.com/31591862/zcode-pocket). It carries
+> substantial UI/UX changes and local iterations on top of upstream (see the
+> commit history for details) and may differ noticeably from upstream releases.
+> Upstream copyright remains with JZYLukis and ZCode Pocket contributors; this
+> fork is distributed under the same Apache-2.0 license (see [LICENSE](LICENSE)).
+
 A native Android client (Flutter) for the ZCode desktop app. It brings
 multi-computer management, the task home, streaming conversations, approval
 interactions, branch selection, usage stats and more to your phone, keeping

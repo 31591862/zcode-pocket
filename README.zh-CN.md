@@ -2,6 +2,13 @@
 
 [English](README.md) | **简体中文**
 
+> **下游改版声明**：本仓库是
+> [JZYLukis/zcode-pocket](https://github.com/JZYLukis/zcode-pocket) 的下游
+> fork（[31591862/zcode-pocket](https://github.com/31591862/zcode-pocket)），
+> 在上游基础上包含较多 UI/UX 改版与本地迭代（改动明细见提交历史），可能
+> 与上游版本存在明显差异。上游版权归 JZYLukis 及 ZCode Pocket contributors
+> 所有；本 fork 沿用 Apache-2.0 许可证分发（见 [LICENSE](LICENSE)）。
+
 ZCode 桌面端的安卓原生客户端（Flutter）：把桌面端的多电脑管理、任务
 主页、会话流式、审批交互、分支选择、用量统计等能力搬进手机，操作
 习惯与桌面端保持一致。连接 ZCode 官方 Web Remote Control 通道
