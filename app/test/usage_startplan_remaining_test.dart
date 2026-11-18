@@ -104,6 +104,7 @@ Map<String, dynamic> _startPlanEntitlement({
   double percentage = 0.72,
   num count = 12000,
   num? total,
+  Map<String, dynamic>? subscription,
 }) => {
   'generatedAt': DateTime.now().millisecondsSinceEpoch,
   'authenticated': true,
@@ -118,7 +119,7 @@ Map<String, dynamic> _startPlanEntitlement({
         .add(const Duration(days: 1))
         .millisecondsSinceEpoch,
   },
-  'subscription': null,
+  'subscription': subscription,
   'quota': total == null
       ? null
       : {
@@ -221,7 +222,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('plan-kind-start-plan')));
     await settle(tester);
     // 精确数字（2026-11-16 用户需求）：count=12000 → 12,000 千分位。
-    expect(find.textContaining('剩余 12,000'), findsOneWidget,
+    // （Start Plan 卡改桌面同款布局后，剩余数字单独成行，无「剩余」前缀。）
+    expect(find.textContaining('12,000'), findsOneWidget,
         reason: '用户需求：剩余额度显示精确数字（remaining.count）');
     expect(find.textContaining('1.2万'), findsNothing,
         reason: '不再用万/亿粗粒度格式');
@@ -246,7 +248,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 2500));
     await settle(tester);
 
-    expect(find.textContaining('剩余 298,341,915 / 300,000,000'), findsOneWidget,
+    expect(find.textContaining('298,341,915 / 300,000,000'), findsOneWidget,
         reason: '用户需求：剩余/总量 精确千分位形态');
     // 桶类型 model_usage 不匹配 TOKENS_LIMIT → 仍是剩余额度单卡。
     expect(find.text('99%'), findsOneWidget,
@@ -260,6 +262,43 @@ void main() {
         reason: 'Start Plan 档必须跳过图表拉取');
     // 误导性提示不得出现（用户报告：Start Plan 本就没有图表数据）。
     expect(find.textContaining('图表数据获取失败'), findsNothing);
+  });
+
+  testWidgets('Start Plan：过期时间上屏（details[].expireTime ISO 串 → 本地 X月X日 HH:MM）', (
+    tester,
+  ) async {
+    final app = _UsageApp();
+    _UsageApp._channel.entitlement = _startPlanEntitlement(
+      subscription: {
+        'identityType': 'unknown',
+        'identityMasked': null,
+        'details': [
+          {
+            'productId': 'zcode-v3-start-plan-1118',
+            'productName': 'GLM 体验计划',
+            // 桌面 eL(formatUnixSecondsAsIso) 输出：UTC ISO 8601 串。
+            'expireTime': '2026-11-20T15:00:00.000Z',
+          },
+        ],
+      },
+    );
+    addTearDown(
+        () => _UsageApp._channel.entitlement = _startPlanEntitlement());
+    await pumpPage(tester, app);
+    await tester.tap(find.byKey(const ValueKey('plan-kind-start-plan')));
+    await settle(tester);
+
+    // 计划名走 details[0].productName（顶层无 plans 字段）。
+    expect(find.text('GLM 体验计划'), findsOneWidget);
+    final at = DateTime.parse('2026-11-20T15:00:00.000Z').toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    expect(
+      find.text(
+        '过期时间 ${at.month}月${at.day}日 ${two(at.hour)}:${two(at.minute)}',
+      ),
+      findsOneWidget,
+      reason: 'expireTime 在 details[0]（ISO 串），必须解析为本地时区上屏',
+    );
   });
 
   testWidgets('个人套餐口径不回归：40 已用 → 60%；已用 40 / 100 行保留', (

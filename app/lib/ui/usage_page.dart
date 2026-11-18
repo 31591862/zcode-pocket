@@ -1021,7 +1021,10 @@ class _UsagePageState extends State<UsagePage>
             ),
           // 批①：范围三档（官方 CodingPlanUsageRange；今日档下折线为
           // 小时粒度）。切换即取档缓存/拉取，折线点选重置。
-          Wrap(
+          // Start Plan 是 one_time 额度包，没有按日/周聚合的用量图——
+          // 这三个范围选项对它无意义，直接隐藏。
+          if (_planKind != 'start-plan')
+            Wrap(
             spacing: 8,
             runSpacing: 4,
             children: [
@@ -1079,7 +1082,7 @@ class _UsagePageState extends State<UsagePage>
               child: _ResetBadge(status: _resetStatus!, onPressed: _showResetSheet),
             ),
           ],
-          if (_subscriptionLine() != null) ...[
+          if (_planKind != 'start-plan' && _subscriptionLine() != null) ...[
             const SizedBox(height: 8),
             _subscriptionLine()!,
           ],
@@ -1131,15 +1134,9 @@ class _UsagePageState extends State<UsagePage>
     final startPlan = _planKind == 'start-plan';
     final quota = _ent?['quota'];
     final limits = quota is Map ? listOf(quota['limits']) : null;
-    // Start Plan 总量 = 各桶 total_units（number）合计——与桌面
-    // buildZaiStartPlanRemaining 的分母同口径（percentage 即剩余/总量）。
-    num? startPlanTotal;
+    // Start Plan：桌面同款卡片（计划名/过期时间/今日余额/分模型额度行）。
     if (startPlan) {
-      for (final b in limits ?? const []) {
-        if (b is Map && b['number'] is num) {
-          startPlanTotal = (startPlanTotal ?? 0) + (b['number'] as num);
-        }
-      }
+      return _startPlanCard(limits: limits);
     }
     final mcpAggregate = () {
       final mcp = _ent?['mcpQuota'];
@@ -1179,7 +1176,6 @@ class _UsagePageState extends State<UsagePage>
           // Start Plan 的 remaining 口径与个人套餐相反（0-1 剩余比例 vs
           // 0-100 已用占比）——按档分流，误反转会恒显示 ~99%。
           startPlan: _planKind == 'start-plan',
-          startPlanTotal: startPlanTotal,
         );
       }
       return const SizedBox.shrink();
@@ -1214,11 +1210,259 @@ class _UsagePageState extends State<UsagePage>
             c.limit!,
             c.color,
             startPlan: _planKind == 'start-plan',
-            startPlanTotal: startPlanTotal,
           ),
           const SizedBox(height: 8),
         ],
       ],
+    );
+  }
+
+  /// Start Plan 卡（桌面 startPlan.balance 卡同款布局，2026-11-19 用户
+  /// 拍板）：计划名 + 过期时间（小时）+ 今日余额 + 分模型额度行；
+  /// 右上角不放「升级」入口。数据=usage 快照 quota.limits 桶
+  /// （number=总量 / remaining=剩余 / usageDetails[].displayName=模型名）
+  /// + plans[].name / ends_at（计划名与到期）。
+  Widget _startPlanCard({required List<dynamic>? limits}) {
+    final colors = context.colors;
+    final ent = _ent ?? const {};
+
+    // 计划名：营销计划名（plans[].name）→ 订阅 productName → provider 名。
+    String planName = 'Start Plan';
+    final plans = ent['plans'];
+    if (plans is List && plans.isNotEmpty && plans.first is Map) {
+      final name = plans.first['name'];
+      if (name is String && name.trim().isNotEmpty) planName = name.trim();
+    }
+    if (planName == 'Start Plan') {
+      final sub = ent['subscription'];
+      final details = sub is Map && sub['details'] is List
+          ? (sub['details'] as List).whereType<Map>().toList()
+          : const <Map>[];
+      if (details.isNotEmpty) {
+        final productName = details.first['productName'];
+        if (productName is String && productName.trim().isNotEmpty) {
+          planName = productName.trim();
+        }
+      }
+    }
+
+    // 过期时间（精确到小时）。桌面 getStartPlanSnapshot 不返回顶层 plans：
+    // plans 已被 buildZaiStartPlanSubscription 转成 subscription.details[]，
+    // expireTime 是 ISO 8601 串（eL=formatUnixSecondsAsIso）——兼容
+    // ISO 串 / 毫秒 / 秒 / 数字串，逐 details 条取首个可解析值。
+    String? expireLabel;
+    DateTime? expireAt;
+    DateTime? parseExpire(Object? v) {
+      if (v is num && v > 0) {
+        final ms = v < 100000000000 ? (v * 1000).toInt() : v.toInt();
+        return DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+      }
+      if (v is String) {
+        final s = v.trim();
+        if (s.isEmpty) return null;
+        final n = int.tryParse(s);
+        if (n != null && n > 0) {
+          final ms = n < 100000000000 ? n * 1000 : n;
+          return DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+        }
+        final parsed = DateTime.tryParse(s);
+        return parsed?.toLocal();
+      }
+      return null;
+    }
+
+    final sub = ent['subscription'];
+    final details = sub is Map && sub['details'] is List
+        ? sub['details'] as List
+        : const <dynamic>[];
+    for (final d in details) {
+      if (d is! Map) continue;
+      expireAt = parseExpire(d['expireTime']);
+      if (expireAt != null) break;
+    }
+    expireAt ??= parseExpire(sub is Map ? sub['expireTime'] : null);
+    // 计划 ends_at（秒）兜底——若快照将来直接带 plans。
+    if (expireAt == null) {
+      final endsAt = plans is List && plans.isNotEmpty && plans.first is Map
+          ? (plans.first as Map)['ends_at']
+          : null;
+      if (endsAt is num && endsAt > 0) {
+        expireAt = DateTime.fromMillisecondsSinceEpoch(
+          endsAt.toInt() * 1000,
+        ).toLocal();
+      }
+    }
+    if (expireAt != null) {
+      String two(int v) => v.toString().padLeft(2, '0');
+      expireLabel =
+          '过期时间 ${expireAt.month}月${expireAt.day}日 '
+          '${two(expireAt.hour)}:${two(expireAt.minute)}';
+    }
+
+    // 额度行：每桶一行（模型名 / 剩余百分比 / 重置时刻 / 进度 / 剩余÷总量）。
+    final rows = <({String model, double pct, String reset, String frac})>[];
+    for (final b in limits ?? const <dynamic>[]) {
+      if (b is! Map) continue;
+      final total = b['number'] is num ? b['number'] as num : null;
+      final remaining = b['remaining'] is num ? b['remaining'] as num : null;
+      double? pct = b['percentage'] is num
+          ? (b['percentage'] as num).toDouble() * 100
+          : null;
+      if (pct == null && total != null && remaining != null && total > 0) {
+        pct = (remaining / total * 100).clamp(0.0, 100.0);
+      }
+      String model = '';
+      final usageDetails = b['usageDetails'];
+      if (usageDetails is List) {
+        for (final d in usageDetails) {
+          if (d is! Map) continue;
+          final displayName = d['displayName'];
+          final modelCode = d['modelCode'];
+          if (displayName is String && displayName.trim().isNotEmpty) {
+            model = displayName.trim();
+            break;
+          }
+          if (modelCode is String && modelCode.trim().isNotEmpty) {
+            model = modelCode.trim();
+            break;
+          }
+        }
+      }
+      final reset = formatResetTime(b['nextResetTime']);
+      if (total == null && remaining == null && model.isEmpty) continue;
+      rows.add((
+        model: model,
+        pct: pct ?? 100,
+        reset: reset,
+        frac: remaining != null && total != null && total > 0
+            ? '${formatExactCount(remaining)} / ${formatExactCount(total)}'
+            : '',
+      ));
+    }
+    if (rows.isEmpty) {
+      // 桶缺失兜底：用聚合 remaining（count/percentage）出一行。
+      final remaining = ent['remaining'];
+      if (remaining is Map && remaining['isShow'] == true) {
+        final count = remaining['count'] is num
+            ? remaining['count'] as num
+            : null;
+        final pct = remaining['percentage'] is num
+            ? (remaining['percentage'] as num).toDouble() * 100
+            : 100.0;
+        final reset = formatResetTime(remaining['nextResetTime']);
+        rows.add((
+          model: '',
+          pct: pct,
+          reset: reset,
+          frac: count != null ? formatExactCount(count) : '',
+        ));
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.colors.card,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: context.colors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            planName,
+            style: const TextStyle(
+              fontSize: AppType.uiBase,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (expireLabel != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              expireLabel,
+              style: TextStyle(
+                fontSize: AppType.uiCaption,
+                color: colors.foregroundSubtle,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Divider(height: 1, thickness: 0.5, color: colors.border),
+          const SizedBox(height: 10),
+          const Text(
+            '今日余额',
+            style: TextStyle(fontSize: AppType.uiBase),
+          ),
+          const SizedBox(height: 8),
+          for (final row in rows) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colors.sidebar,
+                borderRadius: BorderRadius.circular(AppRadius.card),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (row.model.isNotEmpty)
+                    Text(
+                      row.model,
+                      style: TextStyle(
+                        fontSize: AppType.uiCaption,
+                        color: colors.foregroundSubtle,
+                      ),
+                    ),
+                  const SizedBox(height: 2),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${row.pct.toStringAsFixed(0)}%',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          height: 1,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (row.reset.isNotEmpty)
+                        Text(
+                          row.reset,
+                          style: TextStyle(
+                            fontSize: AppType.uiXs,
+                            color: colors.foregroundSubtlest,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: (row.pct / 100).clamp(0.0, 1.0),
+                      minHeight: 6,
+                      backgroundColor: colors.sidebar,
+                      valueColor: AlwaysStoppedAnimation(colors.success),
+                    ),
+                  ),
+                  if (row.frac.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      row.frac,
+                      style: TextStyle(
+                        fontSize: AppType.uiXs,
+                        color: colors.foregroundSubtlest,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1316,7 +1560,7 @@ class _UsagePageState extends State<UsagePage>
               if (!startPlan && fraction != null)
                 '${tr('已用')} ${tr(fraction.$1)} / ${tr(fraction.$2)}',
               if (remainLine != null) remainLine,
-              if (reset.isNotEmpty) '${tr('重置')} $reset',
+              if (!startPlan && reset.isNotEmpty) '${tr('重置')} $reset',
             ].join(' · '),
             style: TextStyle(
               fontSize: AppType.uiSm,
@@ -1339,6 +1583,9 @@ class _UsagePageState extends State<UsagePage>
     final r = subscriptionDetailLines(
       quota is Map ? quota['level'] : null,
       sub.cast<String, dynamic>(),
+      // Start Plan 的额度到期精确到小时（one_time 包没有"重置"概念，
+      // 到期即失效时间）。
+      expireWithTime: _planKind == 'start-plan',
     );
     if (r.lines.isEmpty) return null;
     return Padding(

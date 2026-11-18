@@ -165,6 +165,26 @@ String formatSubscriptionDate(Object? v) {
   return '';
 }
 
+String formatSubscriptionDateTime(Object? v) {
+  if (v is num) return _epochToYmdHm(v.toInt());
+  if (v is String) {
+    final s = v.trim();
+    if (s.isEmpty) return '';
+    final ms = int.tryParse(s);
+    if (ms != null) return _epochToYmdHm(ms);
+    return s.length >= 10 ? s : '';
+  }
+  return '';
+}
+
+String _epochToYmdHm(int ms) {
+  // 防御同 _epochToYmd：裸数字串不是毫秒时间戳。
+  if (ms < 100000000000) return '';
+  final t = DateTime.fromMillisecondsSinceEpoch(ms);
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+}
+
 String _epochToYmd(int ms) {
   // 防御：裸数字串（如压缩日期 20261101）不是毫秒时间戳——
   // 真实订阅时间戳毫秒值恒大于 1e11（1973 年之后）。
@@ -185,6 +205,7 @@ String _epochToYmd(int ms) {
   Object? quotaLevel,
   Map<String, dynamic> subscription, {
   int maxLines = 2,
+  bool expireWithTime = false,
 }) {
   final raw = subscription['details'];
   final details = raw is List
@@ -195,7 +216,9 @@ String _epochToYmd(int ms) {
       level: quotaLevel is String ? quotaLevel : null,
     );
     final renew = formatSubscriptionDate(subscription['renewTime']);
-    final expire = formatSubscriptionDate(subscription['expireTime']);
+    final expire = expireWithTime
+        ? formatSubscriptionDateTime(subscription['expireTime'])
+        : formatSubscriptionDate(subscription['expireTime']);
     final line = [
       ?name,
       if (renew.isNotEmpty) '${tr('续费')} $renew',
@@ -216,7 +239,9 @@ String _epochToYmd(int ms) {
     );
     final cycle = formatBillingCycle(d['billingCycle']);
     final renew = formatSubscriptionDate(d['renewTime']);
-    final expire = formatSubscriptionDate(d['expireTime']);
+    final expire = expireWithTime
+        ? formatSubscriptionDateTime(d['expireTime'])
+        : formatSubscriptionDate(d['expireTime']);
     final line = [
       ?name,
       if (cycle.isNotEmpty) cycle,
