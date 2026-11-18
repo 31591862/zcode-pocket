@@ -4459,6 +4459,10 @@ class _ConversationPageState extends State<ConversationPage>
         );
         return;
       }
+      // 固定字节与 provider 实例：会话流式更新若触发弹层重建，不能每次
+      // 都 new 一个 MemoryImage（新 List 身份=缓存 miss→重新解码闪白）。
+      final imageBytes = Uint8List.fromList(data.bytes);
+      final imageProvider = MemoryImage(imageBytes);
       showDialog<void>(
         context: context,
         builder: (dialogContext) => Dialog(
@@ -4476,16 +4480,19 @@ class _ConversationPageState extends State<ConversationPage>
               Flexible(
                 child: InteractiveViewer(
                   maxScale: 4,
-                  child: Image.memory(
-                    Uint8List.fromList(data.bytes),
-                    errorBuilder: (_, _, _) => Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(
-                        '非图片附件（${data.mediaType ?? '未知类型'}，'
-                        '${data.bytes.length} 字节）',
-                        style: TextStyle(
-                          fontSize: AppType.uiCaption,
-                          color: context.colors.foregroundSubtle,
+                  child: RepaintBoundary(
+                    child: Image(
+                      image: imageProvider,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, _, _) => Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Text(
+                          '非图片附件（${data.mediaType ?? '未知类型'}，'
+                          '${data.bytes.length} 字节）',
+                          style: TextStyle(
+                            fontSize: AppType.uiCaption,
+                            color: context.colors.foregroundSubtle,
+                          ),
                         ),
                       ),
                     ),
