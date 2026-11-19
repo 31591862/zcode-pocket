@@ -1643,10 +1643,38 @@ class AppState extends ChangeNotifier {
     return res is Map ? res.cast<String, dynamic>() : const {};
   }
 
+  /// 构建新建目录命令（按 PTY shell 平台分流；纯函数供单测）。
+  /// 桌面 Windows 终端优先 pwsh/powershell（resolveTerminalShell：
+  /// pwsh.exe→powershell.exe→ComSpec→cmd.exe），POSIX 的
+  /// `mkdir -p --` 在 PowerShell 下不生效（2026-11-19 真机实测：写后
+  /// 轮询 4.5s 目录不存在）。命令模板固定，目录名各自转义。
+  static String buildMkdirCommand(String shellPath, String dirName) {
+    final shell = shellPath.toLowerCase();
+    if (shell.contains('pwsh') || shell.contains('powershell')) {
+      // PowerShell：命令**纯 ASCII**——PTY 输入是 UTF-8 而 Windows
+      // 控制台默认按 GBK 解码，直接打字中文会变乱码（2026-11-19 真机
+      // 实测：目录建成了乱码名）。目录名转 Unicode 码点在场内组装，
+      // 与终端编码彻底无关；-LiteralPath 防通配符展开。
+      final codes = dirName.runes
+          .map((r) => '0x${r.toRadixString(16)}')
+          .join(',');
+      return 'New-Item -ItemType Directory -Force -LiteralPath '
+          '(-join @($codes | ForEach-Object { [char]\$_ })) | Out-Null';
+    }
+    if (shell.contains('cmd')) {
+      // cmd：先切控制台到 UTF-8（输入解码随之切换），再建目录。
+      return 'chcp 65001 >nul & mkdir "$dirName"';
+    }
+    // POSIX shell：单引号包裹，内部单引号 → '\\''。
+    final quoted = "'" + dirName.replaceAll("'", "'\\''") + "'";
+    return 'mkdir -p -- $quoted';
+  }
+
   /// 在电脑的任意目录下新建文件夹（2026-11-19 PTY 实证方案）：
   /// 协议没有 mkdir 接口，经 terminal 通道在目标目录起一个 PTY，
-  /// 写死 `mkdir -p` 命令执行后销毁，再用 readDirectory 轮询确认。
-  /// [name] 不允许路径分隔符；只执行固定命令模板，不做任意命令透传。
+  /// 按 shell 平台执行固定 mkdir 模板后销毁，再用 readDirectory 轮询
+  /// 确认。[name] 不允许路径分隔符；只执行固定命令模板，不做任意命令
+  /// 透传。
   Future<void> createComputerDirectory(String parentPath, String name) async {
     final bridge = this.bridge;
     if (bridge == null) throw StateError('未连接电脑');
@@ -1654,35 +1682,80 @@ class AppState extends ChangeNotifier {
     if (dirName.isEmpty || RegExp(r'[\\/]').hasMatch(dirName)) {
       throw StateError('名称不能为空或包含路径分隔符');
     }
-    // shell 单引号转义（内部单引号 → '\''）。
-    final quoted = "'" + dirName.replaceAll("'", "'\\''") + "'";
-    final create = await bridge.channels.call('terminal', 'create', [
-      <String, dynamic>{'cwd': parentPath, 'cols': 80, 'rows': 24},
-    ], timeout: const Duration(seconds: 10));
-    final id = create is Map ? create['id'] : null;
-    if (id == null) throw StateError('无法启动终端会话');
-    try {
-      await bridge.channels.call('terminal', 'write', [
-        <String, dynamic>{'id': id, 'data': 'mkdir -p -- $quoted\n'},
-      ], timeout: const Duration(seconds: 8));
-      // 轮询确认目录出现（不解析终端输出）。
-      for (var i = 0; i < 12; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-        final listing = await readComputerDirectory(parentPath);
-        final entries = listing['entries'];
-        if (entries is List &&
-            entries.any((e) => e is Map && '${e['name']}' == dirName)) {
-          return;
-        }
+    // Windows shell 由 create 的返回判定；每次重试重建全新 PTY——
+    // 桌面端远程 PTY 在 Windows 上不稳定（2026-11-19 实测：一次惰死
+    // 无输出、一次启动即退，write 报 "Terminal owner has ended"），
+    // 复用会话无意义，失败即换新会话重来。
+    String? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final create = await bridge.channels.call('terminal', 'create', [
+        <String, dynamic>{'cwd': parentPath, 'cols': 80, 'rows': 24},
+      ], timeout: const Duration(seconds: 10));
+      final id = create is Map ? create['id'] : null;
+      if (id == null) throw StateError('无法启动终端会话');
+      final shellPath = create is Map ? '${create['shell'] ?? ''}' : '';
+      final shell = shellPath.toLowerCase();
+      final isWinShell =
+          shell.contains('pwsh') ||
+          shell.contains('powershell') ||
+          shell.contains('cmd');
+      if (attempt == 0 &&
+          isWinShell &&
+          RegExp(r'[<>:"|?*]').hasMatch(dirName)) {
+        try {
+          await bridge.channels.call('terminal', 'dispose', [
+            <String, dynamic>{'id': id},
+          ], timeout: const Duration(seconds: 5));
+        } catch (_) {}
+        throw StateError('名称包含 Windows 不允许的字符（< > : " | ? *）');
       }
-      throw StateError('创建未确认，请返回重试');
-    } finally {
+      final command = buildMkdirCommand(shellPath, dirName);
+      if (attempt == 0) {
+        debugPrint('[mkdir] shell=$shellPath cmd=$command');
+      }
       try {
-        await bridge.channels.call('terminal', 'dispose', [
-          <String, dynamic>{'id': id},
-        ], timeout: const Duration(seconds: 5));
-      } catch (_) {}
+        // Windows shell 启动慢（pwsh profile 可能数秒）——先等再写；
+        // Windows 控制台行结束用 \r。
+        await Future<void>.delayed(
+          isWinShell
+              ? const Duration(milliseconds: 1800)
+              : const Duration(milliseconds: 150),
+        );
+        try {
+          await bridge.channels.call('terminal', 'write', [
+            <String, dynamic>{
+              'id': id,
+              'data': isWinShell ? '$command\r' : '$command\n',
+            },
+          ], timeout: const Duration(seconds: 8));
+          debugPrint('[mkdir] write OK attempt=${attempt + 1}');
+        } catch (e) {
+          lastError = '$e';
+          debugPrint('[mkdir] write ERR attempt=${attempt + 1}: $e');
+          continue;
+        }
+        // 轮询确认目录出现（不解析终端输出）。
+        for (var i = 0; i < 10; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+          final listing = await readComputerDirectory(parentPath);
+          final entries = listing['entries'];
+          if (entries is List &&
+              entries.any((e) => e is Map && '${e['name']}' == dirName)) {
+            return;
+          }
+        }
+        lastError = '创建未确认';
+        debugPrint('[mkdir] verify failed attempt=${attempt + 1}');
+      } finally {
+        try {
+          await bridge.channels.call('terminal', 'dispose', [
+            <String, dynamic>{'id': id},
+          ], timeout: const Duration(seconds: 5));
+        } catch (_) {}
+      }
     }
+    debugPrint('[mkdir] giving up: $parentPath/$dirName last=$lastError');
+    throw StateError(lastError ?? '创建未确认，请返回重试');
   }
 
   /// 以任意电脑目录为根取项目：已有同根项目直接复用（不重复建），

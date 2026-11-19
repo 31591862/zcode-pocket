@@ -140,6 +140,79 @@ void main() {
     expect(find.text('/home/u/新目录'), findsOneWidget);
   });
 
+  testWidgets('Windows：磁盘切换只列存在的盘，选中后跳转', (tester) async {
+    final app = _WinApp();
+    await tester.pumpWidget(
+      AppStateScope(
+        app: app,
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () => showDirectoryPickerSheet(context),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // win32 下磁盘入口在场
+    expect(find.byKey(const ValueKey('dir-drive')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('dir-drive')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('选择磁盘'), findsOneWidget);
+    expect(find.text(r'C:\'), findsOneWidget);
+    expect(find.text(r'D:\'), findsOneWidget);
+    expect(find.text(r'E:\'), findsNothing, reason: '不存在的盘不出现');
+
+    await tester.tap(find.text(r'D:\'));
+    await tester.pumpAndSettle();
+    expect(find.text(r'D:\'), findsOneWidget, reason: '路径栏显示 D:\\');
+  });
+
+  testWidgets('Windows：新建文件夹给出协议限制提示，不发起创建', (tester) async {
+    final app = _WinApp();
+    await tester.pumpWidget(
+      AppStateScope(
+        app: app,
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () => showDirectoryPickerSheet(context),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.byKey(const ValueKey('dir-new-folder')));
+    await tester.pumpAndSettle();
+    expect(find.text('暂不支持'), findsOneWidget);
+    expect(find.textContaining('请先在电脑上建好文件夹'), findsOneWidget);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+    expect(app.createdCalls, 0, reason: 'Windows 下不得发起 PTY 创建');
+  });
+
   testWidgets('根目录无上级入口', (tester) async {
     final app = _RootApp();
     await tester.pumpWidget(
@@ -176,4 +249,32 @@ class _RootApp extends AppState {
       {'name': 'etc', 'path': '/etc', 'type': 'directory'},
     ],
   };
+}
+
+/// Windows 桌面：system.info=win32，仅 C:/D: 两个盘可用。
+class _WinApp extends AppState {
+  int createdCalls = 0;
+
+  @override
+  Future<void> createComputerDirectory(String parentPath, String name) async {
+    createdCalls++;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> systemInfo() async => {
+    'platform': 'win32',
+    'homedir': r'C:\Users\u',
+  };
+
+  @override
+  Future<Map<String, dynamic>> readComputerDirectory(String? path) async {
+    final p = (path == null || path.isEmpty) ? r'C:\Users\u' : path;
+    if (p == r'C:\' || p == r'C:\Users\u') {
+      return {'path': p, 'entries': <dynamic>[]};
+    }
+    if (p == r'D:\') {
+      return {'path': p, 'entries': <dynamic>[]};
+    }
+    throw StateError('no drive: $p');
+  }
 }

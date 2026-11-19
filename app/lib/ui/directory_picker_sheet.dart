@@ -30,6 +30,9 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
   String? _error;
   int _generation = 0;
 
+  /// 桌面平台（system.info）——Windows 下显示磁盘切换入口。
+  String? _platform;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -37,9 +40,97 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
     if (_path == null && _loading && _generation == 0) {
       _generation++;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _load(null);
+        if (mounted) _init();
       });
     }
+  }
+
+  Future<void> _init() async {
+    try {
+      final app = AppStateScope.of(context);
+      final info = await app.systemInfo();
+      if (mounted && info != null) {
+        _platform = '${info['platform'] ?? ''}';
+      }
+    } catch (_) {}
+    if (mounted) await _load(null);
+  }
+
+  /// Windows：并行探测 A:\-Z:\，返回存在的盘符字母（毫秒级失败，
+  /// 不存在的盘立即报错而非超时）。
+  Future<List<String>> _probeDrives() async {
+    final app = AppStateScope.of(context);
+    final letters = 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    final results = await Future.wait([
+      for (final c in letters)
+        app
+            .readComputerDirectory('$c:\\')
+            .then<String?>((_) => c, onError: (_) => null),
+    ]);
+    final found = [
+      for (final r in results)
+        if (r != null) r,
+    ];
+    // C 盘恒在且排最前（探测失败也显示，避免 homedir 所在盘丢失）。
+    if (!found.contains('C')) found.insert(0, 'C');
+    return found;
+  }
+
+  Future<void> _pickDrive() async {
+    setState(() => _loading = true);
+    final drives = await _probeDrives();
+    if (!mounted) return;
+    setState(() => _loading = false);
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('选择磁盘'),
+        children: [
+          for (final d in drives)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(dialogContext).pop(d),
+              child: Row(
+                children: [
+                  const Icon(Icons.storage_outlined, size: 20),
+                  const SizedBox(width: 10),
+                  Text('$d:\\'),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked != null && mounted) await _load('$picked:\\');
+  }
+
+  /// 直接输入绝对路径跳转（两平台通用）。
+  Future<void> _inputPath() async {
+    var input = '';
+    final typed = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('输入目录路径'),
+        content: TextField(
+          autofocus: true,
+          decoration: InputDecoration(hintText: _path ?? r'例如 D:\projects'),
+          onChanged: (v) => input = v,
+          onSubmitted: (v) => Navigator.of(dialogContext).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(input),
+            child: const Text('前往'),
+          ),
+        ],
+      ),
+    );
+    final target = typed?.trim() ?? '';
+    if (target.isEmpty || !mounted) return;
+    await _load(target);
   }
 
   Future<void> _load(String? path) async {
@@ -90,6 +181,28 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
   Future<void> _createFolder() async {
     final parent = _path;
     if (parent == null) return;
+    if (_platform == 'win32') {
+      // Windows：桌面协议无 mkdir；PTY 方案在 Windows 桌面端实测不可用
+      // （会话惰死/早退、写入零执行，2026-11-19 三次新会话复现）。
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('暂不支持'),
+          content: const Text(
+            'Windows 电脑暂不支持在手机上新建文件夹（桌面协议限制）。'
+            '请先在电脑上建好文件夹，再回到这里浏览选择；'
+            '也可用上层弹层的「新建项目」，在 ZCodeProject 下按名字新建。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     // 不用 TextEditingController（弹窗路由退场期间仍持有——提前
     // dispose 会触发 used-after-dispose）；onChanged 捕获最终文本。
     var input = '';
@@ -189,6 +302,21 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                    ),
+                    if (_platform == 'win32')
+                      IconButton(
+                        key: const ValueKey('dir-drive'),
+                        tooltip: '切换磁盘',
+                        icon: const Icon(Icons.storage_outlined, size: 21),
+                        onPressed: _loading || _path == null
+                            ? null
+                            : _pickDrive,
+                      ),
+                    IconButton(
+                      key: const ValueKey('dir-input-path'),
+                      tooltip: '输入路径',
+                      icon: const Icon(Icons.edit_outlined, size: 20),
+                      onPressed: _loading || _path == null ? null : _inputPath,
                     ),
                     IconButton(
                       key: const ValueKey('dir-new-folder'),
