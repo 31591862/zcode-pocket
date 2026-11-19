@@ -109,7 +109,9 @@ class ComputerStack extends ChangeNotifier {
         // 覆盖泄漏但绝不误绑）；`??=` 则在假想的"清 client 漏 cancel"
         // 路径下静默绑死旧流。先 cancel 再赋值，两头都安全。
         unawaited(_workspaceListSub?.cancel() ?? Future<void>.value());
-        _workspaceListSub = client.workspaceListUpdated.listen(_onWorkspaceList);
+        _workspaceListSub = client.workspaceListUpdated.listen(
+          _onWorkspaceList,
+        );
       },
     );
   }
@@ -155,7 +157,8 @@ class ComputerStack extends ChangeNotifier {
       _workspaceController.workspaces = value;
 
   List<Map<String, dynamic>> get projects => _taskCatalog.projects;
-  set projects(List<Map<String, dynamic>> value) => _taskCatalog.projects = value;
+  set projects(List<Map<String, dynamic>> value) =>
+      _taskCatalog.projects = value;
   List<Map<String, dynamic>> get projectTasks => _taskCatalog.projectTasks;
   set projectTasks(List<Map<String, dynamic>> value) =>
       _taskCatalog.projectTasks = value;
@@ -193,7 +196,8 @@ class ComputerStack extends ChangeNotifier {
   bool get siDormant => _workspaceController.siDormant;
   set siDormant(bool value) => _workspaceController.siDormant = value;
   String? get workspaceError => _workspaceController.workspaceError;
-  set workspaceError(String? value) => _workspaceController.workspaceError = value;
+  set workspaceError(String? value) =>
+      _workspaceController.workspaceError = value;
 
   bool _disposed = false;
   bool get disposed => _disposed;
@@ -529,7 +533,8 @@ class ComputerStack extends ChangeNotifier {
   /// 手动重试入口（任务中心 workspaceError 态按钮）：优先重放原意图
   /// ——失败切换残留的 activeWorkspace 是占位键（不带 project/task
   /// intent），直接重开会再吃一次"目标工作区不在当前桌面窗口中"。
-  Future<void> retryWorkspaceOpen() => _workspaceController.retryWorkspaceOpen();
+  Future<void> retryWorkspaceOpen() =>
+      _workspaceController.retryWorkspaceOpen();
 
   void _onWorkspaceList(dynamic result) =>
       _workspaceController.onWorkspaceList(result);
@@ -659,11 +664,7 @@ class ComputerStack extends ChangeNotifier {
     Map<String, dynamic> task,
     String projectId, {
     bool addMissingRoot = false,
-  }) => _taskCatalog.moveTask(
-    task,
-    projectId,
-    addMissingRoot: addMissingRoot,
-  );
+  }) => _taskCatalog.moveTask(task, projectId, addMissingRoot: addMissingRoot);
 
   /// UI 门面：按 workspace 键取项目条目（跨项目任务打开用）。
   Map<String, dynamic>? projectForKey(String key) =>
@@ -699,7 +700,8 @@ class ComputerStack extends ChangeNotifier {
       _taskCatalog.renameTask(taskId, title);
 
   /// 归档（桌面归档同款 RPC；列表剔除由墓碑+archived 双保险）。
-  Future<dynamic> archiveTask(String taskId) => _taskCatalog.archiveTask(taskId);
+  Future<dynamic> archiveTask(String taskId) =>
+      _taskCatalog.archiveTask(taskId);
 
   /// 删除单个归档任务（官方 deleteArchivedTask：仅归档态可删，硬删除）。
   Future<dynamic> deleteArchivedTask(String taskId) =>
@@ -722,11 +724,11 @@ class ComputerStack extends ChangeNotifier {
     required String operationId,
     Map<String, dynamic>? taskScope,
   }) => _taskCatalog.permanentlyDeleteArchivedTask(
-        taskId,
-        revision: revision,
-        operationId: operationId,
-        taskScope: taskScope,
-      );
+    taskId,
+    revision: revision,
+    operationId: operationId,
+    taskScope: taskScope,
+  );
 
   /// 取消归档（撤销入口，snackbar 撤销用）。
   Future<dynamic> unarchiveTask(String taskId) =>
@@ -986,6 +988,24 @@ class ComputerStack extends ChangeNotifier {
     final client = _client;
     if (client == null) throw StateError('stack not connected');
     return client.createWorkspace(name);
+  }
+
+  /// v1 渲染器任务归档（远程通道 resolveTaskAddress 对 identity=NULL
+  /// 工作区失配时的兜底，见 CompanionClient.taskArchiveViaRenderer）。
+  Future<Map<String, dynamic>> taskArchiveViaRenderer({
+    required String taskId,
+    required String workspacePath,
+    String? workspaceIdentity,
+    required bool archived,
+  }) async {
+    final client = _client;
+    if (client == null) throw StateError('stack not connected');
+    return client.taskArchiveViaRenderer(
+      taskId: taskId,
+      workspacePath: workspacePath,
+      workspaceIdentity: workspaceIdentity,
+      archived: archived,
+    );
   }
 
   /// 回前台统一入口：悬挂中或悬挂落地中→恢复；已连接→poke。

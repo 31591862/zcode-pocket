@@ -177,8 +177,10 @@ class CompanionClient {
         }
         if (slow) {
           if (attempt == 1) {
-            _log('[bridge] terminal owner taken over, slow '
-                '${slowRecoveryDelay.inSeconds}s recovery cadence');
+            _log(
+              '[bridge] terminal owner taken over, slow '
+              '${slowRecoveryDelay.inSeconds}s recovery cadence',
+            );
           }
           await Future.delayed(slowRecoveryDelay);
         } else if (attempt < 15) {
@@ -219,8 +221,10 @@ class CompanionClient {
     // bridge-open 给桌面（桥重建风暴， 同类风险）。跳过本轮
     // 等慢速档再试——配对后循环自然收敛。
     if (relay.state != RelayState.paired) {
-      _log('[bridge] recovery deferred: relay not paired '
-          '(${relay.state.name}), skipping this round');
+      _log(
+        '[bridge] recovery deferred: relay not paired '
+        '(${relay.state.name}), skipping this round',
+      );
       return false;
     }
     if (!slowOwner) session.degraded.value = 'recovering';
@@ -244,8 +248,10 @@ class CompanionClient {
         // 官方语义（refs main.tsx recoverVisibleSession）：恢复一律
         // workspace-bridge-open 重开（钉 workspaceKey + recoveryId）。
         // 此 cheap path 只能作为探测日志保留，绝不能据此宣布健康。
-        _log('[bridge] reconnect-request probed: success=${res['success']} '
-            '(SSH-host 语义，本地桥不据此判定健康，继续 reopen)');
+        _log(
+          '[bridge] reconnect-request probed: success=${res['success']} '
+          '(SSH-host 语义，本地桥不据此判定健康，继续 reopen)',
+        );
       } catch (e) {
         _log('[bridge] reconnect-request probe failed: $e');
       }
@@ -404,11 +410,7 @@ class CompanionClient {
     // 立即降级信号（官方 webRemoteControlManager :1457）——不认会干等
     // 满 30s；超时 45s 留桌面 Renderer 30s 上限的往返余量。
     final res = await request(
-      {
-        'zcode_type': 'workspace-create-request',
-        'requestId': id,
-        'name': name,
-      },
+      {'zcode_type': 'workspace-create-request', 'requestId': id, 'name': name},
       (p) =>
           (p['zcode_type'] == 'workspace-create-response' ||
               p['zcode_type'] == 'app-error') &&
@@ -420,6 +422,44 @@ class CompanionClient {
     }
     if (res['success'] != true) {
       throw StateError('${res['error'] ?? '创建失败'}');
+    }
+    return res.cast<String, dynamic>();
+  }
+
+  /// v1 渲染器任务动作（task-archive-request）：桌面端走自己的 mutate
+  /// 路径，绕开 zcode-task 远程通道 `resolveTaskAddress` 的严格匹配缺陷
+  /// ——任务行 identity=NULL 的工作区（"无项目对话" scratch）里，远程
+  /// 请求的 identity 缺省=undefined，`null === undefined` 永不成立，
+  /// 归档报「列表 mutation 无法解析唯一 source，matches=0」（2026-11-19
+  /// 真机实测，桌面自己的 UI 同任务可归档）。
+  Future<Map<String, dynamic>> taskArchiveViaRenderer({
+    required String taskId,
+    required String workspacePath,
+    String? workspaceIdentity,
+    required bool archived,
+  }) async {
+    final id = _reqId('task-archive');
+    final res = await request(
+      {
+        'zcode_type': 'task-archive-request',
+        'requestId': id,
+        'taskId': taskId,
+        'workspacePath': workspacePath,
+        if (workspaceIdentity != null && workspaceIdentity.trim().isNotEmpty)
+          'workspaceIdentity': workspaceIdentity,
+        'archived': archived,
+      },
+      (p) =>
+          (p['zcode_type'] == 'task-archive-response' ||
+              p['zcode_type'] == 'app-error') &&
+          p['requestId'] == id,
+      timeout: const Duration(seconds: 30),
+    );
+    if (res['zcode_type'] == 'app-error') {
+      throw StateError('该电脑版本不支持此操作（请升级桌面端）');
+    }
+    if (res['success'] != true) {
+      throw StateError('${res['error'] ?? '归档操作失败'}');
     }
     return res.cast<String, dynamic>();
   }
@@ -626,8 +666,7 @@ class CompanionClient {
         if (oldBridge['recoveryId'] != null)
           'recoveryId': oldBridge['recoveryId'],
         'workspaceKey': workspaceKey,
-        if (session.projectIntent != null)
-          'project': session.projectIntent,
+        if (session.projectIntent != null) 'project': session.projectIntent,
         if (session.taskIntent != null) ...session.taskIntent!,
       },
       (p) =>
@@ -640,8 +679,10 @@ class CompanionClient {
     }
     final bridge =
         (res['bridge'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-    noteProtocolDrift('bridge-reopen', bridge, ['bridgeSessionId', 'workspaceKey'],
-        onLog: _log);
+    noteProtocolDrift('bridge-reopen', bridge, [
+      'bridgeSessionId',
+      'workspaceKey',
+    ], onLog: _log);
     _attachStack(session, bridgeSessionId, bridge);
     _log('[bridge] reopened: $bridge');
   }
@@ -660,12 +701,12 @@ class CompanionClient {
         if (taskId != null && taskId.isNotEmpty) 'activeTaskId': taskId,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       },
-        'deviceInfo': {
-          'platform': companionPlatformName(),
-          // 缺省版本不得用字面量 'web' 冒充
-          //（桌面端"已连接客户端"展示）——统一兜底 'unknown'。
-          'version': _appVersion ?? 'unknown',
-          'name': companionAppName,
+      'deviceInfo': {
+        'platform': companionPlatformName(),
+        // 缺省版本不得用字面量 'web' 冒充
+        //（桌面端"已连接客户端"展示）——统一兜底 'unknown'。
+        'version': _appVersion ?? 'unknown',
+        'name': companionAppName,
         // 修复（2026-10-16）：官方 deviceInfo 四必填（platform/version/
         // name/updatedAt，z.number().finite()）——此前漏 updatedAt，整条
         // 载荷被桌面端 parseWebRemoteControlAppPayload 判 invalid 丢弃。

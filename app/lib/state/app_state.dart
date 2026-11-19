@@ -1498,6 +1498,44 @@ class AppState extends ChangeNotifier {
     return res;
   }
 
+  /// 桌面远程通道的 source 解析失败（任务行 identity=NULL 的
+  /// "无项目对话"工作区，null vs undefined 严格匹配永不成立）。
+  static bool _isTaskSourceResolveError(Object e) =>
+      '$e'.contains('无法解析唯一 source');
+
+  /// 按 taskId 从任务索引反查行（含 workspacePath/workspaceIdentity）。
+  Map<String, dynamic>? _taskRowById(String taskId) {
+    final stack = _active;
+    if (stack == null) return null;
+    for (final t in [...stack.projectTasks, ...stack.workspaceTasks]) {
+      if ('${t['taskId'] ?? ''}' == taskId) return t;
+    }
+    return null;
+  }
+
+  /// 归档/取消归档的渲染器兜底（成功返回 true；行缺失返回 false）。
+  Future<bool> _taskArchiveViaRenderer(
+    String taskId, {
+    required bool archived,
+  }) async {
+    final stack = _active;
+    final row = _taskRowById(taskId);
+    final path = '${row?['workspacePath'] ?? ''}'.trim();
+    if (stack == null || row == null || path.isEmpty) return false;
+    final identity = '${row['workspaceIdentity'] ?? ''}'.trim();
+    debugPrint(
+      '[archive] renderer fallback task=$taskId path=$path '
+      'identity=${identity.isEmpty ? '(null)' : identity} archived=$archived',
+    );
+    await stack.taskArchiveViaRenderer(
+      taskId: taskId,
+      workspacePath: path,
+      workspaceIdentity: identity.isEmpty ? null : identity,
+      archived: archived,
+    );
+    return true;
+  }
+
   Future<dynamic> archiveTask(String taskId) async {
     final stack = _active;
     if (stack == null) throw StateError('no active computer');
@@ -1514,6 +1552,14 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       // RPC 失败清墓碑（状态层批）：不回滚则卡片要等 60s 过期才回来。
       taskList?.clearRemovedLocally(taskId);
+      // identity=NULL 工作区（无项目对话）：桌面远程通道解析失败——
+      // 回退 v1 渲染器动作（桌面自带 mutate 路径）。
+      if (_isTaskSourceResolveError(e) &&
+          await _taskArchiveViaRenderer(taskId, archived: true)) {
+        await draftStore?.removeSession(stack.profile.deviceSid, taskId);
+        await sendQueue?.removeSession(stack.profile.deviceSid, taskId);
+        return true;
+      }
       rethrow;
     }
   }
@@ -1521,10 +1567,20 @@ class AppState extends ChangeNotifier {
   Future<dynamic> unarchiveTask(String taskId) async {
     final stack = _active;
     if (stack == null) throw StateError('no active computer');
-    final res = await stack.unarchiveTask(taskId);
-    // 恢复成功后清本地墓碑（此前归档→撤销的卡片要等 60s 过期才可见）。
-    _activeTaskList?.clearRemovedLocally(taskId);
-    return res;
+    try {
+      final res = await stack.unarchiveTask(taskId);
+      // 恢复成功后清本地墓碑（此前归档→撤销的卡片要等 60s 过期才可见）。
+      _activeTaskList?.clearRemovedLocally(taskId);
+      return res;
+    } catch (e) {
+      // 同归档：identity=NULL 工作区回退渲染器动作。
+      if (_isTaskSourceResolveError(e) &&
+          await _taskArchiveViaRenderer(taskId, archived: false)) {
+        _activeTaskList?.clearRemovedLocally(taskId);
+        return true;
+      }
+      rethrow;
+    }
   }
 
   /// 任务全文搜索（标题 + 对话正文，官方 listTaskList）。未连接或搜索
