@@ -710,22 +710,32 @@ class UserBubble extends StatelessWidget {
       return SelectionArea(child: child);
     }
     return SelectionArea(
-      contextMenuBuilder: (context, selectableRegion) {
-        final items = [...selectableRegion.contextMenuButtonItems];
-        items.add(
-          ContextMenuButtonItem(
-            label: '编辑/更多',
-            onPressed: () {
-              ContextMenuController.removeAny();
-              menu();
+      // 重锚工具条（见 SelectionToolbarReanchor）：静态锚点会让工具条
+      // 停在旧位置（流式增高/滚动使选区移动后），盖住无关内容；
+      // 同锚点实例复用保 ⋮ 二层菜单不被 entry 重建刷掉。
+      contextMenuBuilder: (context, selectableRegion) =>
+          SelectionToolbarReanchor(
+            anchors: () => selectableRegion.contextMenuAnchors,
+            signature: () => selectableRegion.contextMenuButtonItems
+                .map((i) => '${i.type}:${i.label}')
+                .join('|'),
+            build: (_) {
+              final items = [...selectableRegion.contextMenuButtonItems];
+              items.add(
+                ContextMenuButtonItem(
+                  label: '编辑/更多',
+                  onPressed: () {
+                    ContextMenuController.removeAny();
+                    menu();
+                  },
+                ),
+              );
+              return AdaptiveTextSelectionToolbar.buttonItems(
+                buttonItems: items,
+                anchors: selectableRegion.contextMenuAnchors,
+              );
             },
           ),
-        );
-        return AdaptiveTextSelectionToolbar.buttonItems(
-          buttonItems: items,
-          anchors: selectableRegion.contextMenuAnchors,
-        );
-      },
       child: child,
     );
   }

@@ -322,9 +322,7 @@ class _ConversationPageState extends State<ConversationPage>
     if (sub == null || sub.isDisposed) {
       debugPrint('[conv] dead sub -> resubscribe ' + sid);
       _convHealthBusy = true;
-      unawaited(
-        _subscribe(sid).whenComplete(() => _convHealthBusy = false),
-      );
+      unawaited(_subscribe(sid).whenComplete(() => _convHealthBusy = false));
       return;
     }
     // ② 活订阅僵死检测：仅"运行中"（空闲会话本就无帧，传输层看门狗
@@ -350,14 +348,12 @@ class _ConversationPageState extends State<ConversationPage>
     );
     _convHealthBusy = true;
     unawaited(sub.dispose());
-    unawaited(
-      _subscribe(sid).whenComplete(() => _convHealthBusy = false),
-    );
+    unawaited(_subscribe(sid).whenComplete(() => _convHealthBusy = false));
   }
-
 
   DraftIdentity? _draftIdentity;
   Future<void>? _draftRestoreFuture;
+
   /// 草稿身份恢复在飞/待重跑标记（didChangeDependencies 每次 app 通知都
   /// 会触发——身份必须可重算，旧实现首帧一次性闩锁后，跨工作区
   /// push-first 的等待期输入与离线入队全记在旧工作区桶上）。
@@ -518,8 +514,8 @@ class _ConversationPageState extends State<ConversationPage>
     // 的可见末段键≠裸 headerId，直接用 headerId 会写错段（末段无反应、
     // 首段被静默翻转）。经最后 TurnBarItem 的 work 取当前末段键。
     final lastTurnCollapseKey = _lastTurnCollapseKeyFromItems;
-    final headerId = lastTurnCollapseKey ??
-        (_lastTurnHeaderIdFromRows ?? _lastTurnHeaderId);
+    final headerId =
+        lastTurnCollapseKey ?? (_lastTurnHeaderIdFromRows ?? _lastTurnHeaderId);
     final collapsed = headerId != null && _liveCollapsedByRow[headerId] == true;
     showModalBottomSheet<void>(
       context: context,
@@ -667,6 +663,7 @@ class _ConversationPageState extends State<ConversationPage>
     'guarded': '有风险时询问',
     'yolo': '减少确认次数',
   };
+
   /// 与模型面板同源（turn_model.submitConfigValueZh）——此前是手抄
   /// 子集，新增 disabled/enabled/on/xhigh/ultra 档时 pill 漏译成英文。
   static const _thoughtNames = submitConfigValueZh;
@@ -843,12 +840,10 @@ class _ConversationPageState extends State<ConversationPage>
       );
       final same =
           next.length == _slashCandidates.length &&
-          next
-              .map((c) => '${c['kind']}:${c['name']}')
-              .join('\u0000') ==
-          _slashCandidates
-              .map((c) => '${c['kind']}:${c['name']}')
-              .join('\u0000');
+          next.map((c) => '${c['kind']}:${c['name']}').join('\u0000') ==
+              _slashCandidates
+                  .map((c) => '${c['kind']}:${c['name']}')
+                  .join('\u0000');
       if (!same) {
         setState(() {
           _fileCandidates = const [];
@@ -1309,6 +1304,28 @@ class _ConversationPageState extends State<ConversationPage>
   /// （isTop=false）的那一帧 pop 不执行后，待退出标记永久丢失。
   Timer? _sidPopRetry;
 
+  /// 背景点击取消选中（列表层 GestureDetector.onTap，见列表包裹处
+  /// 注释）。长按选中时框架会对 SelectableRegion requestFocus——
+  /// 焦点在 SelectableRegion 上即"存在活跃选区"的可靠信号；主动失焦
+  /// 触发框架 _handleFocusChanged 的自动 clearSelection（选中+把手+
+  /// 工具条一并收掉）。逐层上溯找 SelectableRegion 而非查 debugLabel
+  /// ——SDK 本地焦点节点无稳定公开标识；输入框（EditableText）等
+  /// 其它焦点不在上溯命中范围内，键盘行为不受影响。
+  void _clearSelectionOnBackgroundTap() {
+    final focus = FocusManager.instance.primaryFocus;
+    final ctx = focus?.context;
+    if (focus == null || ctx is! Element) return;
+    var hit = false;
+    ctx.visitAncestorElements((e) {
+      if (e.widget is SelectableRegion) {
+        hit = true;
+        return false;
+      }
+      return true;
+    });
+    if (hit) focus.unfocus();
+  }
+
   /// 切电脑后退出本页（push 场景）。嵌入宽屏（根路由不可 pop）按已
   /// 接管处理，右栏清空由任务中心负责；被弹层/子页压顶时保留待退标记，
   /// 500ms 后重试直到路由恢复栈顶。
@@ -1371,8 +1388,9 @@ class _ConversationPageState extends State<ConversationPage>
     final waitKey = widget.waitForWorkspace;
     if (waitKey != null && waitKey.isNotEmpty) {
       try {
-        final deadline =
-            DateTime.now().add(ConversationPage.waitForWorkspaceTimeout);
+        final deadline = DateTime.now().add(
+          ConversationPage.waitForWorkspaceTimeout,
+        );
         while (!mounted ||
             workspaceKeyOf(app.activeWorkspace ?? const {}) != waitKey ||
             app.bridge == null) {
@@ -1697,9 +1715,11 @@ class _ConversationPageState extends State<ConversationPage>
   /// clamp 校正——非相对锚偏移， 勘正注释）, 是否贴底}，
   /// 重进先恢复锚点再恢复位置——前插过历史后裸像素不再冒充绝对坐标。
   static const _scrollMemoryMax = 200;
-  static final _scrollMemory = <String,
-          (String? centerKey, double offset, bool pinned,
-              int savedAtMs)>{};
+  static final _scrollMemory =
+      <
+        String,
+        (String? centerKey, double offset, bool pinned, int savedAtMs)
+      >{};
 
   /// 滚动记忆 5 分钟过期（验收）：隔了一阵再打开旧对话直接跳底看最新
   /// 消息；仅同一使用会话内的对话切换保留阅读位置。
@@ -1708,13 +1728,11 @@ class _ConversationPageState extends State<ConversationPage>
     if (sid == null || sid.isEmpty) return null;
     final m = _scrollMemory[sid];
     if (m == null) return null;
-    if (DateTime.now().millisecondsSinceEpoch - m.$4 >
-        _scrollMemoryTtlMs) {
+    if (DateTime.now().millisecondsSinceEpoch - m.$4 > _scrollMemoryTtlMs) {
       return null;
     }
     return (m.$1, m.$2, m.$3);
   }
-
 
   /// 上次构建的键盘 inset（变化检测）。
 
@@ -1824,8 +1842,7 @@ class _ConversationPageState extends State<ConversationPage>
     final sid = _sessionId;
     if (sid == null || sid.isEmpty || !_scroll.hasClients) return;
     final existed = _scrollMemory.remove(sid);
-    if (existed == null &&
-        _scrollMemory.length >= _scrollMemoryMax) {
+    if (existed == null && _scrollMemory.length >= _scrollMemoryMax) {
       _scrollMemory.remove(_scrollMemory.keys.first);
     }
     _scrollMemory[sid] = (
@@ -1916,12 +1933,11 @@ class _ConversationPageState extends State<ConversationPage>
   /// 13.x 的 PlatformFile 为抽象基类（无公开构造）——按官方接口包小适配。
   /// heic/heif 扩展名归一 jpg（imageQuality 重编码后字节已是 JPEG，见
   /// _pickPhotos 注释）。
-  static PlatformFile _XFileAsPlatformFile(XFile x) =>
-      _PickedXFile(
-        name: ConversationPage.normalizePhotoFileName(x.name),
-        uri: Uri.file(x.path),
-        xfile: x,
-      );
+  static PlatformFile _XFileAsPlatformFile(XFile x) => _PickedXFile(
+    name: ConversationPage.normalizePhotoFileName(x.name),
+    uri: Uri.file(x.path),
+    xfile: x,
+  );
 
   static String _mimeOfExtension(String ext) => switch (ext.toLowerCase()) {
     'png' => 'image/png',
@@ -1969,8 +1985,9 @@ class _ConversationPageState extends State<ConversationPage>
     final messenger = ScaffoldMessenger.of(context);
     List<PlatformFile> files;
     try {
-      files = await (ConversationPage.debugPickFiles?.call() ??
-          FilePicker.pickFiles());
+      files =
+          await (ConversationPage.debugPickFiles?.call() ??
+              FilePicker.pickFiles());
     } catch (_) {
       // 等待期可能已退页：用守卫后的 messenger，不再取 context。
       if (mounted) {
@@ -1996,16 +2013,17 @@ class _ConversationPageState extends State<ConversationPage>
     final messenger = ScaffoldMessenger.of(context);
     List<PlatformFile> files;
     try {
-      files = await (ConversationPage.debugPickImages?.call() ??
-          [
-            for (final x in await ImagePicker().pickMultiImage(
-              imageQuality: 95,
-              maxWidth: 4096,
-              maxHeight: 4096,
-              limit: kMaxChatAttachments,
-            ))
-              _XFileAsPlatformFile(x),
-          ]);
+      files =
+          await (ConversationPage.debugPickImages?.call() ??
+              [
+                for (final x in await ImagePicker().pickMultiImage(
+                  imageQuality: 95,
+                  maxWidth: 4096,
+                  maxHeight: 4096,
+                  limit: kMaxChatAttachments,
+                ))
+                  _XFileAsPlatformFile(x),
+              ]);
     } catch (_) {
       if (mounted) {
         messenger.showSnackBar(SnackBar(content: Text(tr('相册不可用'))));
@@ -3148,9 +3166,8 @@ class _ConversationPageState extends State<ConversationPage>
     final rowId = _rowIdNearestMs(target.atMs);
     if (rowId == null) {
       // -3c：零反馈缺陷——给轻提示而非静默吞。
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('相关消息不在当前已加载范围')),
-      );
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(const SnackBar(content: Text('相关消息不在当前已加载范围')));
       return;
     }
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -3701,8 +3718,7 @@ class _ConversationPageState extends State<ConversationPage>
         [
           {
             'includeSubscription': true,
-            'preferredProviderId':
-                'account:${_entFamily()}-${_entPlanKind()}',
+            'preferredProviderId': 'account:${_entFamily()}-${_entPlanKind()}',
             'accountAccess': {
               'type': 'zhipu-account',
               'accountType': _entFamily(),
@@ -3748,15 +3764,15 @@ class _ConversationPageState extends State<ConversationPage>
   /// 验收#2 修正：当前会话 config 优先（多会话不同套餐互不串档），
   /// 草稿页用挂起 provider；两者皆无才扫全局会话保底。
   String _entPlanKind() => inferEntPlanKind(
-        currentProvider: _sessionId == null
-            ? null
-            : '${AppStateScope.of(context).conversationStates[_sessionId]?.config?['provider'] ?? ''}',
-        draftProvider: _pendingModelProvider,
-        allProviders: [
-          for (final s in AppStateScope.of(context).conversationStates.values)
-            '${s.config?['provider'] ?? ''}',
-        ],
-      );
+    currentProvider: _sessionId == null
+        ? null
+        : '${AppStateScope.of(context).conversationStates[_sessionId]?.config?['provider'] ?? ''}',
+    draftProvider: _pendingModelProvider,
+    allProviders: [
+      for (final s in AppStateScope.of(context).conversationStates.values)
+        '${s.config?['provider'] ?? ''}',
+    ],
+  );
 
   Future<void> _showAddSheet() async {
     // entry-polish-1：面板回归纯"添加"语义 5 项（早前批次 的
@@ -3861,7 +3877,6 @@ class _ConversationPageState extends State<ConversationPage>
       ),
     );
   }
-
 
   /// `$ 选择技能`：官方 skills.list（conversation.skills() 已备），
   /// 选中插入 `$name `（桌面 ChatPromptActionMenu 同语义）。
@@ -4628,47 +4643,44 @@ class _ConversationPageState extends State<ConversationPage>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (_branchCurrent != null)
-                  Flexible(
-                    child: InkWell(
-                      key: const ValueKey('branch-entry'),
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                      onTap: () => _openBranchSheet(app2),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 2,
-                          horizontal: 4,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.call_split,
-                              size: 10,
-                              color: context.colors.foregroundSubtlest,
-                            ),
-                            const SizedBox(width: 3),
-                            Flexible(
-                              child: Text(
-                                _branchCurrent!,
-                                translate: false,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: AppType.uiXs,
-                                  color: context.colors.foregroundSubtle,
+                    Flexible(
+                      child: InkWell(
+                        key: const ValueKey('branch-entry'),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        onTap: () => _openBranchSheet(app2),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 2,
+                            horizontal: 4,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.call_split,
+                                size: 10,
+                                color: context.colors.foregroundSubtlest,
+                              ),
+                              const SizedBox(width: 3),
+                              Flexible(
+                                child: Text(
+                                  _branchCurrent!,
+                                  translate: false,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: AppType.uiXs,
+                                    color: context.colors.foregroundSubtle,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
                   if (running) ...[
                     const SizedBox(width: 8),
-                    RunningPulseDot(
-                      color: context.colors.running,
-                      size: 8,
-                    ),
+                    RunningPulseDot(color: context.colors.running, size: 8),
                     const SizedBox(width: 4),
                     Text(
                       '运行中…',
@@ -4780,8 +4792,7 @@ class _ConversationPageState extends State<ConversationPage>
                 if ((_sub?.state.backgroundWorks ?? const []).isNotEmpty)
                   PopupMenuItem(
                     value: 'bgWorks',
-                    child: Text(
-                        '后台工作 · ${_sub!.state.backgroundWorks.length}'),
+                    child: Text('后台工作 · ${_sub!.state.backgroundWorks.length}'),
                   ),
                 const PopupMenuItem(value: 'copyId', child: Text('复制会话 ID')),
               ],
@@ -5039,8 +5050,7 @@ class _ConversationPageState extends State<ConversationPage>
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black
-                                      .withValues(alpha: 0.18),
+                                  color: Colors.black.withValues(alpha: 0.18),
                                   blurRadius: 24,
                                   offset: const Offset(0, 8),
                                 ),
@@ -5059,15 +5069,16 @@ class _ConversationPageState extends State<ConversationPage>
                                           ? cwNow['breakdown']
                                           : null;
                                       if (bdNow is List && bdNow.isNotEmpty) {
-                                        _lastBreakdown[_sessionId ?? ''] =
-                                            bdNow.whereType<Map>().toList();
+                                        _lastBreakdown[_sessionId ?? ''] = bdNow
+                                            .whereType<Map>()
+                                            .toList();
                                       }
                                       return ConstrainedBox(
                                         constraints: BoxConstraints(
                                           maxHeight:
                                               MediaQuery.sizeOf(context)
-                                                      .height *
-                                                  0.55,
+                                                  .height *
+                                              0.55,
                                         ),
                                         child: SingleChildScrollView(
                                           keyboardDismissBehavior:
@@ -5080,15 +5091,15 @@ class _ConversationPageState extends State<ConversationPage>
                                             resetStatus: _resetStatusCache,
                                             onUseReset: _useReset,
                                             cachedBreakdown:
-                                                _lastBreakdown[
-                                                    _sessionId ?? ''],
+                                                _lastBreakdown[_sessionId ??
+                                                    ''],
                                             onCompact: _sessionId != null
                                                 ? () => _sendCompact(
-                                                    AppStateScope.of(context))
+                                                    AppStateScope.of(context),
+                                                  )
                                                 : null,
                                             onDrillDown: _sessionId != null
-                                                ? () => Navigator.of(context)
-                                                    .push(
+                                                ? () => Navigator.of(context).push(
                                                     MaterialPageRoute(
                                                       builder: (_) =>
                                                           ContextCompositionPage(
@@ -5126,7 +5137,7 @@ class _ConversationPageState extends State<ConversationPage>
                               ],
                             ),
                           ),
-                      ),
+                        ),
                       if ((state != null || _cachePreview != null) &&
                           !_stickToBottom)
                         () {
@@ -5205,10 +5216,7 @@ class _ConversationPageState extends State<ConversationPage>
                                     // ——上限先钳到 ≥0。
                                     (_fabDragStartPos!.dx + total.dx).clamp(
                                       0.0,
-                                      math.max(
-                                        0.0,
-                                        viewportCons.maxWidth - 48,
-                                      ),
+                                      math.max(0.0, viewportCons.maxWidth - 48),
                                     ),
                                     (_fabDragStartPos!.dy + total.dy).clamp(
                                       0.0,
@@ -5297,9 +5305,8 @@ class _ConversationPageState extends State<ConversationPage>
                                           child: Icon(
                                             Icons.more_horiz,
                                             size: 10,
-                                            color: context
-                                                .colors
-                                                .foregroundSubtle,
+                                            color:
+                                                context.colors.foregroundSubtle,
                                           ),
                                         ),
                                       ),
@@ -5310,49 +5317,49 @@ class _ConversationPageState extends State<ConversationPage>
                             ),
                           );
                         }(),
-                    // 引导悬浮卡（批① 2026-11-18）：挂在悬浮球正上方。
-                    if (_fabHintVisible)
-                      Positioned(
-                        left: (viewportCons.maxWidth - 48 - 14 - 36).clamp(
-                          8.0,
-                          viewportCons.maxWidth - 230,
-                        ),
-                        top: (viewportCons.maxHeight - 48 - 14 - 44).clamp(
-                          8.0,
-                          viewportCons.maxHeight - 90,
-                        ),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: context.colors.card,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: context.colors.borderFaint,
+                      // 引导悬浮卡（批① 2026-11-18）：挂在悬浮球正上方。
+                      if (_fabHintVisible)
+                        Positioned(
+                          left: (viewportCons.maxWidth - 48 - 14 - 36).clamp(
+                            8.0,
+                            viewportCons.maxWidth - 230,
+                          ),
+                          top: (viewportCons.maxHeight - 48 - 14 - 44).clamp(
+                            8.0,
+                            viewportCons.maxHeight - 90,
+                          ),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: context.colors.card,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: context.colors.borderFaint,
+                              ),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.touch_app_outlined,
+                                  size: 13,
+                                  color: context.colors.brandAccent,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '长按悬浮球：回到回合开始 / 收起输出',
+                                  style: TextStyle(
+                                    fontSize: AppType.uiXs,
+                                    color: context.colors.foreground,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.touch_app_outlined,
-                                size: 13,
-                                color: context.colors.brandAccent,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '长按悬浮球：回到回合开始 / 收起输出',
-                                style: TextStyle(
-                                  fontSize: AppType.uiXs,
-                                  color: context.colors.foreground,
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
-                      ),
                     ],
                   ),
                 );
@@ -5479,117 +5486,119 @@ class _ConversationPageState extends State<ConversationPage>
           // 反馈②：后台工作整类撤出输入区，归 ⋮ 二级页）。单源直通原
           // 条带（零回归），≥2 源合并成一行摘要（段点+计数），展开=
           // 限高 240 堆叠原条带（撤销/核对动作原样）。
-          Builder(builder: (_) {
-            Widget unknownBody() => Padding(
-              key: const ValueKey('draft-submission-unknown'),
-              padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
-              child: Row(
+          Builder(
+            builder: (_) {
+              Widget unknownBody() => Padding(
+                key: const ValueKey('draft-submission-unknown'),
+                padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.help_outline,
+                      size: 15,
+                      color: context.colors.warning,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _resultUnknownConverged
+                            ? tr('已确认上次发送送达（无需重发），横幅稍后消失')
+                            : tr('上次发送结果未知，请核对会话后再决定是否重发'),
+                        style: TextStyle(
+                          fontSize: AppType.uiXs,
+                          color: _resultUnknownConverged
+                              ? context.colors.success
+                              : context.colors.warning,
+                        ),
+                      ),
+                    ),
+                    if (!_resultUnknownConverged)
+                      TextButton(
+                        key: const ValueKey('draft-unknown-recheck'),
+                        onPressed: _busyResultRecheck
+                            ? null
+                            : () => unawaited(_recheckLastSendResult()),
+                        child: Text(tr('重新核对')),
+                      ),
+                  ],
+                ),
+              );
+              Widget unsentBody() => Row(
+                key: const ValueKey('status-tray-unsent'),
                 children: [
-                  Icon(
-                    Icons.help_outline,
-                    size: 15,
-                    color: context.colors.warning,
-                  ),
-                  const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      _resultUnknownConverged
-                          ? tr('已确认上次发送送达（无需重发），横幅稍后消失')
-                          : tr('上次发送结果未知，请核对会话后再决定是否重发'),
+                      '有一条发送失败的消息已暂存',
                       style: TextStyle(
                         fontSize: AppType.uiXs,
-                        color: _resultUnknownConverged
-                            ? context.colors.success
-                            : context.colors.warning,
+                        color: context.colors.warning,
                       ),
                     ),
                   ),
-                  if (!_resultUnknownConverged)
-                    TextButton(
-                      key: const ValueKey('draft-unknown-recheck'),
-                      onPressed: _busyResultRecheck
-                          ? null
-                          : () => unawaited(_recheckLastSendResult()),
-                      child: Text(tr('重新核对')),
+                  TextButton(
+                    key: const ValueKey('restore-unsent'),
+                    onPressed: _restoreUnsentDraft,
+                    child: const Text('恢复'),
+                  ),
+                  SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: IconButton(
+                      key: const ValueKey('discard-unsent'),
+                      padding: EdgeInsets.zero,
+                      iconSize: 16,
+                      tooltip: tr('丢弃暂存消息'),
+                      onPressed: () {
+                        setState(() => _unsentDraft = null);
+                        _onDraftMutated();
+                      },
+                      icon: const Icon(Icons.close),
                     ),
+                  ),
                 ],
-              ),
-            );
-            Widget unsentBody() => Row(
-              key: const ValueKey('status-tray-unsent'),
-              children: [
-                Expanded(
-                  child: Text(
-                    '有一条发送失败的消息已暂存',
-                    style: TextStyle(
-                      fontSize: AppType.uiXs,
-                      color: context.colors.warning,
-                    ),
+              );
+              Widget queueBody() => OfflineSendQueueStrip(
+                entries: _queueEntries,
+                expanded: true,
+                onToggle: () => setState(_queue.toggleExpanded),
+                onCancel: _cancelQueuedEntry,
+              );
+              final sections = <StatusTraySection>[
+                if (_draftResultUnknown || _resultUnknownConverged)
+                  StatusTraySection(
+                    id: 'unknown',
+                    label: _resultUnknownConverged ? tr('已确认送达') : tr('结果未知'),
+                    detail: '',
+                    accent: _resultUnknownConverged
+                        ? context.colors.success
+                        : context.colors.warning,
+                    body: unknownBody,
                   ),
-                ),
-                TextButton(
-                  key: const ValueKey('restore-unsent'),
-                  onPressed: _restoreUnsentDraft,
-                  child: const Text('恢复'),
-                ),
-                SizedBox(
-                  width: 32,
-                  height: 32,
-                  child: IconButton(
-                    key: const ValueKey('discard-unsent'),
-                    padding: EdgeInsets.zero,
-                    iconSize: 16,
-                    tooltip: tr('丢弃暂存消息'),
-                    onPressed: () {
-                      setState(() => _unsentDraft = null);
-                      _onDraftMutated();
-                    },
-                    icon: const Icon(Icons.close),
+                if (_unsentDraft != null)
+                  StatusTraySection(
+                    id: 'unsent',
+                    label: tr('暂存消息'),
+                    detail: '',
+                    accent: context.colors.warning,
+                    body: unsentBody,
                   ),
-                ),
-              ],
-            );
-            Widget queueBody() => OfflineSendQueueStrip(
-              entries: _queueEntries,
-              expanded: true,
-              onToggle: () => setState(_queue.toggleExpanded),
-              onCancel: _cancelQueuedEntry,
-            );
-            final sections = <StatusTraySection>[
-              if (_draftResultUnknown || _resultUnknownConverged)
-                StatusTraySection(
-                  id: 'unknown',
-                  label: _resultUnknownConverged ? tr('已确认送达') : tr('结果未知'),
-                  detail: '',
-                  accent: _resultUnknownConverged
-                      ? context.colors.success
-                      : context.colors.warning,
-                  body: unknownBody,
-                ),
-              if (_unsentDraft != null)
-                StatusTraySection(
-                  id: 'unsent',
-                  label: tr('暂存消息'),
-                  detail: '',
-                  accent: context.colors.warning,
-                  body: unsentBody,
-                ),
-              if (_queueEntries.isNotEmpty && !widget.readOnly)
-                StatusTraySection(
-                  id: 'queue',
-                  label: tr('排队'),
-                  detail: '${_queueEntries.length} ${tr('条')}',
-                  accent: context.colors.brandAccent,
-                  body: queueBody,
-                ),
-            ];
-            return StatusTray(
-              sections: sections,
-              expanded: _statusTrayExpanded,
-              onToggle: () =>
-                  setState(() => _statusTrayExpanded = !_statusTrayExpanded),
-            );
-          }),
+                if (_queueEntries.isNotEmpty && !widget.readOnly)
+                  StatusTraySection(
+                    id: 'queue',
+                    label: tr('排队'),
+                    detail: '${_queueEntries.length} ${tr('条')}',
+                    accent: context.colors.brandAccent,
+                    body: queueBody,
+                  ),
+              ];
+              return StatusTray(
+                sections: sections,
+                expanded: _statusTrayExpanded,
+                onToggle: () =>
+                    setState(() => _statusTrayExpanded = !_statusTrayExpanded),
+              );
+            },
+          ),
           if (draftWorkspace != null && !widget.readOnly)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
@@ -5997,203 +6006,217 @@ class _ConversationPageState extends State<ConversationPage>
             _listCenterItemKey = itemKeyFor(0);
           }
         }
-        return NotificationListener<ScrollNotification>(
-          // 用户拖拽滚动时立即取消粘底跟随——否则 100ms 一次的
-          // jumpTo 会把慢速上滑反复钉回底部（流式期间尤甚）。
-          onNotification: (n) {
-            if (n is ScrollUpdateNotification && n.dragDetails != null) {
-              if (_searchOpen) _search.cancelNavigation();
-              final draggingUp = n.dragDetails!.delta.dy > 0;
-              if (draggingUp && _stickToBottom) {
-                // 只有用户真的向上拖才解除粘底（FAB 可见性联动）。
-                _followTick?.cancel();
-                setState(() => _stickToBottom = false);
-              } else if ((_followTick?.isActive ?? false)) {
-                _followTick?.cancel();
-              }
-            } else if ((n is ScrollEndNotification ||
-                    (n is ScrollUpdateNotification && n.dragDetails == null)) &&
-                _scroll.hasClients) {
-              if (_inProgrammaticWindow()) {
-                // 自己的 jump 序列——消费豁免（每序列一个 End）。
-                if (n is ScrollEndNotification) {
-                  _programmaticScrollEndSkips--;
+        return GestureDetector(
+          // 背景点击取消选中（2026-11-19 用户报告的老 bug）：Flutter
+          // 选区体系只有"点在文字上"才收起选区（SelectableRegion 内部
+          // 手势），点空白/卡片底色/边距等非文本区不落任何选区手势——
+          // 选中态与复制工具条残留。框架预留的出路是焦点：
+          // SelectableRegion 失焦时自动 clearSelection（SDK
+          // selectable_region.dart _handleFocusChanged，仅 app resumed）。
+          // 这里接住"点空白"的 tap，若当前焦点属于 SelectableRegion
+          // （长按选中时框架会 requestFocus）则主动失焦=清除选中+工具
+          // 条；输入框等其它焦点（键盘）不受影响。点在文字上时 tap 被
+          // 文本手势吃掉，本回调不触发——不干扰框架自身的收起行为。
+          onTap: _clearSelectionOnBackgroundTap,
+          child: NotificationListener<ScrollNotification>(
+            // 用户拖拽滚动时立即取消粘底跟随——否则 100ms 一次的
+            // jumpTo 会把慢速上滑反复钉回底部（流式期间尤甚）。
+            onNotification: (n) {
+              if (n is ScrollUpdateNotification && n.dragDetails != null) {
+                if (_searchOpen) _search.cancelNavigation();
+                final draggingUp = n.dragDetails!.delta.dy > 0;
+                if (draggingUp && _stickToBottom) {
+                  // 只有用户真的向上拖才解除粘底（FAB 可见性联动）。
+                  _followTick?.cancel();
+                  setState(() => _stickToBottom = false);
+                } else if ((_followTick?.isActive ?? false)) {
+                  _followTick?.cancel();
                 }
-                return false;
-              }
+              } else if ((n is ScrollEndNotification ||
+                      (n is ScrollUpdateNotification &&
+                          n.dragDetails == null)) &&
+                  _scroll.hasClients) {
+                if (_inProgrammaticWindow()) {
+                  // 自己的 jump 序列——消费豁免（每序列一个 End）。
+                  if (n is ScrollEndNotification) {
+                    _programmaticScrollEndSkips--;
+                  }
+                  return false;
+                }
 
-              if (_followingReconcileGuard > 0) {
+                if (_followingReconcileGuard > 0) {
+                  _saveScrollMemory();
+                  return false;
+                }
+
+                // 官方落点裁决（timelineScrollAnchor nextFollowingAfterScroll，
+                // 2026-10-26 对齐批 C）：用户滚动序列（含惯性 fling）结束的
+                // 静止落点距底 ≤48 → 贴底回跟；>48 → 解除跟随——原实现仅
+                // 手指拖拽可解除，惯性滑出后被粘底 tick 拉回（自造怪象，
+                // audit §六.5 实证）。回吸保持 2026-10-23 语义（贴底即恢复）。
+                final dist =
+                    _scroll.position.maxScrollExtent - _scroll.position.pixels;
+                if (dist <= 48) {
+                  if (!_stickToBottom) {
+                    setState(() => _stickToBottom = true);
+                    _followUntilStable();
+                  }
+                } else if (_stickToBottom) {
+                  _followTick?.cancel();
+                  setState(() => _stickToBottom = false);
+                }
                 _saveScrollMemory();
-                return false;
               }
-
-              // 官方落点裁决（timelineScrollAnchor nextFollowingAfterScroll，
-              // 2026-10-26 对齐批 C）：用户滚动序列（含惯性 fling）结束的
-              // 静止落点距底 ≤48 → 贴底回跟；>48 → 解除跟随——原实现仅
-              // 手指拖拽可解除，惯性滑出后被粘底 tick 拉回（自造怪象，
-              // audit §六.5 实证）。回吸保持 2026-10-23 语义（贴底即恢复）。
-              final dist =
-                  _scroll.position.maxScrollExtent - _scroll.position.pixels;
-              if (dist <= 48) {
-                if (!_stickToBottom) {
-                  setState(() => _stickToBottom = true);
-                  _followUntilStable();
-                }
-              } else if (_stickToBottom) {
-                _followTick?.cancel();
-                setState(() => _stickToBottom = false);
-              }
-              _saveScrollMemory();
-            }
-            return false;
-          },
-          child: AnchoredChatList(
-            key: const ValueKey('chat-scroll'),
-            controller: _scroll,
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            centerIndex: centerIndex,
-            itemCount: items.length,
-            leading: state.canLoadOlder
-                ? Center(
-                    child: TextButton.icon(
-                      key: const ValueKey('load-older'),
-                      onPressed: _loadOlder,
-                      icon: const Icon(Icons.history, size: 16),
-                      label: const Text('加载更早消息'),
-                    ),
-                  )
-                : null,
-            trailing:
-                (state.control?['phase'] == 'running' &&
-                    items.isNotEmpty &&
-                    items.last is UserItem &&
-                    state.pendingInteractions.isEmpty)
-                ? Padding(
-                    padding: const EdgeInsets.only(top: 20),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: ShimmerText(
-                        text: '正在思考…',
-                        style: TextStyle(
-                          fontSize: AppType.uiBase,
-                          color: context.colors.running,
+              return false;
+            },
+            child: AnchoredChatList(
+              key: const ValueKey('chat-scroll'),
+              controller: _scroll,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              centerIndex: centerIndex,
+              itemCount: items.length,
+              leading: state.canLoadOlder
+                  ? Center(
+                      child: TextButton.icon(
+                        key: const ValueKey('load-older'),
+                        onPressed: _loadOlder,
+                        icon: const Icon(Icons.history, size: 16),
+                        label: const Text('加载更早消息'),
+                      ),
+                    )
+                  : null,
+              trailing:
+                  (state.control?['phase'] == 'running' &&
+                      items.isNotEmpty &&
+                      items.last is UserItem &&
+                      state.pendingInteractions.isEmpty)
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 20),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: ShimmerText(
+                          text: '正在思考…',
+                          style: TextStyle(
+                            fontSize: AppType.uiBase,
+                            color: context.colors.running,
+                          ),
                         ),
                       ),
+                    )
+                  : null,
+              itemBuilder: (context, idx) {
+                final item = items[idx];
+                // 所有条目使用稳定 key；前插时 center index 后移而阅读位置不变。
+                final itemKey = itemKeyFor(idx);
+                if (item is TurnBarItem && idx == lastTurnIdx) {
+                  _lastTurnHeaderId = intOf(item.work.header?['rowId']);
+                }
+                // 轮距（对抗审查收敛项 2026-10-22 对位官方 56=pt-14）：
+                // 候选 15 验收 用户拍板紧凑优先——轮顶 56→28（手机档
+                // 减半；轮内首条 20/条目间 16 不变）。官方节奏在手机长会话
+                // 里观感过松（真机实测轮间 ≈84dp 起步）。
+                final startsTurn = item is UserItem;
+                final prev = idx > 0 ? items[idx - 1] : null;
+                // 窗口起点不是逻辑起点：还有更早历史时先按同类间距预留，
+                // 前插后该条目才不会凭空多出 56/20/16dp（逐帧回归实证）。
+                final top = startsTurn
+                    ? (idx == 0 && !state.canLoadOlder ? 0.0 : 28.0)
+                    : (prev == null
+                          ? (state.canLoadOlder
+                                ? (item is TurnBarItem ? 20.0 : 16.0)
+                                : 0.0)
+                          : (prev is TurnBarItem || prev is UserItem
+                                ? 20.0
+                                : 16.0));
+                Widget child = switch (item) {
+                  UserItem() => SearchTargetFrame(
+                    rowId: intOf(item.row['rowId']),
+                    activeRowId: _activeSearchMatch?.rowId,
+                    targetKey: _searchTargetKey,
+                    child: UserBubble(
+                      text: item.text,
+                      attachments: _attachmentsOf(item.row),
+                      onLongPress: () => _showRowActions(item.row),
+                      onAttachment: (i) => _openAttachmentAt(item.row, i),
+                      // ④ 提交配置溯源：变化点徽标。
+                      submitConfig: item.submitConfig,
+                      showConfigBadge: item.showConfigBadge,
+                      searchReveal:
+                          _activeSearchMatch?.rowId == intOf(item.row['rowId']),
+                      // 验收#11（Bug H）：提问内容同享词级高亮。
+                      searchQuery: _searchOpen
+                          ? _searchController.text.trim()
+                          : null,
                     ),
-                  )
-                : null,
-            itemBuilder: (context, idx) {
-              final item = items[idx];
-              // 所有条目使用稳定 key；前插时 center index 后移而阅读位置不变。
-              final itemKey = itemKeyFor(idx);
-              if (item is TurnBarItem && idx == lastTurnIdx) {
-                _lastTurnHeaderId = intOf(item.work.header?['rowId']);
-              }
-              // 轮距（对抗审查收敛项 2026-10-22 对位官方 56=pt-14）：
-              // 候选 15 验收 用户拍板紧凑优先——轮顶 56→28（手机档
-              // 减半；轮内首条 20/条目间 16 不变）。官方节奏在手机长会话
-              // 里观感过松（真机实测轮间 ≈84dp 起步）。
-              final startsTurn = item is UserItem;
-              final prev = idx > 0 ? items[idx - 1] : null;
-              // 窗口起点不是逻辑起点：还有更早历史时先按同类间距预留，
-              // 前插后该条目才不会凭空多出 56/20/16dp（逐帧回归实证）。
-              final top = startsTurn
-                  ? (idx == 0 && !state.canLoadOlder ? 0.0 : 28.0)
-                  : (prev == null
-                        ? (state.canLoadOlder
-                              ? (item is TurnBarItem ? 20.0 : 16.0)
-                              : 0.0)
-                        : (prev is TurnBarItem || prev is UserItem
-                              ? 20.0
-                              : 16.0));
-              Widget child = switch (item) {
-                UserItem() => SearchTargetFrame(
-                  rowId: intOf(item.row['rowId']),
-                  activeRowId: _activeSearchMatch?.rowId,
-                  targetKey: _searchTargetKey,
-                  child: UserBubble(
-                    text: item.text,
-                    attachments: _attachmentsOf(item.row),
-                    onLongPress: () => _showRowActions(item.row),
-                    onAttachment: (i) => _openAttachmentAt(item.row, i),
-                    // ④ 提交配置溯源：变化点徽标。
-                    submitConfig: item.submitConfig,
-                    showConfigBadge: item.showConfigBadge,
-                    searchReveal:
-                        _activeSearchMatch?.rowId ==
-                        intOf(item.row['rowId']),
-                    // 验收#11（Bug H）：提问内容同享词级高亮。
+                  ),
+                  TurnBarItem() => TurnBar(
+                    workflowRuns: state.workflowRunsList,
+                    sessionId: _sessionId,
+                    work: item.work,
+                    showTools: app.uiPrefs.showToolCalls,
+                    firstSeenOf: _firstSeenOf,
+                    elapsedMsOf: _reasoningElapsedOf,
+                    toolOpen: _toolOpenByRow,
+                    onRowActions: _showRowActions,
+                    isLastTurn: idx == lastTurnIdx,
+                    // 运行中窗口的末轮承接（2026-10-26 澄清修复）：会话
+                    // phase=running 时末轮按运行中呈现（含缓存预渲期——
+                    // 冻结重进 header 停在旧完成态的场景）。
+                    phaseRunning:
+                        idx == lastTurnIdx && state.phase == 'running',
+                    liveCollapsedByRow: _liveCollapsedByRow,
+                    searchTargetRowId: _activeSearchMatch?.rowId,
+                    searchTargetKey: _searchTargetKey,
+                    searchStart: _activeSearchMatch?.start,
+                    searchSourceText: _activeSearchMatch?.sourceText,
+                    searchSnippet: _activeSearchMatch?.snippet,
                     searchQuery: _searchOpen
                         ? _searchController.text.trim()
                         : null,
+                    openSession: _openConversationSession,
+                    onLiveCollapsedChanged: (collapsed) {
+                      // 与 TurnBar._turnId 同源
+                      // collapseKeyId（无头半截回合按段内首行 rowId）——侧写键
+                      // 与读键不一致会让覆盖写进孤儿 -1 键。
+                      _liveCollapsedByRow[item.work.collapseKeyId] = collapsed;
+                    },
                   ),
-                ),
-                TurnBarItem() => TurnBar(
-                workflowRuns: state.workflowRunsList,
-                  sessionId: _sessionId,
-                  work: item.work,
-                  showTools: app.uiPrefs.showToolCalls,
-                  firstSeenOf: _firstSeenOf,
-                  elapsedMsOf: _reasoningElapsedOf,
-                  toolOpen: _toolOpenByRow,
-                  onRowActions: _showRowActions,
-                  isLastTurn: idx == lastTurnIdx,
-                  // 运行中窗口的末轮承接（2026-10-26 澄清修复）：会话
-                  // phase=running 时末轮按运行中呈现（含缓存预渲期——
-                  // 冻结重进 header 停在旧完成态的场景）。
-                  phaseRunning: idx == lastTurnIdx && state.phase == 'running',
-                  liveCollapsedByRow: _liveCollapsedByRow,
-                  searchTargetRowId: _activeSearchMatch?.rowId,
-                  searchTargetKey: _searchTargetKey,
-                  searchStart: _activeSearchMatch?.start,
-                  searchSourceText: _activeSearchMatch?.sourceText,
-                  searchSnippet: _activeSearchMatch?.snippet,
-                  searchQuery: _searchOpen
-                      ? _searchController.text.trim()
-                      : null,
-                  openSession: _openConversationSession,
-                  onLiveCollapsedChanged: (collapsed) {
-                    // 与 TurnBar._turnId 同源
-                    // collapseKeyId（无头半截回合按段内首行 rowId）——侧写键
-                    // 与读键不一致会让覆盖写进孤儿 -1 键。
-                    _liveCollapsedByRow[item.work.collapseKeyId] = collapsed;
-                  },
-                ),
-                FileSummaryItem() => FileSummaryCard(
-                  sessionId: _sessionId,
-                  header: item.header,
-                  fileChanges: item.fileChanges,
-                  subagentCount: item.subagentCount,
-                  tailRow: item.tailRow,
-                  tailCopyText: item.tailCopyText,
-                  openByCard: _fileCardOpen,
-                  itemsByCard: _fileCardItems,
-                  openSession: _openConversationSession,
-                ),
-                // 标记行渲染收敛 TimelineMarkerDivider
-                //（段内 mid-turn compact 同款，两处不漂移）。
-                TimelineMarkerItem() => TimelineMarkerDivider(
-                  label: item.label,
-                  running: item.running,
-                ),
-              };
-              final fresh = _seenRowKeys.add(itemKey);
-              // 原 Builder 只为收集 itemContext
-              // 进只写不读的 map（持有已 dispose 的 Element=内存泄漏）——
-              // 整层删除，直接返回。
-              return KeyedSubtree(
-                key: ValueKey(itemKey),
-                child: top > 0
-                    ? Padding(
-                        padding: EdgeInsets.only(top: top),
-                        child: fresh ? EntryFadeSlide(child: child) : child,
-                      )
-                    : fresh
-                    ? EntryFadeSlide(child: child)
-                    : child,
-              );
-            },
+                  FileSummaryItem() => FileSummaryCard(
+                    sessionId: _sessionId,
+                    header: item.header,
+                    fileChanges: item.fileChanges,
+                    subagentCount: item.subagentCount,
+                    tailRow: item.tailRow,
+                    tailCopyText: item.tailCopyText,
+                    openByCard: _fileCardOpen,
+                    itemsByCard: _fileCardItems,
+                    openSession: _openConversationSession,
+                  ),
+                  // 标记行渲染收敛 TimelineMarkerDivider
+                  //（段内 mid-turn compact 同款，两处不漂移）。
+                  TimelineMarkerItem() => TimelineMarkerDivider(
+                    label: item.label,
+                    running: item.running,
+                  ),
+                };
+                final fresh = _seenRowKeys.add(itemKey);
+                // 原 Builder 只为收集 itemContext
+                // 进只写不读的 map（持有已 dispose 的 Element=内存泄漏）——
+                // 整层删除，直接返回。
+                return KeyedSubtree(
+                  key: ValueKey(itemKey),
+                  child: top > 0
+                      ? Padding(
+                          padding: EdgeInsets.only(top: top),
+                          child: fresh ? EntryFadeSlide(child: child) : child,
+                        )
+                      : fresh
+                      ? EntryFadeSlide(child: child)
+                      : child,
+                );
+              },
+            ),
           ),
         );
       },
@@ -6220,17 +6243,16 @@ String inferEntPlanKind({
   return 'individual-coding-plan';
 }
 
-
 /// 顶栏动作按钮紧凑规格（真机反馈 2026-11-13 验收：四图标 48dp 默认
 /// 盒+默认 padding 的视觉空隙「占的空间较大」，标题/分支/项目几乎显
 /// 示不出）：图标 18dp、触盒 40dp（AppBar 动作紧凑档——M3 默认盒 48
 /// 是主要吃宽源，constraints 参数在 M3 不生效须 styleFrom+shrinkWrap，
 /// artifact 行同款教训）。
 ButtonStyle _topBarActionStyle() => IconButton.styleFrom(
-      minimumSize: const Size(40, 40),
-      padding: EdgeInsets.zero,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
+  minimumSize: const Size(40, 40),
+  padding: EdgeInsets.zero,
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
 
 /// 顶栏运行中计数角标（早前批次）：count<=0=纯图标（零干
 /// 扰）；>0=warning 色小计数徽（运行中语义与 run 卡 spinner 同色系；

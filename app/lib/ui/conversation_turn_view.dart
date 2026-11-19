@@ -113,35 +113,13 @@ class TurnBarState extends State<TurnBar> {
   /// 身份的自动收起不在本修范围（用户拍板接受现状）。
   bool _manuallyCollapsedWhileRunning = false;
   bool _wasRunning = false;
-  Timer? _ticker;
 
   @override
   void initState() {
     super.initState();
-    // 挂载即运行的轮（搜索跳转/懒列表重挂进
-    // running 但桌面静默的回合）没有 didUpdateWidget 驱动——秒表冻在
-    // 挂载瞬间值。与 ReasoningTile 的 initState→_startTicker 同构。
+    // 挂载即运行的轮（搜索跳转/懒列表重挂进 running 但桌面静默的
+    // 回合）也要置基线——否则首个完成边沿 didUpdateWidget 检测不到。
     _wasRunning = _effectiveRunning;
-    _ensureTicker(_wasRunning);
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    super.dispose();
-  }
-
-  void _ensureTicker(bool running) {
-    if (running && _ticker == null) {
-      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
-      });
-    } else if (!running && _ticker != null) {
-      // #7：build 期间不可 setState（running→completed 边沿会踩
-      // 断言）——停 ticker 即可，didUpdateWidget 已触发重建。
-      _ticker?.cancel();
-      _ticker = null;
-    }
   }
 
   @override
@@ -150,7 +128,7 @@ class TurnBarState extends State<TurnBar> {
     final running = _effectiveRunning;
     if (_wasRunning && !running) {
       // 官方语义：defaultOpen 翻转时 effect 重置展开态——正常轮收起
-      // （含运行完成/phaseRunning 解除，"完成后收起只剩最后回复"），
+      // （含运行完成/phaseRunning 解除，"完成后收起只剩最后回复"）；
       // 异常/无正文按默认档展开。例外：运行中被手动收起=用户
       // 选择优先，保持收起。
       _open = _manuallyCollapsedWhileRunning
@@ -161,7 +139,6 @@ class TurnBarState extends State<TurnBar> {
       widget.onLiveCollapsedChanged?.call(!_open);
     }
     _wasRunning = running;
-    _ensureTicker(running);
   }
 
   /// 有效运行态：轮自身 running，或"窗口运行中"的末轮承接（phaseRunning，
@@ -234,18 +211,29 @@ class TurnBarState extends State<TurnBar> {
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              _durationLabel(),
-              // 对抗审查收敛：工作区行族 13→14（官方 text-ui-base，
-              // ConversationTurnGroup.tsx:683）；完成态退到最淡档（官方
-              // foreground-subtlest，让工作行整体退后于正文）。
-              style: TextStyle(
-                fontSize: AppType.uiBase,
-                color: running
-                    ? context.colors.running
-                    : context.colors.foregroundSubtlest,
-              ),
-            ),
+            // 对抗审查收敛：工作区行族 13→14（官方 text-ui-base，
+            // ConversationTurnGroup.tsx:683）；完成态退到最淡档（官方
+            // foreground-subtlest，让工作行整体退后于正文）。
+            // 运行态时长由 _RunningWorkLabel 自带秒表驱动（选区修复
+            // 2026-11-19）：TurnBar 不再每秒 setState 整轮——运行中
+            // 整轮重建会把全局 SelectionArea 已注册可选文本的 geometry
+            // 每秒打翻，竖向复制工具条随之消失（用户实测“每秒刷一次”
+            // 的根因，Eta 调研后的局部化修复）。
+            child: running
+                ? _RunningWorkLabel(
+                    work: widget.work,
+                    style: TextStyle(
+                      fontSize: AppType.uiBase,
+                      color: context.colors.running,
+                    ),
+                  )
+                : Text(
+                    _durationLabel(),
+                    style: TextStyle(
+                      fontSize: AppType.uiBase,
+                      color: context.colors.foregroundSubtlest,
+                    ),
+                  ),
           ),
           // Paseo 参考（2026-10-23）：完成态附回合结束绝对时刻（HH:mm）
           // ——运行中已有实时时长，完成后"何时结束"比"干了多久"更常被
@@ -398,7 +386,11 @@ class TurnBarState extends State<TurnBar> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        SubagentTile(row: subagentRow, toolRow: toolRow, openSession: widget.openSession),
+                        SubagentTile(
+                          row: subagentRow,
+                          toolRow: toolRow,
+                          openSession: widget.openSession,
+                        ),
                         if (intOf(toolRow['rowId']) ==
                                 widget.searchTargetRowId &&
                             widget.searchSnippet != null)
@@ -486,11 +478,14 @@ class TurnBarState extends State<TurnBar> {
                                 copyText: work.allTextJoined,
                                 sessionId: widget.sessionId,
                                 createdAtMs: turnHeaderCreatedAt(work.header),
-                openSession: widget.openSession,
+                                openSession: widget.openSession,
                               ),
                             ],
                           ),
-                  'subagent' => SubagentTile(row: row, openSession: widget.openSession),
+                  'subagent' => SubagentTile(
+                    row: row,
+                    openSession: widget.openSession,
+                  ),
                   // （2026-10-29 审查）：TodoWrite 待办
                   // 清单官方有专用渲染（renderers/todo.tsx：状态图标+
                   // 完成计数+当前项）——此前降级为通用文本行。
@@ -503,7 +498,7 @@ class TurnBarState extends State<TurnBar> {
                   //（官方对位——不再淹没在通用工具行里）。
                   'toolCall'
                       when '${row['toolName'] ?? row['name'] ?? ''}' ==
-                              'CreateWorkflow' =>
+                          'CreateWorkflow' =>
                     WorkflowRunCard(
                       row: row,
                       runs: widget.workflowRuns,
@@ -557,6 +552,48 @@ class TurnBarState extends State<TurnBar> {
         ),
       ],
     );
+  }
+}
+
+/// 运行中工作条标签（“工作中 X 分 X 秒”）：**秒表局部化**——Timer 只
+/// setState 本 widget，时长文本每秒自刷新而 TurnBar 整轮不重建。
+/// 此前 TurnBar 级 Timer.periodic(1s)+setState 会把整轮子树（正文/
+/// 工具输出全部 SelectableText）每秒重建，全局 SelectionArea 里注册
+/// 的可选文本 geometry 随之每秒失效=流式期间长按选中的竖向复制
+/// 工具条消失（用户实测“每秒刷一次”根因，Eta 调研后局部化修复）。
+/// 子树只有这一个 Text，无可选内容，秒表打翻不到任何选区。
+class _RunningWorkLabel extends StatefulWidget {
+  final TurnWork work;
+  final TextStyle style;
+
+  const _RunningWorkLabel({required this.work, required this.style});
+
+  @override
+  State<_RunningWorkLabel> createState() => _RunningWorkLabelState();
+}
+
+class _RunningWorkLabelState extends State<_RunningWorkLabel> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 复用 workBarLabel 纯函数（running 分支用当前时刻实时计时，
+    // 与原 TurnBar 级秒表同源；单测不回归）。
+    return Text(workBarLabel(widget.work), style: widget.style);
   }
 }
 
@@ -668,7 +705,7 @@ class ReasoningTileState extends State<ReasoningTile> {
   String get _lastLine {
     final text = '${widget.row['text'] ?? ''}';
     for (final line in text.split('\n').reversed) {
-        if (line.trim().isNotEmpty) {
+      if (line.trim().isNotEmpty) {
         // 对抗审查 2-2：保尾不保头——官方语义"永远显示最新 token"，
         // 截头 60 字会让长行摘要冻结在旧内容；手机不做横滚（触屏手势
         // 冲突），前省略号截尾为等价实现。 ：截点走代理对
@@ -1008,7 +1045,11 @@ class SubagentTile extends StatelessWidget {
   /// 同携两者（配对后唯一的状态出口，不能只剩 subagent 视角）。
   final Map<String, dynamic>? toolRow;
   final ConversationSessionOpener openSession;
-  const SubagentTile({required this.row, this.toolRow, required this.openSession});
+  const SubagentTile({
+    required this.row,
+    this.toolRow,
+    required this.openSession,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1054,9 +1095,7 @@ class SubagentTile extends StatelessWidget {
     // 三段式「子智能体 · 类型 · 任务描述」——此前类型只在 summary 为空
     // 时兜底，常态不可见）；下钻标题同官方 sidePaneTabPresentation
     // 优先用类型。
-    final title = summary.isEmpty
-        ? '${tr('子智能体')} $type'
-        : summary;
+    final title = summary.isEmpty ? '${tr('子智能体')} $type' : summary;
     final openTitle = type.isNotEmpty ? type : title;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),

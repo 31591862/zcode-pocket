@@ -180,7 +180,6 @@ class TodoTileState extends State<TodoTile> {
   }
 }
 
-
 class ToolCallTile extends StatefulWidget {
   final Map<String, dynamic> row;
   final Map<int, bool> openByRow;
@@ -604,6 +603,9 @@ class ToolCallTileState extends State<ToolCallTile> {
                           text: visibleOutput,
                           follow: statusLabel == '执行中',
                           searchStart: searchOutputStart,
+                          // 执行中退出选区（2026-11-19 选区修复，见
+                          // OutputViewport.selectable 注释）。
+                          selectable: statusLabel != '执行中',
                           // 文件预览高亮（2026-10-23 真机反馈）：读取类
                           // 工具完成态按输入参数的文件路径推语言；运行中
                           // 保持纯文本（官方流式不高亮同策略）。
@@ -712,20 +714,15 @@ class PlanModeCard extends StatelessWidget {
   void _copy(BuildContext context) {
     Clipboard.setData(ClipboardData(text: markdown));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('计划已复制'),
-        duration: Duration(seconds: 2),
-      ),
+      const SnackBar(content: Text('计划已复制'), duration: Duration(seconds: 2)),
     );
   }
 
   void _openDetail(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => PlanModeDetailPage(
-          markdown: markdown,
-          planFilePath: planFilePath,
-        ),
+        builder: (_) =>
+            PlanModeDetailPage(markdown: markdown, planFilePath: planFilePath),
       ),
     );
   }
@@ -901,11 +898,18 @@ class OutputViewport extends StatefulWidget {
   final String? language;
   final int? searchStart;
 
+  /// 文本可选（2026-11-19 选区修复）：执行中=流式输出每 chunk 变化，
+  /// 注册在全局 SelectionArea 里的 selectable geometry 随之失效会清掉
+  /// 别处的选区/工具条——执行中退出选区（纯 Text 直出），完成态恢复
+  /// SelectableText（对齐 MarkdownView 流式退出策略）。
+  final bool selectable;
+
   const OutputViewport({
     required this.text,
     required this.follow,
     this.language,
     this.searchStart,
+    this.selectable = true,
   });
 
   @override
@@ -1019,9 +1023,22 @@ class OutputViewportState extends State<OutputViewport> {
         constraints: const BoxConstraints(maxHeight: 220),
         child: SingleChildScrollView(
           controller: _scroll,
-          child: spans != null
-              ? SelectableText.rich(TextSpan(style: baseStyle, children: spans))
-              : SelectableText(t, style: baseStyle),
+          child: widget.selectable
+              ? (spans != null
+                    ? SelectableText.rich(
+                        TextSpan(style: baseStyle, children: spans),
+                        // 重锚工具条（见 SelectionToolbarReanchor）：
+                        // 工具输出上方内容增高/滚动后跟随选区。
+                        contextMenuBuilder: reanchoringEditableTextToolbar,
+                      )
+                    : SelectableText(
+                        t,
+                        style: baseStyle,
+                        contextMenuBuilder: reanchoringEditableTextToolbar,
+                      ))
+              : (spans != null
+                    ? Text.rich(TextSpan(style: baseStyle, children: spans))
+                    : Text(t, style: baseStyle)),
         ),
       ),
     );
