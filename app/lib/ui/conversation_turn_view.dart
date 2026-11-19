@@ -868,6 +868,7 @@ class ReasoningTileState extends State<ReasoningTile> {
                             // 的层级差此前只达官方六成。
                             color: context.colors.foregroundSubtlest,
                             height: 1.5,
+                            leadingDistribution: TextLeadingDistribution.even,
                           ),
                         ),
                       ),

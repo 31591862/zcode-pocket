@@ -1,7 +1,8 @@
 // 助手正文自由划选复制回归（2026-11-16 用户拍板：要的是"文字可以自由
 // 选中进行复制"，不是复制全文菜单）：
-// ① MarkdownView selectable 化——正文落 SelectableText（长按/双击进入
-//    系统选择手柄+复制工具条）；
+// ① MarkdownView 外层 SelectionArea——正文可长按/双击进入系统选择手柄+
+//    复制工具条（2026-11-19 起走 SelectionArea+RenderParagraph 路径，
+//    与用户气泡同款，选区盒上下留白一致）；
 // ② selectable 化后长按=选择，行操作菜单在正文路径移除（协议操作承接
 //    到轮尾操作行——重试按钮补进 TurnTailActions）。
 import 'package:flutter/material.dart';
@@ -63,13 +64,18 @@ class _App extends AppState {
   @override
   LinkPhase get phase => LinkPhase.online;
   @override
-  Future<ConversationSubscription> ensureConversation(String id,
-      {Object? seedCacheEntry}) async {
+  Future<ConversationSubscription> ensureConversation(
+    String id, {
+    Object? seedCacheEntry,
+  }) async {
     return sub;
   }
 
   @override
-  Future<dynamic> retryTurn(String sessionId, Map<String, dynamic> target) async {
+  Future<dynamic> retryTurn(
+    String sessionId,
+    Map<String, dynamic> target,
+  ) async {
     retryCalls++;
     return {'status': 'accepted'};
   }
@@ -94,14 +100,17 @@ void main() {
     }
     final textFinder = find.textContaining('自由划选');
     expect(textFinder, findsOneWidget);
-    // selectable 模式：块落 SelectableText（EditableText 承载）。
+    // 选区路径（2026-11-19 重构）：正文固定非可选渲染包在 SelectionArea 里
+    // ——选区盒由 RenderParagraph 原始度量计算，与用户气泡观感一致。
     expect(
-      find.ancestor(
-        of: textFinder,
-        matching: find.bySubtype<SelectableText>(),
-      ),
+      find.ancestor(of: textFinder, matching: find.bySubtype<SelectionArea>()),
       findsWidgets,
-      reason: '正文必须落 SelectableText（自由划选复制的前提）',
+      reason: '正文必须在 SelectionArea 内（自由划选复制的载体）',
+    );
+    expect(
+      find.ancestor(of: textFinder, matching: find.bySubtype<SelectableText>()),
+      findsNothing,
+      reason: '不再落 SelectableText（强制 strut 的选区盒上下留白不均）',
     );
 
     // 轮尾操作行承接协议动作：重试钮在场（长按菜单移除后不丢失）。

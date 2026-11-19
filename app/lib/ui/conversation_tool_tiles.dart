@@ -1004,6 +1004,7 @@ class OutputViewportState extends State<OutputViewport> {
           ? context.colors.foregroundSubtle
           : context.colors.foregroundSubtlest,
       height: 1.45,
+      leadingDistribution: TextLeadingDistribution.even,
     );
     // 文件预览高亮（批：读取工具展开区）：引擎与消息代码块同源
     // （code_highlight），着色 span 只覆写颜色，字号/等宽/行高继承

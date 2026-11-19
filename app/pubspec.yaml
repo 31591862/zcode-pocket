@@ -39,6 +39,13 @@ dev_dependencies:
   # 测试缝用（FakeSecureStorage 覆写需要 options 类型；随 flutter_secure_storage 传递）
   flutter_secure_storage_platform_interface: ^2.1.0
 
+# 本地补丁版渲染器（2026-11-19）：仅一处改动——包内强制 strut 增加
+# leadingDistribution: even（行距上下均分；见 third_party/ 下 PATCHES.md）。
+# 上游修复后可删除本节、恢复 pub 缓存版本。
+dependency_overrides:
+  flutter_markdown_plus:
+    path: ../third_party/flutter_markdown_plus
+
 flutter:
   uses-material-design: true
 

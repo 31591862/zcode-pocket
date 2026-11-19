@@ -89,6 +89,22 @@ class _SelectionToolbarReanchorState extends State<SelectionToolbarReanchor> {
       _cached ??= widget.build(_last ?? widget.anchors());
 }
 
+/// SelectionArea 侧（markdown 正文包层）的重锚工具条：等价默认
+/// AdaptiveTextSelectionToolbar（无自定义项），带同锚点实例复用与跟随。
+Widget reanchoringRegionToolbar(
+  BuildContext context,
+  SelectableRegionState region,
+) => SelectionToolbarReanchor(
+  anchors: () => region.contextMenuAnchors,
+  signature: () => region.contextMenuButtonItems
+      .map((i) => '${i.type}:${i.label}')
+      .join('|'),
+  build: (_) => AdaptiveTextSelectionToolbar.buttonItems(
+    buttonItems: region.contextMenuButtonItems,
+    anchors: region.contextMenuAnchors,
+  ),
+);
+
 /// EditableText 侧（SelectableText/MarkdownBody）共用的重锚工具条——
 /// 等价 SDK 默认 `AdaptiveTextSelectionToolbar.editableText`，外加跟随
 /// 与同锚点实例复用（保 ⋮ 二层菜单不被重建刷掉）。
@@ -149,14 +165,14 @@ class MarkdownView extends StatelessWidget {
   final bool codeHighlightEnabled;
 
   /// 文本可选（2026-11-16 用户需求"输出的文字要能自由选中复制"）：
-  /// flutter_markdown_plus 的 selectable 模式——每块落 SelectableText
-  /// （长按/双击进入系统级选择手柄+复制工具条；链接 span 的点击在
-  /// 可选模式下由包内 span recognizer 承接，不受影响）。助手正文/
-  /// 工具输出/关于页同走此默认开。
-  /// **流式期间强制退出选区**（2026-11-19 Eta 调研对齐）：流式文本
-  /// 每 chunk 变化，注册在 SelectionArea 里的 selectable geometry
-  /// 随之失效=全局选区+工具条被清。流式中渲染纯 Text，完成态恢复
-  /// selectable（Eta 同款取舍：流式中不可选）。
+  /// 长按/双击进入系统级选择手柄+复制工具条。助手正文/工具输出/关于页
+  /// 同走此默认开。
+  /// **选区路径与用户气泡一致**（2026-11-19 真机对照）：markdown 固定
+  /// 非可选渲染（MarkdownBody.selectable=false），整块包一层本文件的
+  /// SelectionArea——选区盒由 RenderParagraph（字体原始度量）计算，
+  /// 与气泡观感一致；包内 SelectableText+强制 strut 的
+  /// includeLineSpacing 盒会把字体上下不对称放大（选区上下留白不均）。
+  /// 每条消息独立 SelectionArea：流式消息自身重建不影响其他消息的选区。
   final bool selectable;
 
   const MarkdownView({
@@ -183,58 +199,61 @@ class MarkdownView extends StatelessWidget {
     // 按文本反查（同内容多块同语言，键不敏感）。禁用/流式时跳过全文
     // 正则扫描（审查 B：流式期间 O(n²)/帧纯浪费）。
     final highlightOn = codeHighlightEnabled && !streaming;
-    // 流式期间退出选区（见 selectable 字段注释）：SelectableText 重建
-    // 打翻全局选区的根源路径。
-    final selectableOn = selectable && !streaming;
     final languages = highlightOn
         ? _fenceLanguages(data)
         : const <String, String>{};
+    final body = MarkdownBody(
+      selectable: false,
+      data: _encodeLocalLinks(streaming ? '$data ▍' : data),
+      builders: {
+        'pre': _PreHighlightBuilder(
+          brightness: brightness,
+          enabled: highlightOn,
+          baseStyle: _stripBackground(
+            styleSheet.code ?? const TextStyle(fontFamily: 'monospace'),
+          ),
+          languages: languages,
+          padding: styleSheet.codeblockPadding ?? const EdgeInsets.all(12),
+        ),
+      },
+      // 点链接的响应分两类（批4 反馈④，2026-10-23 用户拍板）：
+      // - 本地文件路径：协议层无文件内容读取 RPC（ZCode 官方开源实现
+      //   zcode-protocol-v4 全量 grep 实证，桌面预览是本地读盘），复制
+      //   路径在手机端无实用价值——点击不做任何响应（绿色渲染保留）。
+      // - 网络链接：保持可点（提示+复制）。
+      onTapLink: (text, href, title) {
+        if (href == null || href.isEmpty) return;
+        // 非 ASCII/非法 %xx 会让 decodeFull 抛 ArgumentError——
+        // 守卫解码，失败用原样。
+        String decoded;
+        try {
+          decoded = Uri.decodeFull(href);
+        } catch (_) {
+          decoded = href;
+        }
+        final isLocal =
+            RegExp(r'^[A-Za-z]:[\\/]').hasMatch(decoded) ||
+            decoded.startsWith('/');
+        if (isLocal) return;
+        Clipboard.setData(ClipboardData(text: decoded));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('链接：$decoded'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+      styleSheet: styleSheet,
+    );
+    if (!selectable) {
+      return L10nScope(enabled: false, child: body);
+    }
+    // 选区路径对齐用户气泡（见 selectable 字段注释）。
     return L10nScope(
       enabled: false,
-      child: MarkdownBody(
-        selectable: selectableOn,
-        // 重锚工具条（见 SelectionToolbarReanchor）：静态锚点会让工具条
-        // 停在旧位置盖住无关内容（流式增高/滚动使选区移动后）。
-        contextMenuBuilder: reanchoringEditableTextToolbar,
-        data: _encodeLocalLinks(streaming ? '$data ▍' : data),
-        builders: {
-          'pre': _PreHighlightBuilder(
-            brightness: brightness,
-            enabled: highlightOn,
-            baseStyle:
-                styleSheet.code ?? const TextStyle(fontFamily: 'monospace'),
-            languages: languages,
-            padding: styleSheet.codeblockPadding ?? const EdgeInsets.all(12),
-          ),
-        },
-        // 点链接的响应分两类（批4 反馈④，2026-10-23 用户拍板）：
-        // - 本地文件路径：协议层无文件内容读取 RPC（ZCode 官方开源实现
-        //   zcode-protocol-v4 全量 grep 实证，桌面预览是本地读盘），复制
-        //   路径在手机端无实用价值——点击不做任何响应（绿色渲染保留）。
-        // - 网络链接：保持可点（提示+复制）。
-        onTapLink: (text, href, title) {
-          if (href == null || href.isEmpty) return;
-          // 非 ASCII/非法 %xx 会让 decodeFull 抛 ArgumentError——
-          // 守卫解码，失败用原样。
-          String decoded;
-          try {
-            decoded = Uri.decodeFull(href);
-          } catch (_) {
-            decoded = href;
-          }
-          final isLocal =
-              RegExp(r'^[A-Za-z]:[\\/]').hasMatch(decoded) ||
-              decoded.startsWith('/');
-          if (isLocal) return;
-          Clipboard.setData(ClipboardData(text: decoded));
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('链接：$decoded'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        },
-        styleSheet: styleSheet,
+      child: SelectionArea(
+        contextMenuBuilder: reanchoringRegionToolbar,
+        child: body,
       ),
     );
   }
@@ -252,6 +271,10 @@ class MarkdownView extends StatelessWidget {
       color: context.colors.foreground,
       // 验收回填（2026-10-22 三档反馈）：1.6 太紧/1.75 稍松 → 1.7。
       height: 1.7,
+      // 行距上下均分（对齐 CSS line-height 的 half-leading 模型）：
+      // Flutter 默认 proportional 按字体 ascent/descent 比例分配，
+      // 中文字体不对称 → 选中时行内上下留白明显不均（桌面均匀）。
+      leadingDistribution: TextLeadingDistribution.even,
       letterSpacing: 0.2,
     ),
     listBullet: TextStyle(
@@ -260,6 +283,7 @@ class MarkdownView extends StatelessWidget {
       // ——序号/bullet 比正文退一档，不再同浓。
       color: context.colors.foregroundSubtlest,
       height: 1.7,
+      leadingDistribution: TextLeadingDistribution.even,
     ),
     // 标题分节呼吸感：官方 h1=18/h2=16/h3=14 且统一 mt-6 mb-4
     // （message.tsx:441-446）——此前零边距挤成一块。
@@ -280,6 +304,17 @@ class MarkdownView extends StatelessWidget {
       fontFamily: 'monospace',
       fontSize: AppType.uiCaption,
       color: context.colors.foreground,
+      leadingDistribution: TextLeadingDistribution.even,
+      // 行内代码底色对齐桌面（renderer styles CSS 实证：
+      // --color-markdown-inline-code=tag 50%——浅色 #E6E6E6/50、
+      // 深色 #363636/50）。显式设置同时覆盖掉 MarkdownBody 内部
+      // fallback.merge 残留的卡片白底（TextStyle.merge 只能覆盖
+      // 不能清除路径，此前浅色主题行内代码=白底异色块）。
+      // 注：TextSpan 底色是直角矩形（桌面为圆角），文本 span 不支持
+      // 圆角，属 Flutter 渲染限制。
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? const Color(0x80363636)
+          : const Color(0x80E6E6E6),
     ),
     // 代码块圆角对齐官方 rounded-xl(12)（code-block.tsx:155）。
     codeblockDecoration: BoxDecoration(
@@ -308,6 +343,7 @@ class MarkdownView extends StatelessWidget {
       fontSize: AppType.uiBase,
       color: context.colors.foregroundSubtle,
       height: 1.7,
+      leadingDistribution: TextLeadingDistribution.even,
     ),
     // ②b：文件链接=绿色文件名（无下划线，桌面观感）。
     a: TextStyle(
@@ -334,6 +370,34 @@ Map<String, String> _fenceLanguages(String data) {
   }
   return map;
 }
+
+/// 去掉实心底色的样式副本：行内 code 底色只属于行内标签——块码自带
+/// codeblockDecoration 卡底，若继承行内底色会把整块文字染成标签灰。
+/// `TextStyle.copyWith` 无法把字段清回 null，故逐字段重建。
+TextStyle _stripBackground(TextStyle s) => TextStyle(
+  inherit: s.inherit,
+  color: s.color,
+  fontSize: s.fontSize,
+  fontWeight: s.fontWeight,
+  fontStyle: s.fontStyle,
+  letterSpacing: s.letterSpacing,
+  wordSpacing: s.wordSpacing,
+  textBaseline: s.textBaseline,
+  height: s.height,
+  leadingDistribution: s.leadingDistribution,
+  locale: s.locale,
+  foreground: s.foreground,
+  shadows: s.shadows,
+  fontFeatures: s.fontFeatures,
+  fontVariations: s.fontVariations,
+  decoration: s.decoration,
+  decorationColor: s.decorationColor,
+  decorationStyle: s.decorationStyle,
+  decorationThickness: s.decorationThickness,
+  debugLabel: s.debugLabel,
+  fontFamily: s.fontFamily,
+  fontFamilyFallback: s.fontFamilyFallback,
+);
 
 /// pre 块构建器：visitText 拿到围栏内原始文本，按预提取表反查语言着色；
 /// 查不到/禁用/跳过语言一律返回 null 走包默认渲染（横向滚动+底色壳

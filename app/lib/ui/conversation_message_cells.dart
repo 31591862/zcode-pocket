@@ -224,11 +224,13 @@ class AssistantText extends StatelessWidget {
                         base: TextStyle(
                           fontSize: AppType.uiBase,
                           height: 1.6,
+                          leadingDistribution: TextLeadingDistribution.even,
                           color: context.colors.foreground,
                         ),
                         hit: TextStyle(
                           fontSize: AppType.uiBase,
                           height: 1.6,
+                          leadingDistribution: TextLeadingDistribution.even,
                           color: context.colors.foreground,
                           backgroundColor: context.colors.brandAccent
                               .withValues(alpha: AppAlpha.mid),
@@ -689,10 +691,15 @@ class UserBubble extends StatelessWidget {
               children: buildSearchHighlightSpans(
                 data,
                 q,
-                base: const TextStyle(fontSize: AppType.uiBase, height: 1.5),
+                base: const TextStyle(
+                  fontSize: AppType.uiBase,
+                  height: 1.5,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
                 hit: TextStyle(
                   fontSize: AppType.uiBase,
                   height: 1.5,
+                  leadingDistribution: TextLeadingDistribution.even,
                   backgroundColor: context.colors.brandAccent.withValues(
                     alpha: AppAlpha.mid,
                   ),
@@ -704,7 +711,11 @@ class UserBubble extends StatelessWidget {
         : Text(
             data,
             translate: false,
-            style: const TextStyle(fontSize: AppType.uiBase, height: 1.5),
+            style: const TextStyle(
+              fontSize: AppType.uiBase,
+              height: 1.5,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
           );
     if (menu == null) {
       return SelectionArea(child: child);
