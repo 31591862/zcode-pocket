@@ -78,19 +78,20 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     final pos = _pos(tester);
+    // 反向列表（2026-11-19）：底部 = minScrollExtent，距底 = pixels - min。
+    double distToBottom() => pos.pixels - pos.minScrollExtent;
     expect(pos.maxScrollExtent, greaterThan(300), reason: '前置：内容足够高');
-    expect(pos.pixels, pos.maxScrollExtent, reason: '前置：打开即在底部');
+    expect(distToBottom(), closeTo(0, 0.5), reason: '前置：打开即在底部');
 
     // 回看历史（手指向下拖=向旧内容方向），解除粘底：位置停在半途不回吸。
     await tester.drag(find.byKey(const ValueKey('chat-scroll')), const Offset(0, 260));
     for (var i = 0; i < 12; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(pos.maxScrollExtent - pos.pixels, greaterThan(100),
-        reason: '解除粘底后不应回吸底部');
+    expect(distToBottom(), greaterThan(100), reason: '解除粘底后不应回吸底部');
 
     // 滑回底部（修复点）：贴底即恢复粘底。
-    while (pos.maxScrollExtent - pos.pixels > 1) {
+    while (distToBottom() > 1) {
       await tester.drag(
         find.byKey(const ValueKey('chat-scroll')),
         const Offset(0, -400),
@@ -101,7 +102,7 @@ void main() {
     for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(pos.pixels, pos.maxScrollExtent, reason: '已滑回底部');
+    expect(distToBottom(), closeTo(0, 0.5), reason: '已滑回底部');
 
     // 视口缩小（键盘弹起）：粘底恢复则自动跟到新底；未恢复则停在旧 offset。
     tester.view.viewInsets = const FakeViewPadding(bottom: 300);
@@ -109,8 +110,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(
-      pos.pixels,
-      pos.maxScrollExtent,
+      distToBottom(),
+      closeTo(0, 0.5),
       reason: '滑回底部后粘底应已恢复——键盘弹起（视口缩小）仍自动贴底',
     );
     tester.view.viewInsets = FakeViewPadding.zero;

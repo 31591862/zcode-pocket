@@ -105,7 +105,9 @@ void main() {
     expect(tester.takeException(), isNull);
 
     // 点开末轮 → 步骤可见（手动展开）。
-    await tester.tap(find.text('已处理').last);
+    // 反向列表（2026-11-19 实验）：树序=③更早轮在前、②锚点末轮在后窗…
+    // 实际树序 [锚点=末轮][更早轮]——find 顺序首个即末轮。
+    await tester.tap(find.text('已处理').first);
     await _pump(tester);
     expect(
       find.textContaining('last-turn-file.dart'),

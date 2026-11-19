@@ -132,7 +132,8 @@ void main() {
     scroll.position.jumpTo(scroll.position.maxScrollExtent * 0.5);
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.byKey(const ValueKey('jump-bottom')), findsOneWidget);
-    scroll.position.jumpTo(scroll.position.minScrollExtent);
+    // 反向列表（2026-11-19）：更早历史在远端——到顶=maxScrollExtent。
+    scroll.position.jumpTo(scroll.position.maxScrollExtent);
     await tester.pump(const Duration(milliseconds: 100));
     for (var i = 0; i < 20 && app.loadOlderCalls == 0; i++) {
       await tester.pump(const Duration(milliseconds: 50));
@@ -160,16 +161,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(observed, isNotEmpty, reason: '必须观察到前插后的真实绘制帧');
+    // 反向列表（2026-11-19）：前插后顶距(8dp)从"问 0"上方移到新首条
+    // 上方，可视位置一次性差 8dp；关键是不出现"闪走再跳回"——逐帧之间
+    // 必须稳定。
+    final firstFrame = observed.first;
     expect(
-      observed.every((value) => value != null && (value - before).abs() <= 1.0),
+      firstFrame != null && observed.every((v) => v != null && (v - firstFrame).abs() <= 1.0),
       isTrue,
-      reason: '加载前后第一条可见消息不得先闪走再跳回；逐帧=$observed，原位置=$before',
+      reason: '前插后逐帧不得闪走再跳回；逐帧=$observed',
+    );
+    expect(
+      firstFrame != null && (firstFrame - before).abs() <= 8.5,
+      isTrue,
+      reason: '前插前后位移仅限顶距重排（≤8dp）；逐帧=$observed，原位置=$before',
     );
     expect(app.prependCount, 1);
     expect(
       app.loadOlderCalls,
       1,
-      reason: '前插后应按新的 minScrollExtent 计算距顶距离，不得连锁自旋加载',
+      reason: '前插后应按新的远端（maxScrollExtent）计算距顶距离，不得连锁自旋加载',
     );
 
     await tester.pumpWidget(const SizedBox());

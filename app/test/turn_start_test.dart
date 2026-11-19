@@ -145,14 +145,16 @@ void main() {
 
     final target = find.byKey(const ValueKey('row-17'));
     expect(target, findsOneWidget, reason: '最新回合用户问题必须已挂载');
-    final listTop = tester
-        .getRect(find.byKey(const ValueKey('chat-scroll')))
-        .top;
+    final listRect = tester.getRect(find.byKey(const ValueKey('chat-scroll')));
+    // 反向列表（2026-11-19 实验）：内容底边贴视口底——目标下方不足
+    // 一屏时无法顶置（旧正向布局会底部留白），语义改为"目标必须可见"。
+    final targetTopBefore = tester.getTopLeft(target).dy;
+    expect(targetTopBefore, greaterThanOrEqualTo(listRect.top - 0.5));
     expect(
-      tester.getTopLeft(target).dy,
-      closeTo(listTop, 1.0),
+      tester.getBottomRight(target).dy,
+      lessThanOrEqualTo(listRect.bottom + 0.5),
       reason:
-          '目标应位于视口顶部；pixels=${scroll.position.pixels} '
+          '目标应可见；pixels=${scroll.position.pixels} '
           'min=${scroll.position.minScrollExtent} max=${scroll.position.maxScrollExtent} '
           'target=${tester.getRect(target)}',
     );
@@ -178,7 +180,14 @@ void main() {
       },
     }, onGap: () => fail('不应 gap'));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(tester.getTopLeft(target).dy, closeTo(listTop, 1.0));
+    // 反向列表（2026-11-19 实验）：新输出追加在下方（负向区），定位
+    // 状态保持——目标仍可见、仍不粘底（像素级位置受回合展开/收起
+    // 动画影响，不再做等值断言）。
+    expect(
+      tester.getBottomRight(target).dy,
+      lessThanOrEqualTo(listRect.bottom + 0.5),
+      reason: '追加新输出后目标仍应可见',
+    );
     expect(find.byKey(const ValueKey('jump-bottom')), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
@@ -242,8 +251,8 @@ void main() {
         .top;
     expect(
       tester.getTopLeft(target).dy,
-      closeTo(listTop + 8, 1.0),
-      reason: '目标是全会话首条消息时保留既有 8dp 顶部留白',
+      closeTo(listTop, 1.0),
+      reason: '反向列表：顶边对齐即目标顶边（8dp 顶距在目标上方视口外）',
     );
     final guided = find.text('guided 追问，不是回合开始');
     if (tester.any(guided)) {

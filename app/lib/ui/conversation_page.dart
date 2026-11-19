@@ -298,11 +298,12 @@ class _ConversationPageState extends State<ConversationPage>
     if (!mounted || !_stickToBottom || !_scroll.hasClients) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_stickToBottom || !_scroll.hasClients) return;
-      final max = _scroll.position.maxScrollExtent;
+      // 反向列表：贴底 = offset 贴近 minScrollExtent。
+      final bottom = _scroll.position.minScrollExtent;
       // 差值守卫：≤1px 不动（旧实现无条件 jumpTo=每帧白付一次通知）。
-      if ((max - _scroll.offset) > 1) {
+      if ((_scroll.offset - bottom).abs() > 1) {
         _markProgrammatic();
-        _scroll.jumpTo(max);
+        _scroll.jumpTo(bottom);
       }
     });
   }
@@ -393,6 +394,11 @@ class _ConversationPageState extends State<ConversationPage>
   TextEditingController get _searchController => _search.controller;
   FocusNode get _searchFocusNode => _search.focusNode;
   final _searchTargetKey = GlobalKey(debugLabel: 'conversation-search-target');
+
+  /// 回合定位对齐目标（反向列表：锚点落在视口底部边缘后，需把目标行
+  /// 再对齐到视口顶部——旧正向列表锚点即顶部的语义）。
+  int? _jumpAlignRowId;
+  final _jumpAlignKey = GlobalKey(debugLabel: 'jump-align-target');
   bool get _searchOpen => _search.isOpen;
   bool get _searchLoading => _search.loading;
   bool get _searchTruncated => _search.truncated;
@@ -696,7 +702,8 @@ class _ConversationPageState extends State<ConversationPage>
           : (64.0 > _scroll.position.viewportDimension * 2
                 ? 64.0
                 : _scroll.position.viewportDimension * 2);
-      final distanceToTop = _scroll.offset - _scroll.position.minScrollExtent;
+      // 反向列表：更早历史在远端（max 端）。
+      final distanceToTop = _scroll.position.maxScrollExtent - _scroll.offset;
       if (distanceToTop <= prefetch && !_stickToBottom) {
         _maybeAutoLoadOlder();
       }
@@ -1672,7 +1679,7 @@ class _ConversationPageState extends State<ConversationPage>
     // 粘底跟随改 jump（animate 180ms 在长列表真机上输给布局增长）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients || !_stickToBottom) return;
-      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      _scroll.jumpTo(_scroll.position.minScrollExtent);
     });
     _followUntilStable();
   }
@@ -1688,10 +1695,10 @@ class _ConversationPageState extends State<ConversationPage>
       }
       _followFrames--;
       if (_scroll.hasClients) {
-        final max = _scroll.position.maxScrollExtent;
-        if ((max - _scroll.offset) > 1) {
+        final bottom = _scroll.position.minScrollExtent;
+        if ((_scroll.offset - bottom).abs() > 1) {
           _markProgrammatic();
-          _scroll.jumpTo(max);
+          _scroll.jumpTo(bottom);
         }
       }
     });
@@ -1815,7 +1822,7 @@ class _ConversationPageState extends State<ConversationPage>
   void _scrollToBottom() {
     if (!mounted || !_scroll.hasClients) return;
     _scroll.animateTo(
-      _scroll.position.maxScrollExtent,
+      _scroll.position.minScrollExtent,
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
     );
@@ -1824,7 +1831,7 @@ class _ConversationPageState extends State<ConversationPage>
   void _jumpToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
-      final target = _scroll.position.maxScrollExtent;
+      final target = _scroll.position.minScrollExtent;
       if (shouldMarkProgrammaticScroll(_scroll.position.pixels, target)) {
         _markProgrammatic();
       }
@@ -1848,7 +1855,7 @@ class _ConversationPageState extends State<ConversationPage>
     _scrollMemory[sid] = (
       _listCenterItemKey,
       _scroll.offset,
-      _stickToBottom || _scroll.position.maxScrollExtent - _scroll.offset <= 48,
+      _stickToBottom || _scroll.offset - _scroll.position.minScrollExtent <= 48,
       DateTime.now().millisecondsSinceEpoch,
     );
   }
@@ -3217,6 +3224,7 @@ class _ConversationPageState extends State<ConversationPage>
     setState(() {
       _stickToBottom = false;
       _listCenterItemKey = anchorKey;
+      _jumpAlignRowId = rowId;
       if (targetTurn != null) {
         _liveCollapsedByRow[targetTurn.work.collapseKeyId] = false;
       }
@@ -3237,8 +3245,28 @@ class _ConversationPageState extends State<ConversationPage>
         _markProgrammatic();
         _scroll.jumpTo(0);
       }
-      _saveScrollMemory();
-      _followingReconcileGuard--;
+      // 反向列表：锚点落在视口底部边缘——目标行再对齐到视口顶部
+      // （旧正向列表"锚点即顶部"语义）。挂载完成后再校正一帧。
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted ||
+            !_scroll.hasClients ||
+            _listCenterItemKey != anchorKey) {
+          _followingReconcileGuard--;
+          return;
+        }
+        final ctx = _jumpAlignKey.currentContext;
+        if (ctx != null) {
+          // 反向视口 alignment 方向翻转：1=目标顶边对齐视口顶部
+          //（正向列表的 alignment:0 语义）。
+          await Scrollable.ensureVisible(
+            ctx,
+            alignment: 1,
+            duration: Duration.zero,
+          );
+        }
+        _saveScrollMemory();
+        _followingReconcileGuard--;
+      });
     });
     _saveScrollMemory();
     return true;
@@ -3374,7 +3402,8 @@ class _ConversationPageState extends State<ConversationPage>
       if (first != null) {
         await Scrollable.ensureVisible(
           first,
-          alignment: 0.35,
+          // 反向视口方向翻转：1-0.35=0.65 等价旧正向 0.35 的视觉落点。
+          alignment: 0.65,
           duration: Duration.zero,
         );
       }
@@ -5242,6 +5271,9 @@ class _ConversationPageState extends State<ConversationPage>
                                 _fabPointer = null;
                                 _fabPointerDown = null;
                                 if (total.distance < 8) {
+                                  // 反向列表：回底=锚点复位末条，恢复
+                                  // 贴尾跟随（追加/流式不再漂移）。
+                                  _listCenterItemKey = null;
                                   setState(() => _stickToBottom = true);
                                   _scrollToBottom();
                                   return;
@@ -6002,8 +6034,9 @@ class _ConversationPageState extends State<ConversationPage>
             }
           }
           if (centerIndex < 0) {
-            centerIndex = 0;
-            _listCenterItemKey = itemKeyFor(0);
+            // 反向列表：缺省锚点=末条（offset 0=底部=最新内容），且不写
+            // key——追加新条目时继续默认末条，贴尾跟随不漂移。
+            centerIndex = items.length - 1;
           }
         }
         return GestureDetector(
@@ -6054,10 +6087,12 @@ class _ConversationPageState extends State<ConversationPage>
                 // 静止落点距底 ≤48 → 贴底回跟；>48 → 解除跟随——原实现仅
                 // 手指拖拽可解除，惯性滑出后被粘底 tick 拉回（自造怪象，
                 // audit §六.5 实证）。回吸保持 2026-10-23 语义（贴底即恢复）。
+                // 反向列表：距底 = pixels - minScrollExtent。
                 final dist =
-                    _scroll.position.maxScrollExtent - _scroll.position.pixels;
+                    _scroll.position.pixels - _scroll.position.minScrollExtent;
                 if (dist <= 48) {
                   if (!_stickToBottom) {
+                    _listCenterItemKey = null;
                     setState(() => _stickToBottom = true);
                     _followUntilStable();
                   }
@@ -6200,6 +6235,10 @@ class _ConversationPageState extends State<ConversationPage>
                     running: item.running,
                   ),
                 };
+                if (item is UserItem &&
+                    intOf(item.row['rowId']) == _jumpAlignRowId) {
+                  child = KeyedSubtree(key: _jumpAlignKey, child: child);
+                }
                 final fresh = _seenRowKeys.add(itemKey);
                 // 原 Builder 只为收集 itemContext
                 // 进只写不读的 map（持有已 dispose 的 Element=内存泄漏）——

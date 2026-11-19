@@ -83,7 +83,8 @@ Future<void> scrollListToBottom(WidgetTester tester) async {
         )
         .first,
   );
-  scroll.position.jumpTo(scroll.position.maxScrollExtent);
+  // 反向列表（2026-11-19）：底部 = minScrollExtent。
+  scroll.position.jumpTo(scroll.position.minScrollExtent);
   await tester.pump(const Duration(milliseconds: 100));
 }
 
