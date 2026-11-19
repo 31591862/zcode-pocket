@@ -142,7 +142,8 @@ class AppState extends ChangeNotifier {
   List<DeviceProfile> get profiles => _deviceRegistry.profiles;
   set profiles(List<DeviceProfile> value) => _deviceRegistry.profiles = value;
   DeviceProfile? get activeProfile => _deviceRegistry.activeProfile;
-  set activeProfile(DeviceProfile? value) => _deviceRegistry.activeProfile = value;
+  set activeProfile(DeviceProfile? value) =>
+      _deviceRegistry.activeProfile = value;
 
   /// （2026-10-19 审查）：最近一次档案读取跳过的坏条目数（界面提示
   /// "N 个档案损坏"用；0=正常）。
@@ -290,7 +291,9 @@ class AppState extends ChangeNotifier {
     List<Map<String, dynamic>> entries,
     List<String>? order,
   ) {
-    final buf = StringBuffer(sid)..write('#')..write(entries.length);
+    final buf = StringBuffer(sid)
+      ..write('#')
+      ..write(entries.length);
     for (final e in entries) {
       // 展示/点按依赖的浅字段足够识别内容变化（增删/改名/重排）。
       buf
@@ -302,7 +305,9 @@ class AppState extends ChangeNotifier {
         ..write(e['label'] ?? '');
     }
     if (order != null && order.isNotEmpty) {
-      buf..write('#')..write(order.join('\u0001'));
+      buf
+        ..write('#')
+        ..write(order.join('\u0001'));
     }
     return buf.toString();
   }
@@ -624,10 +629,10 @@ class AppState extends ChangeNotifier {
     // 创建失败）下 onTap 也要挂上——否则该次会话所有通知点击（含冷启
     // 动点击直达）失效，只剩无导航的通知。
     notifyService!.onTap = (payload) => openTaskFromNotification(
-          payload.deviceSid,
-          payload.taskId,
-          atMs: payload.atMs,
-        );
+      payload.deviceSid,
+      payload.taskId,
+      atMs: payload.atMs,
+    );
     // 冷启动点击路由推迟（状态层批）：此处 profiles 尚未加载，
     // profileOf 恒空——此前直接走打开链既不会激活目标电脑（多电脑场景
     // 永远停在错误电脑上），markClicked 也因协调器未建而静默丢失。
@@ -701,17 +706,23 @@ class AppState extends ChangeNotifier {
 
   /// 通知点击直达：激活对应电脑 + 打开该任务会话（TaskCenterPage 消费
   /// pendingOpenTask 导航）。栈未就绪时等恢复后导航。
-  void openTaskFromNotification(String deviceSid, String taskId,
-      {int atMs = 0}) {
+  void openTaskFromNotification(
+    String deviceSid,
+    String taskId, {
+    int atMs = 0,
+  }) {
     final profile = profileOf(deviceSid);
     final reachable = profile != null && !profile.invalid;
     if (reachable && _activeSid != deviceSid) {
       // 错误 containment（对齐 reattachAfterAccountLogin
       // 同场景）：activate 若抛（demote 链异常）此前成为未处理异步错误。
       unawaited(
-        activate(profile).then((_) {}, onError: (Object e) {
-          _log('notify activate failed (contained): $e');
-        }),
+        activate(profile).then(
+          (_) {},
+          onError: (Object e) {
+            _log('notify activate failed (contained): $e');
+          },
+        ),
       );
     }
     // 批3（multi-account-ux-1）：通知来自另一台电脑时短暂提示「已切换
@@ -841,8 +852,7 @@ class AppState extends ChangeNotifier {
   /// [force]：设置页改名后强制重读（同键也刷新）。
   void refreshActiveAccountLabel({bool force = false}) {
     final profile = activeProfile;
-    final accountId =
-        profile is AccountV2Profile ? profile.accountId : null;
+    final accountId = profile is AccountV2Profile ? profile.accountId : null;
     if (accountId == null) {
       _accountLabelKey = null;
       _accountLabelLoading = false;
@@ -1104,11 +1114,11 @@ class AppState extends ChangeNotifier {
     String? accountId,
     bool forceRebind = false,
   }) => _deviceRegistry.addV2Profile(
-        params,
-        label: label,
-        accountId: accountId,
-        forceRebind: forceRebind,
-      );
+    params,
+    label: label,
+    accountId: accountId,
+    forceRebind: forceRebind,
+  );
 
   Future<void> renameComputer(DeviceProfile profile, String label) =>
       _deviceRegistry.renameComputer(profile, label);
@@ -1143,7 +1153,8 @@ class AppState extends ChangeNotifier {
     }
     if (activeProfile == null) {
       final activeSid = await store.activeDeviceSid();
-      final profile = (activeSid == null ? null : profileOf(activeSid)) ??
+      final profile =
+          (activeSid == null ? null : profileOf(activeSid)) ??
           profiles.where((p) => !p.invalid).firstOrNull;
       if (profile != null) {
         try {
@@ -1182,14 +1193,16 @@ class AppState extends ChangeNotifier {
   Future<void> switchWorkspace(
     Map<String, dynamic> workspace, {
     bool keepHomePreview = false,
-  }) async => _active?.switchWorkspace(workspace, keepHomePreview: keepHomePreview);
+  }) async =>
+      _active?.switchWorkspace(workspace, keepHomePreview: keepHomePreview);
 
   /// 切换项目（：project intent 桥——项目全集不再受"当前窗口
   /// tabs"限制）。
   Future<void> switchToProject(
     Map<String, dynamic> project, {
     bool keepHomePreview = false,
-  }) async => _active?.switchToProject(project, keepHomePreview: keepHomePreview);
+  }) async =>
+      _active?.switchToProject(project, keepHomePreview: keepHomePreview);
 
   /// 「任务」伪项目就地选中（2026-10-25 问题③：chip 点按与其他工作区
   /// 一致——主列表就地切未归类聚合，不再推独立页；不关桥）。
@@ -1236,8 +1249,11 @@ class AppState extends ChangeNotifier {
     Map<String, dynamic> task, {
     String? label,
     bool keepHomePreview = false,
-  }) async =>
-      _active?.switchToTask(task, label: label, keepHomePreview: keepHomePreview);
+  }) async => _active?.switchToTask(
+    task,
+    label: label,
+    keepHomePreview: keepHomePreview,
+  );
 
   /// git 通道调用缝（阶段 6.2 选分支）：默认走活跃桥的 ChannelClient
   /// （多电脑栈隔离=天然只打活跃电脑；契约 refs services/git/git.ts，
@@ -1421,11 +1437,15 @@ class AppState extends ChangeNotifier {
         : const <String>{};
     final deleted = readSet('deletedTaskIds');
     final removed = deleted.isNotEmpty
-        ? [for (final taskId in taskIds) if (deleted.contains(taskId)) taskId]
+        ? [
+            for (final taskId in taskIds)
+              if (deleted.contains(taskId)) taskId,
+          ]
         : [
             for (final taskId in taskIds)
               if (!readSet('skippedTaskIds').contains(taskId) &&
-                  !readSet('failedTaskIds').contains(taskId)) taskId,
+                  !readSet('failedTaskIds').contains(taskId))
+                taskId,
           ];
     // 批量清理并行化：逐条串行 await 双 store=2N 次
     // 串行 IO（批量 50 即 100 次）；各 removeSession 操作不同会话键，
@@ -1534,7 +1554,9 @@ class AppState extends ChangeNotifier {
 
   /// 打开任务时标记已读（best-effort，失败不打扰）。
   void markTaskRead(String taskId, {int? expectedUnreadAt}) {
-    unawaited(_active?.markTaskRead(taskId, expectedUnreadAt: expectedUnreadAt));
+    unawaited(
+      _active?.markTaskRead(taskId, expectedUnreadAt: expectedUnreadAt),
+    );
   }
 
   // ---------------------------------------------------------- conversation
@@ -1609,6 +1631,102 @@ class AppState extends ChangeNotifier {
     return res;
   }
 
+  /// 电脑目录列取（2026-11-19 实证 project.readDirectory 远程开放）：
+  /// 返回 {path, entries:[{name, path, type, isSymbolicLink}]}；
+  /// [path] 传空 = 桌面 homedir。
+  Future<Map<String, dynamic>> readComputerDirectory(String? path) async {
+    final bridge = this.bridge;
+    if (bridge == null) throw StateError('未连接电脑');
+    final res = await bridge.channels.call(Channels.project, 'readDirectory', [
+      <String, dynamic>{if (path != null && path.isNotEmpty) 'path': path},
+    ], timeout: const Duration(seconds: 10));
+    return res is Map ? res.cast<String, dynamic>() : const {};
+  }
+
+  /// 在电脑的任意目录下新建文件夹（2026-11-19 PTY 实证方案）：
+  /// 协议没有 mkdir 接口，经 terminal 通道在目标目录起一个 PTY，
+  /// 写死 `mkdir -p` 命令执行后销毁，再用 readDirectory 轮询确认。
+  /// [name] 不允许路径分隔符；只执行固定命令模板，不做任意命令透传。
+  Future<void> createComputerDirectory(String parentPath, String name) async {
+    final bridge = this.bridge;
+    if (bridge == null) throw StateError('未连接电脑');
+    final dirName = name.trim();
+    if (dirName.isEmpty || RegExp(r'[\\/]').hasMatch(dirName)) {
+      throw StateError('名称不能为空或包含路径分隔符');
+    }
+    // shell 单引号转义（内部单引号 → '\''）。
+    final quoted = "'" + dirName.replaceAll("'", "'\\''") + "'";
+    final create = await bridge.channels.call('terminal', 'create', [
+      <String, dynamic>{'cwd': parentPath, 'cols': 80, 'rows': 24},
+    ], timeout: const Duration(seconds: 10));
+    final id = create is Map ? create['id'] : null;
+    if (id == null) throw StateError('无法启动终端会话');
+    try {
+      await bridge.channels.call('terminal', 'write', [
+        <String, dynamic>{'id': id, 'data': 'mkdir -p -- $quoted\n'},
+      ], timeout: const Duration(seconds: 8));
+      // 轮询确认目录出现（不解析终端输出）。
+      for (var i = 0; i < 12; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        final listing = await readComputerDirectory(parentPath);
+        final entries = listing['entries'];
+        if (entries is List &&
+            entries.any((e) => e is Map && '${e['name']}' == dirName)) {
+          return;
+        }
+      }
+      throw StateError('创建未确认，请返回重试');
+    } finally {
+      try {
+        await bridge.channels.call('terminal', 'dispose', [
+          <String, dynamic>{'id': id},
+        ], timeout: const Duration(seconds: 5));
+      } catch (_) {}
+    }
+  }
+
+  /// 以任意电脑目录为根取项目：已有同根项目直接复用（不重复建），
+  /// 否则 project.saveProject 注册（name=目录名）。返回项目记录，
+  /// 可直接交给 switchToProject。
+  Future<Map<String, dynamic>> ensureProjectForDirectory(String path) async {
+    final bridge = this.bridge;
+    if (bridge == null) throw StateError('未连接电脑');
+    final projects = await bridge.channels.call(
+      Channels.project,
+      'readProjects',
+      [<String, dynamic>{}],
+      timeout: const Duration(seconds: 10),
+    );
+    if (projects is List) {
+      for (final p in projects) {
+        if (p is! Map || p['deleted'] == true) continue;
+        final roots = p['roots'];
+        if (roots is List &&
+            roots.any((r) => r is Map && r['rootPath'] == path)) {
+          return p.cast<String, dynamic>();
+        }
+      }
+    }
+    final segs = path.split(RegExp(r'[\\/]+')).where((s) => s.isNotEmpty);
+    final name = segs.isEmpty ? '新项目' : segs.last;
+    final created = await bridge.channels.call(
+      Channels.project,
+      'saveProject',
+      [
+        <String, dynamic>{
+          'name': name,
+          'defaultName': name,
+          'roots': [path],
+          'primaryRoot': path,
+        },
+      ],
+      timeout: const Duration(seconds: 15),
+    );
+    if (created is! Map) throw StateError('创建项目失败');
+    unawaited(refreshWorkspaces());
+    return created.cast<String, dynamic>();
+  }
+
   /// +：Hook 审核决策（respond 查 ACK status 由调用方负责）/
   /// 写盘开关（非选择态——transport 层注释详见；当前无调用方）。
   Future<dynamic> respondWorkspaceHookReview(
@@ -1630,7 +1748,11 @@ class AppState extends ChangeNotifier {
     final conv = _conv;
     if (conv == null) throw StateError('no active computer');
     return conv.toggleWorkspaceHookReviewItem(
-        sessionId, target, reviewItemId, enabled);
+      sessionId,
+      target,
+      reviewItemId,
+      enabled,
+    );
   }
 
   Future<dynamic> sendText(
@@ -2109,7 +2231,8 @@ class AppState extends ChangeNotifier {
     // （早前批次）：iOS 无前台服务等价物——退后台即走 90s
     // 断连窗口（supportsBackgroundKeepAlive=false 平台门，通知语义=
     // 前台实时+回前台对账， 拍板）。
-    final keepAlive = ZpCapabilities.supportsBackgroundKeepAlive &&
+    final keepAlive =
+        ZpCapabilities.supportsBackgroundKeepAlive &&
         uiPrefs.alertsEnabled &&
         _fgRunning;
     for (final stack in _stacks.values) {
@@ -2120,23 +2243,27 @@ class AppState extends ChangeNotifier {
       }
     }
     if (keepAlive) {
-      _log('[lifecycle] background: alerts on, staying connected (heartbeat 30s)');
+      _log(
+        '[lifecycle] background: alerts on, staying connected (heartbeat 30s)',
+      );
       _conversationsParked = true;
       // 掉线对账候选（状态层批）：保活期 relay 若实际断开，恢复后需
       // 走对账模式补报断线窗口内的事件。
       _watchKeepAliveStacksForReconcile();
       for (final stack in _stacks.values) {
         unawaited(
-          stack
-              .suspendConversationSubscriptions()
-              .then((_) {}, onError: (Object _) {}),
+          stack.suspendConversationSubscriptions().then(
+            (_) {},
+            onError: (Object _) {},
+          ),
         );
         // 1.0.1 真机验收：tasks-index 一并退订（5s notify 帧是驻留后
         // 剩余推帧大头；数据保留，回前台重订阅+对账通知兜底）。
         unawaited(
-          stack
-              .pauseTasksIndexForBackground()
-              .then((_) {}, onError: (Object _) {}),
+          stack.pauseTasksIndexForBackground().then(
+            (_) {},
+            onError: (Object _) {},
+          ),
         );
       }
       return;
@@ -2193,7 +2320,9 @@ class AppState extends ChangeNotifier {
             0) {
       _suspendedAll = true;
       unawaited(notifyCoordinator?.onSuspended() ?? Future<void>.value());
-      _log('[lifecycle] frozen bg-disconnect timer thawed: reconcile watermark');
+      _log(
+        '[lifecycle] frozen bg-disconnect timer thawed: reconcile watermark',
+      );
     }
     // 掉线对账收尾（状态层批）：摘后台监听；仍不在线的候选补记对账水位
     // （恢复后的首个 si 快照据此走对账模式）。
@@ -2219,9 +2348,10 @@ class AppState extends ChangeNotifier {
       final active = _active;
       if (active != null) {
         unawaited(
-          active
-              .resumeTasksIndexFromBackground()
-              .then((_) {}, onError: (Object _) {}),
+          active.resumeTasksIndexFromBackground().then(
+            (_) {},
+            onError: (Object _) {},
+          ),
         );
       }
     }
@@ -2368,7 +2498,7 @@ class AppState extends ChangeNotifier {
       // 唯一运行任务被置顶时常驻文案误报「无任务运行」）。
       final runningCards =
           list?.cards.where((c) => isRunningPhase(c.phase)).toList() ??
-              const <TaskCardData>[];
+          const <TaskCardData>[];
       running += runningCards.length;
       // 带上最新运行任务名（锁屏可见具体在跑什么；
       // 防噪拍板不变——仍只有一条常驻文本，不逐事件发通知）。

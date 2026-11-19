@@ -26,6 +26,7 @@ import 'status_badge.dart';
 import 'archived_tasks_page.dart';
 import 'automation_page.dart';
 import 'conversation_page.dart';
+import 'directory_picker_sheet.dart';
 import 'drawer_claim_card.dart';
 import 'pairing_page.dart';
 import 'profiles_sheet.dart';
@@ -962,8 +963,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
             // 抽屉化：Eta 风侧边抽屉（电脑/账号区→项目列表→工具→设置
             // →底部新建）——项目列表复用 _TaskHomeView 项目模式内嵌。
             drawer: _HomeDrawer(
-              computerLabel:
-                  app.activeProfile?.label ?? 'ZCode Companion',
+              computerLabel: app.activeProfile?.label ?? 'ZCode Companion',
               accountLabel: app.activeAccountLabel,
               accountId: app.activeAccountId,
               onManageComputers: () => showProfilesSheet(context),
@@ -1430,31 +1430,31 @@ class _HomeDrawerState extends State<_HomeDrawer> {
     VoidCallback action, {
     Key? key,
   }) => Expanded(
-        child: InkWell(
-          key: key,
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => _closeThen(context, action),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 22, color: color),
-                const SizedBox(height: 4),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: AppType.uiXs,
-                    color: context.colors.foregroundSubtle,
-                  ),
-                ),
-              ],
+    child: InkWell(
+      key: key,
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _closeThen(context, action),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: color),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: AppType.uiXs,
+                color: context.colors.foregroundSubtle,
+              ),
             ),
-          ),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 
   /// 底部图标工具栏：定时/归档/排序/设置 四入口等宽一行。
   Widget _bottomIconBar(BuildContext context, bool isDark) {
@@ -1551,11 +1551,8 @@ class _HomeDrawerState extends State<_HomeDrawer> {
             if (_projectsExpanded)
               Expanded(
                 child: _TaskHomeView(
-                  onOpen:
-                      (task) => _closeThen(
-                        context,
-                        () => widget.onOpenTask(task),
-                      ),
+                  onOpen: (task) =>
+                      _closeThen(context, () => widget.onOpenTask(task)),
                   // 长按任务菜单（批⑤ 补线）：抽屉扁平行与主页行同权
                   // ——此前抽屉实例漏传，长按无反应（用户实测）。
                   onLongPress: widget.onTaskMenu,
@@ -1620,9 +1617,7 @@ class _HomeDrawerState extends State<_HomeDrawer> {
                             : widget.accountLabel!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: AppType.uiCaption,
-                        ),
+                        style: const TextStyle(fontSize: AppType.uiCaption),
                       ),
                       if ((widget.accountId ?? '').trim().isNotEmpty)
                         Text(
@@ -3180,12 +3175,7 @@ class _TaskList extends StatelessWidget {
         builder: (context) => ListView.builder(
           key: const ValueKey('task-list'),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: EdgeInsets.fromLTRB(
-            12,
-            4,
-            12,
-            taskListBottomInset(context),
-          ),
+          padding: EdgeInsets.fromLTRB(12, 4, 12, taskListBottomInset(context)),
           itemCount: rows.length,
           itemBuilder: (context, i) {
             final (kind, data) = rows[i];
@@ -3787,10 +3777,8 @@ void _showTaskActions(
                       icon: Icons.archive_outlined,
                       iconColor: kSettingsIconGreen,
                       actionLabel: '撤销',
-                      onAction: () => run(
-                        () => app.unarchiveTask(entry.sessionId),
-                        '撤销失败',
-                      ),
+                      onAction: () =>
+                          run(() => app.unarchiveTask(entry.sessionId), '撤销失败'),
                     );
                   }, '归档失败');
                 },
@@ -4181,7 +4169,6 @@ class _CompactTaskRow extends StatelessWidget {
   final bool running;
   final bool unread;
   final int updatedAt;
-
 
   /// 闲时任务月亮标（官方对位）。
   final String? offPeakTaskId;
@@ -5119,6 +5106,38 @@ Future<void> showNewTaskSheet(
                             app,
                             openDraftRoute: openDraftRoute,
                           ),
+                        ),
+                        // 选择电脑目录（2026-11-19）：project.readDirectory
+                        // 浏览桌面文件系统，任意目录 saveProject 注册为
+                        // 项目（同根复用）后进入新会话。
+                        ListTile(
+                          key: const ValueKey('pick-directory-row'),
+                          leading: const Icon(
+                            Icons.folder_open_outlined,
+                            size: 20,
+                          ),
+                          title: const Text('选择电脑目录'),
+                          subtitle: const Text(
+                            '浏览电脑文件，选任意目录作为项目',
+                            style: TextStyle(fontSize: AppType.uiXs),
+                          ),
+                          dense: true,
+                          onTap: () async {
+                            final picked = await showDirectoryPickerSheet(
+                              sheetCtx,
+                            );
+                            if (picked == null || !sheetCtx.mounted) return;
+                            final segs = picked
+                                .split(RegExp(r'[\\/]+'))
+                                .where((e) => e.isNotEmpty);
+                            final label = segs.isEmpty ? '新项目' : segs.last;
+                            await switchThen(label, () async {
+                              final proj = await app.ensureProjectForDirectory(
+                                picked,
+                              );
+                              await app.switchToProject(proj);
+                            });
+                          },
                         ),
                         for (final p in visibleProjects)
                           ListTile(

@@ -63,48 +63,63 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
           settingsGroupLabel(context, tr('声明')),
           _paragraph(
             context,
-            tr('本应用是 ZCode Pocket 的下游改版（fork）：上游 '
-                'JZYLukis/zcode-pocket，下游 31591862/zcode-pocket。'
-                '在上游基础上包含 UI/UX 调整；上游版权归 JZYLukis 及 '
-                'ZCode Pocket contributors，本 fork 沿用 Apache-2.0。'),
+            tr(
+              '本应用是 ZCode Pocket 的下游改版（fork）：上游 '
+              'JZYLukis/zcode-pocket，下游 31591862/zcode-pocket。'
+              '在上游基础上包含 UI/UX 调整；上游版权归 JZYLukis 及 '
+              'ZCode Pocket contributors，本 fork 沿用 Apache-2.0。',
+            ),
           ),
           const SizedBox(height: 8),
           _paragraph(
             context,
-            tr('本项目为社区驱动的第三方客户端，与 ZCode / 智谱无关联、'
-                '未经其授权或认可；ZCode 名称归其所有者。'),
+            tr(
+              '本项目为社区驱动的第三方客户端，与 ZCode / 智谱无关联、'
+              '未经其授权或认可；ZCode 名称归其所有者。',
+            ),
           ),
           const SizedBox(height: 8),
           _paragraph(
             context,
-            tr('使用本应用连接 ZCode 官方服务时，须自行遵守官方服务条款：'
-                '现行条款默认限非商业的个人研究学习用途，商业使用需与官方另行约定。'),
+            tr(
+              '使用本应用连接 ZCode 官方服务时，须自行遵守官方服务条款：'
+              '现行条款默认限非商业的个人研究学习用途，商业使用需与官方另行约定。',
+            ),
           ),
           settingsGroupLabel(context, tr('隐私')),
           _paragraph(
             context,
-            tr('本应用无遥测、无第三方统计；聊天与任务数据只连你配置的 '
-                'ZCode 桌面端 / 官方服务。凭据保存在系统安全存储，'
-                '系统云备份已关闭。'),
+            tr(
+              '本应用无遥测、无第三方统计；聊天与任务数据只连你配置的 '
+              'ZCode 桌面端 / 官方服务。凭据保存在系统安全存储，'
+              '系统云备份已关闭。',
+            ),
           ),
           const SizedBox(height: 8),
           _paragraph(
             context,
-            tr('锁屏默认可能显示通知内容：任务标题与最近回复的前 60 字；'
-                '可在系统设置中隐藏敏感通知或关闭锁屏通知。'),
+            tr(
+              '锁屏默认可能显示通知内容：任务标题与最近回复的前 60 字；'
+              '可在系统设置中隐藏敏感通知或关闭锁屏通知。',
+            ),
           ),
           const SizedBox(height: 8),
           _paragraph(
             context,
-            tr('任务与用量快照、会话缓存以明文 JSON 存于应用私有目录，'
-                '不参与系统备份；可随时清除，重新打开各页面时自动重建。'),
+            tr(
+              '任务与用量快照、会话缓存以明文 JSON 存于应用私有目录，'
+              '不参与系统备份；可随时清除，重新打开各页面时自动重建。',
+            ),
           ),
           settingsGroupLabel(context, tr('维护')),
           settingsGroupCard(context, isDark, [
             ListTile(
               key: const ValueKey('about-clear-cache'),
-              leading: const Icon(Icons.cleaning_services_outlined,
-                  size: 24, color: kSettingsIconOrange),
+              leading: const Icon(
+                Icons.cleaning_services_outlined,
+                size: 24,
+                color: kSettingsIconOrange,
+              ),
               title: Text(
                 tr('清除本地缓存'),
                 style: const TextStyle(fontSize: AppType.uiBase),
@@ -124,8 +139,11 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
           settingsGroupCard(context, isDark, [
             ListTile(
               key: const ValueKey('about-project-license'),
-              leading: const Icon(Icons.description_outlined,
-                  size: 24, color: kSettingsIconBlue),
+              leading: const Icon(
+                Icons.description_outlined,
+                size: 24,
+                color: kSettingsIconBlue,
+              ),
               title: Text(
                 tr('项目许可证（Apache 2.0）'),
                 style: const TextStyle(fontSize: AppType.uiBase),
@@ -147,8 +165,11 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
             ),
             ListTile(
               key: const ValueKey('about-third-party-notices'),
-              leading: const Icon(Icons.handshake_outlined,
-                  size: 24, color: kSettingsIconGreen),
+              leading: const Icon(
+                Icons.handshake_outlined,
+                size: 24,
+                color: kSettingsIconGreen,
+              ),
               title: Text(
                 tr('第三方来源声明'),
                 style: const TextStyle(fontSize: AppType.uiBase),
@@ -170,8 +191,11 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
             ),
             ListTile(
               key: const ValueKey('about-dependency-licenses'),
-              leading: const Icon(Icons.inventory_2_outlined,
-                  size: 24, color: kSettingsIconBlue),
+              leading: const Icon(
+                Icons.inventory_2_outlined,
+                size: 24,
+                color: kSettingsIconBlue,
+              ),
               title: Text(
                 tr('开源依赖许可'),
                 style: const TextStyle(fontSize: AppType.uiBase),
@@ -195,7 +219,10 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
             ),
           ]),
           settingsGroupLabel(context, tr('版权')),
-          _paragraph(context, 'Copyright © 2026 JZYLukis and ZCode Pocket contributors'),
+          _paragraph(
+            context,
+            'Copyright © 2026 JZYLukis and ZCode Pocket contributors',
+          ),
           _paragraph(context, tr('下游改版 Copyright © 2026 31591862')),
         ],
       ),
@@ -296,18 +323,19 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
     final ok = await showConfirmDialog(
       context,
       title: tr('清除本地缓存？'),
-      message: tr('将删除本机的任务/会话快照与通知台账（明文 JSON 缓存），'
-          '重新打开各页面时会重新加载；不会删除草稿、排队消息、'
-          '账号与设置。'),
+      message: tr(
+        '将删除本机的任务/会话快照与通知台账（明文 JSON 缓存），'
+        '重新打开各页面时会重新加载；不会删除草稿、排队消息、'
+        '账号与设置。',
+      ),
       confirmLabel: tr('清除'),
     );
     if (!ok) return;
     await app.cacheStore?.clearAll();
     await app.notifyStore?.clearLedger();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(tr('已清除本地缓存'))),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(tr('已清除本地缓存'))));
   }
 
   void _openText(
@@ -318,11 +346,8 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
   }) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => LicenseTextPage(
-          asset: asset,
-          title: title,
-          markdown: markdown,
-        ),
+        builder: (_) =>
+            LicenseTextPage(asset: asset, title: title, markdown: markdown),
       ),
     );
   }
@@ -362,7 +387,10 @@ class _LicenseTextPageState extends State<LicenseTextPage> {
     return Scaffold(
       backgroundColor: context.colors.background,
       appBar: AppBar(
-        title: Text(widget.title, style: const TextStyle(fontSize: AppType.uiLg)),
+        title: Text(
+          widget.title,
+          style: const TextStyle(fontSize: AppType.uiLg),
+        ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(height: 1, color: context.colors.border),
