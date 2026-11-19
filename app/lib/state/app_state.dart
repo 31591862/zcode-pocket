@@ -1814,6 +1814,21 @@ class AppState extends ChangeNotifier {
     throw StateError(lastError ?? '创建未确认，请返回重试');
   }
 
+  /// 项目重命名（project.saveProject {id, name}，schema 允许按 id 部分
+  /// 更新；桌面同通道能力，2026-11-19 手机端补齐 UI）。
+  Future<void> renameProject(String projectId, String name) async {
+    final bridge = this.bridge;
+    if (bridge == null) throw StateError('未连接电脑');
+    final id = projectId.trim();
+    final n = name.trim();
+    if (id.isEmpty) throw StateError('项目 ID 缺失');
+    if (n.isEmpty) throw StateError('项目名称不能为空');
+    await bridge.channels.call(Channels.project, 'saveProject', [
+      <String, dynamic>{'id': id, 'name': n},
+    ], timeout: const Duration(seconds: 10));
+    unawaited(refreshWorkspaces());
+  }
+
   /// 以任意电脑目录为根取项目：已有同根项目直接复用（不重复建），
   /// 否则 project.saveProject 注册（name=目录名）。返回项目记录，
   /// 可直接交给 switchToProject。

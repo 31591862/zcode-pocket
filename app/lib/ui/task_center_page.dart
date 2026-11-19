@@ -2177,6 +2177,114 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
     app.openTaskFromNotification(profile.deviceSid, taskId);
   }
 
+  /// 项目组头长按菜单（2026-11-19）：重命名项目（桌面项目节点菜单的
+  /// 手机最小档）。后续可扩删除/排序。
+  Future<void> _showProjectActions(
+    BuildContext context,
+    Map<String, dynamic> project,
+  ) async {
+    final name = '${project['name'] ?? ''}';
+    var action = '';
+    // 布局与会话长按菜单（_showTaskActions）保持同款：顶部居中标题
+    // （Column 默认 crossAxisAlignment.center）+ 平铺动作行。
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetCtx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetCtx).size.height * 0.7,
+          ),
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    name.isEmpty ? '(未命名项目)' : name,
+                    translate: false,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: AppType.uiCaption,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                ListTile(
+                  key: const ValueKey('project-rename'),
+                  leading: const Icon(
+                    Icons.drive_file_rename_outline,
+                    size: 20,
+                  ),
+                  title: const Text('重命名'),
+                  onTap: () {
+                    action = 'rename';
+                    Navigator.of(sheetCtx).pop();
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (action != 'rename' || !mounted || !context.mounted) return;
+    await _renameProjectDialog(context, project);
+  }
+
+  Future<void> _renameProjectDialog(
+    BuildContext context,
+    Map<String, dynamic> project,
+  ) async {
+    final app = AppStateScope.of(context);
+    final pid = '${project['id'] ?? ''}';
+    var input = '${project['name'] ?? ''}';
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('重命名项目'),
+        // TextFormField(initialValue) 不用 controller（弹窗退场期间
+        // 控制器仍被持有，提前 dispose 会 used-after-dispose）。
+        content: TextFormField(
+          initialValue: input,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '项目名称'),
+          onChanged: (v) => input = v,
+          onFieldSubmitted: (v) => Navigator.of(dialogContext).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(input),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    final value = name?.trim() ?? '';
+    if (value.isEmpty || !context.mounted) return;
+    try {
+      await app.renameProject(pid, value);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('已重命名项目')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('重命名失败：$e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = AppStateScope.of(context);
@@ -2397,10 +2505,27 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
                     ),
                   );
                 case TaskHomeItemKind.group:
+                  // 项目组键是语义键 project:<id>（task_home.dart:229），
+                  // 按 id 从侧栏项目列表取项目行（projectForKey 只认
+                  // 工作区键，用于时间桶/会话组时为 null）。
+                  Map<String, dynamic>? projectRow;
+                  final groupKey = item.groupKey ?? '';
+                  if (groupKey.startsWith('project:')) {
+                    final pid = groupKey.substring('project:'.length);
+                    for (final p in AppStateScope.of(context).sidebarProjects) {
+                      if ('${p['id'] ?? ''}' == pid) {
+                        projectRow = p;
+                        break;
+                      }
+                    }
+                  }
                   return KeyedSubtree(
                     key: ValueKey('home-group-${item.groupKey}'),
                     child: _HomeGroupHeader(
                       item: item,
+                      onLongPress: projectRow == null
+                          ? null
+                          : () => _showProjectActions(context, projectRow!),
                       onTap: () => setState(() {
                         final key = item.groupKey!;
                         final collapse = !_collapsedGroups.contains(key);
@@ -2548,7 +2673,14 @@ class _HomeGroupHeader extends StatelessWidget {
   final TaskHomeItem item;
   final VoidCallback onTap;
 
-  const _HomeGroupHeader({required this.item, required this.onTap});
+  /// 项目组头长按（重命名项目）；时间桶/无项目组为 null。
+  final VoidCallback? onLongPress;
+
+  const _HomeGroupHeader({
+    required this.item,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2563,6 +2695,7 @@ class _HomeGroupHeader extends StatelessWidget {
       child: InkWell(
         key: ValueKey('home-${item.key}'),
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: EdgeInsets.fromLTRB(16, 12, 8, 8),
           child: Row(
