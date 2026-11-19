@@ -58,6 +58,19 @@ class UsageSnapshotCache<T> {
 ///
 /// 展示口径：quota percentage=已使用占比，剩余=100-已用（官方
 /// codingPlanQuotaPresentation.getQuotaRemainingPercentage）。
+/// 生效时刻文案：今天/明天 HH:mm，其余 X月X日 HH:mm。
+String _effectiveTimeLabel(DateTime t) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  final now = DateTime.now();
+  final day0 = DateTime(now.year, now.month, now.day);
+  final dayT = DateTime(t.year, t.month, t.day);
+  final diff = dayT.difference(day0).inDays;
+  final hm = '${two(t.hour)}:${two(t.minute)}';
+  if (diff == 0) return '今天 $hm';
+  if (diff == 1) return '明天 $hm';
+  return '${t.month}月${t.day}日 $hm';
+}
+
 class UsagePage extends StatefulWidget {
   const UsagePage({super.key});
 
@@ -185,7 +198,7 @@ class _UsagePageState extends State<UsagePage>
       unawaited(_initializeUsagePage());
     }
     // 验收#18（Bug R）：网络恢复自动重试——错误态下连接回到
-      // online 边沿即重拉两档，不再要求用户退出重进。
+    // online 边沿即重拉两档，不再要求用户退出重进。
     _armRecoveryWatch();
   }
 
@@ -493,7 +506,9 @@ class _UsagePageState extends State<UsagePage>
     if (e is TimeoutException) return tr('网络不佳，加载超时');
     if (e is ChannelRpcError) return tr('额度服务暂不可用，稍后重试。');
     final msg = '$e';
-    if (msg.contains('Socket') || msg.contains('Connection') || msg.contains('Network')) {
+    if (msg.contains('Socket') ||
+        msg.contains('Connection') ||
+        msg.contains('Network')) {
       return tr('网络连接不可用，请检查网络');
     }
     return tr('加载失败，请稍后重试');
@@ -754,19 +769,14 @@ class _UsagePageState extends State<UsagePage>
     // 验收#18（Bug Q）：页面级 12s 超时——断网时 transport 层
     // 挂死不抛错（RPC 30s 也不触发），用户永远转圈。
     final res = await bridge.channels
-        .call(
-          Channels.usageStats,
-          'getEntitlementSnapshot',
-          [
-            {
-              'includeSubscription': true,
-              'preferredProviderId': _providerId,
-              'accountAccess': _accountAccess,
-              'allowDisabledPreferredProvider': true,
-            },
-          ],
-          timeout: const Duration(seconds: 30),
-        )
+        .call(Channels.usageStats, 'getEntitlementSnapshot', [
+          {
+            'includeSubscription': true,
+            'preferredProviderId': _providerId,
+            'accountAccess': _accountAccess,
+            'allowDisabledPreferredProvider': true,
+          },
+        ], timeout: const Duration(seconds: 30))
         .timeout(const Duration(seconds: 12));
     return res is Map ? res.cast<String, dynamic>() : null;
   }
@@ -778,19 +788,14 @@ class _UsagePageState extends State<UsagePage>
     try {
       // 验收#18（Bug Q）：同 _callEntitlement 的页面级超时。
       final res = await bridge.channels
-          .call(
-            Channels.usageStats,
-            'getCodingPlanUsageSnapshot',
-            [
-              {
-                'range': range,
-                'preferredProviderId': _providerId,
-                'accountAccess': _accountAccess,
-                if (_timeZone != null) 'timeZone': _timeZone,
-              },
-            ],
-            timeout: const Duration(seconds: 30),
-          )
+          .call(Channels.usageStats, 'getCodingPlanUsageSnapshot', [
+            {
+              'range': range,
+              'preferredProviderId': _providerId,
+              'accountAccess': _accountAccess,
+              if (_timeZone != null) 'timeZone': _timeZone,
+            },
+          ], timeout: const Duration(seconds: 30))
           .timeout(const Duration(seconds: 12));
       return res is Map ? res.cast<String, dynamic>() : null;
     } catch (e) {
@@ -842,12 +847,9 @@ class _UsagePageState extends State<UsagePage>
       // 验收#18（Bug Q）：页面级 12s 超时——断网时 transport 挂死
       // 连 RPC 30s 都不触发，永远转圈；超时进错误态（人话+重试钮）。
       final res = await bridge.channels
-          .call(
-            Channels.usageStats,
-            'getAppUsageSnapshot',
-            [appUsageParams(_appRange, _timeZone)],
-            timeout: const Duration(seconds: 30),
-          )
+          .call(Channels.usageStats, 'getAppUsageSnapshot', [
+            appUsageParams(_appRange, _timeZone),
+          ], timeout: const Duration(seconds: 30))
           .timeout(const Duration(seconds: 12));
       final data = res is Map ? res.cast<String, dynamic>() : null;
       debugPrint(
@@ -1025,33 +1027,33 @@ class _UsagePageState extends State<UsagePage>
           // 这三个范围选项对它无意义，直接隐藏。
           if (_planKind != 'start-plan')
             Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              for (final r in const [
-                ('today', '今日'),
-                ('7d', '近 7 天'),
-                ('30d', '近 30 天'),
-              ])
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(r.$2),
-                    selected: _cpRange == r.$1,
-                    onSelected: (_) {
-                      if (_cpRange == r.$1) return;
-                      setState(() {
-                        _cpRange = r.$1;
-                        _lineSelected = null;
-                        _lineShowTotal = false;
-                      });
-                      _loadPlan();
-                    },
-                    visualDensity: VisualDensity.compact,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final r in const [
+                  ('today', '今日'),
+                  ('7d', '近 7 天'),
+                  ('30d', '近 30 天'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(r.$2),
+                      selected: _cpRange == r.$1,
+                      onSelected: (_) {
+                        if (_cpRange == r.$1) return;
+                        setState(() {
+                          _cpRange = r.$1;
+                          _lineSelected = null;
+                          _lineShowTotal = false;
+                        });
+                        _loadPlan();
+                      },
+                      visualDensity: VisualDensity.compact,
+                    ),
                   ),
-                ),
-            ],
-          ),
+              ],
+            ),
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Wrap(
@@ -1079,7 +1081,10 @@ class _UsagePageState extends State<UsagePage>
               // 秒针收进徽标自带 Timer——此前
               // 页面级 1Hz setState 重建整页（双 tab 全部子树）；多机会/
               // 小时以上档每秒产物相同，30s 一拍足够。
-              child: _ResetBadge(status: _resetStatus!, onPressed: _showResetSheet),
+              child: _ResetBadge(
+                status: _resetStatus!,
+                onPressed: _showResetSheet,
+              ),
             ),
           ],
           if (_planKind != 'start-plan' && _subscriptionLine() != null) ...[
@@ -1121,7 +1126,10 @@ class _UsagePageState extends State<UsagePage>
             const SizedBox(height: 14),
             heat,
           ],
-          if (_cpTrend() case final trend?) ...[const SizedBox(height: 14), trend],
+          if (_cpTrend() case final trend?) ...[
+            const SizedBox(height: 14),
+            trend,
+          ],
           const SizedBox(height: 24),
         ],
       ),
@@ -1287,9 +1295,8 @@ class _UsagePageState extends State<UsagePage>
           ? (plans.first as Map)['ends_at']
           : null;
       if (endsAt is num && endsAt > 0) {
-        expireAt = DateTime.fromMillisecondsSinceEpoch(
-          endsAt.toInt() * 1000,
-        ).toLocal();
+        expireAt = DateTime.fromMillisecondsSinceEpoch(endsAt.toInt() * 1000)
+            .toLocal();
       }
     }
     if (expireAt != null) {
@@ -1297,6 +1304,28 @@ class _UsagePageState extends State<UsagePage>
       expireLabel =
           '过期时间 ${expireAt.month}月${expireAt.day}日 '
           '${two(expireAt.hour)}:${two(expireAt.minute)}';
+    }
+
+    // 生效时间：**entitlements[].effectiveTime**（桌面 Tze 的
+    // effective_at → ISO）。注意 beginTime 映射的是 starts_at=计划记录
+    // 创建时间（领取时刻，如 19:08），不是权益生效时间（实测桌面
+    // 日志：starts_at=领取时刻、effective_at=23:00）——只认权益时刻，
+    // 取最早的在未生效权益时刻。
+    DateTime? pendingAt;
+    for (final d in details) {
+      if (d is! Map) continue;
+      final ents = d['entitlements'];
+      if (ents is! List) continue;
+      for (final e in ents) {
+        if (e is! Map) continue;
+        final t = parseExpire(e['effectiveTime']);
+        if (t == null || !t.isAfter(DateTime.now())) continue;
+        if (pendingAt == null || t.isBefore(pendingAt)) pendingAt = t;
+      }
+    }
+    String? pendingLabel;
+    if (pendingAt != null) {
+      pendingLabel = '待生效 ${_effectiveTimeLabel(pendingAt)}';
     }
 
     // 额度行：每桶一行（模型名 / 剩余百分比 / 重置时刻 / 进度 / 剩余÷总量）。
@@ -1376,24 +1405,57 @@ class _UsagePageState extends State<UsagePage>
               fontWeight: FontWeight.w700,
             ),
           ),
-          if (expireLabel != null) ...[
+          if (expireLabel != null || pendingLabel != null) ...[
             const SizedBox(height: 4),
-            Text(
-              expireLabel,
-              style: TextStyle(
-                fontSize: AppType.uiCaption,
-                color: colors.foregroundSubtle,
+            if (pendingLabel != null)
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: pendingLabel,
+                      style: TextStyle(color: colors.success),
+                    ),
+                    if (expireLabel != null)
+                      TextSpan(
+                        text: ' · $expireLabel',
+                        style: TextStyle(color: colors.foregroundSubtle),
+                      ),
+                  ],
+                ),
+                style: const TextStyle(fontSize: AppType.uiCaption),
+              )
+            else
+              Text(
+                expireLabel!,
+                style: TextStyle(
+                  fontSize: AppType.uiCaption,
+                  color: colors.foregroundSubtle,
+                ),
               ),
-            ),
           ],
           const SizedBox(height: 10),
           Divider(height: 1, thickness: 0.5, color: colors.border),
           const SizedBox(height: 10),
-          const Text(
-            '今日余额',
-            style: TextStyle(fontSize: AppType.uiBase),
-          ),
+          const Text('今日余额', style: TextStyle(fontSize: AppType.uiBase)),
           const SizedBox(height: 8),
+          // 待生效期服务端不返回余额桶（桌面包实测 balances:[]）——
+          // 用授权总量占位：生效后开始计算。
+          if (rows.isEmpty && pendingLabel != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colors.sidebar,
+                borderRadius: BorderRadius.circular(AppRadius.card),
+              ),
+              child: Text(
+                '待生效 · 生效后开始计算',
+                style: TextStyle(
+                  fontSize: AppType.uiCaption,
+                  color: colors.foregroundSubtle,
+                ),
+              ),
+            ),
           for (final row in rows) ...[
             Container(
               width: double.infinity,
@@ -1469,8 +1531,7 @@ class _UsagePageState extends State<UsagePage>
   String _refreshedAt() {
     // 数字守卫：serverTime/generatedAt 漂移成 ISO 字符串
     // 时不再整段抛错，安全退 '-'。
-    final ms =
-        numOf(_ent?['serverTime']) ?? numOf(_ent?['generatedAt']);
+    final ms = numOf(_ent?['serverTime']) ?? numOf(_ent?['generatedAt']);
     // 上界守卫：超 Dart epoch 合法域（±8.64e15ms）
     // 的畸形值在 build 链上抛 ArgumentError——退 '-'。
     if (ms == null || ms < 0 || ms > 8640000000000000) return '-';
@@ -1499,9 +1560,7 @@ class _UsagePageState extends State<UsagePage>
     String? remainLine;
     if (startPlan) {
       final count = quotaRemainingCount(limit);
-      if (count != null &&
-          startPlanTotal != null &&
-          startPlanTotal > 0) {
+      if (count != null && startPlanTotal != null && startPlanTotal > 0) {
         // 剩余 / 总量（2026-11-16 用户需求：298,341,915 / 300,000,000
         // 形态——总量=quota.limits 各桶 total_units 合计）。
         remainLine =
@@ -1516,7 +1575,8 @@ class _UsagePageState extends State<UsagePage>
           remainLine = '${tr('剩余')} ${formatExactCount(max(total - used, 0))}';
         }
       }
-    }    return Container(
+    }
+    return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: context.colors.card,
@@ -1663,8 +1723,7 @@ class _UsagePageState extends State<UsagePage>
     // xTime 守卫：cast<String> 是懒转换，
     // 非 String 元素的异常推迟到 painter 访问处（paint 期崩）——改
     // whereType 即时过滤。
-    final xTime =
-        listOf(mu['xTime'])?.whereType<String>().toList() ?? const [];
+    final xTime = listOf(mu['xTime'])?.whereType<String>().toList() ?? const [];
     final rawModels = mu['modelDataList'];
     if (xTime.isEmpty || rawModels is! List || rawModels.isEmpty) return null;
     final models =
@@ -1706,11 +1765,14 @@ class _UsagePageState extends State<UsagePage>
           )
         : _TrendSummary(
             header: tr(chartXLabel(xTime[selected])),
-            total: tr(formatTokens(
-              series.fold<double>(0, (a, s) {
-                return a + (selected < s.values.length ? s.values[selected] : 0);
-              }),
-            )),
+            total: tr(
+              formatTokens(
+                series.fold<double>(0, (a, s) {
+                  return a +
+                      (selected < s.values.length ? s.values[selected] : 0);
+                }),
+              ),
+            ),
             rows: [
               for (final s in series)
                 if (selected < s.values.length && s.values[selected] > 0)
@@ -1942,11 +2004,14 @@ class _UsagePageState extends State<UsagePage>
           )
         : _TrendSummary(
             header: tr(chartXLabel(built.dates[selected])),
-            total: tr(formatTokens(
-              built.series.fold<double>(0, (a, s) {
-                return a + (selected < s.values.length ? s.values[selected] : 0);
-              }),
-            )),
+            total: tr(
+              formatTokens(
+                built.series.fold<double>(0, (a, s) {
+                  return a +
+                      (selected < s.values.length ? s.values[selected] : 0);
+                }),
+              ),
+            ),
             rows: [
               for (final s in built.series)
                 if (selected < s.values.length && s.values[selected] > 0)
@@ -2228,7 +2293,11 @@ class _UsagePageState extends State<UsagePage>
                     Expanded(flex: 6, child: legendList),
                   ],
                 )
-              else ...[donut, const SizedBox(height: 6), legendList],
+              else ...[
+                donut,
+                const SizedBox(height: 6),
+                legendList,
+              ],
             ],
           );
         },
@@ -2546,10 +2615,10 @@ class _ResetBadgeState extends State<_ResetBadge> with WidgetsBindingObserver {
       // 分秒档（单机会且最早过期<1h）才逐秒重建；否则 30s 一拍。
       final st = widget.status;
       final soonest = st.soonestExpireAt;
-      final secondly = st.totalCount == 1 &&
+      final secondly =
+          st.totalCount == 1 &&
           soonest != null &&
-          soonest - DateTime.now().millisecondsSinceEpoch <
-              60 * 60 * 1000;
+          soonest - DateTime.now().millisecondsSinceEpoch < 60 * 60 * 1000;
       if (secondly || DateTime.now().second % 30 == 0) setState(() {});
     });
     UsagePage.debugResetTickerActive = true;
@@ -2678,7 +2747,8 @@ class _UsageHeatmapViewState extends State<UsageHeatmapView> {
     }
     final weeks = listOf(widget.heatmap['weeks'])?.length ?? 0;
     if (weeks != _weeksCount) _jumpToLatest();
-    if (_selWeek != null && _selWeek! >= (listOf(widget.heatmap['weeks'])?.length ?? 0)) {
+    if (_selWeek != null &&
+        _selWeek! >= (listOf(widget.heatmap['weeks'])?.length ?? 0)) {
       _selWeek = null;
     }
     // 换范围/换时区后旧选中可能已不存在：清掉而不是残留旧明细。
@@ -2729,7 +2799,8 @@ class _UsageHeatmapViewState extends State<UsageHeatmapView> {
     // 按模型档：日期 → (top 模型, 该日模型总量占比强度)。
     // 同日多模型取 tokens 最大者为该日代表色（手机窄屏下不做叠色）。
     final modelPalette = context.charts.series;
-    final topModelByDate = <String, ({String name, int colorIndex, double share})>{};
+    final topModelByDate =
+        <String, ({String name, int colorIndex, double share})>{};
     // （批5）：日期键归一——两侧格式不一致（补零/时区后缀）时
     // 整档会静默退化为总用量色阶；DateTime.tryParse 归一到 yyyy-MM-dd。
     String normDate(dynamic v) {
@@ -2738,8 +2809,8 @@ class _UsageHeatmapViewState extends State<UsageHeatmapView> {
       return parsed == null
           ? raw
           : '${parsed.year.toString().padLeft(4, '0')}-'
-              '${parsed.month.toString().padLeft(2, '0')}-'
-              '${parsed.day.toString().padLeft(2, '0')}';
+                '${parsed.month.toString().padLeft(2, '0')}-'
+                '${parsed.day.toString().padLeft(2, '0')}';
     }
 
     for (final entry in widget.dailyModelUsage ?? const []) {
@@ -2793,7 +2864,8 @@ class _UsageHeatmapViewState extends State<UsageHeatmapView> {
       selDay = day is Map ? day.cast<String, dynamic>() : null;
     }
     // 周聚合（每周/累计档的格子值与明细数据源）。
-    final weekAggs = <({double total, int turns, int tools, String first, String last})>[];
+    final weekAggs =
+        <({double total, int turns, int tools, String first, String last})>[];
     var runTotal = 0.0;
     for (var wi = 0; wi < weeks.length; wi++) {
       var total = 0.0;
@@ -2814,7 +2886,13 @@ class _UsageHeatmapViewState extends State<UsageHeatmapView> {
       }
       if (_gran == _HeatGran.cumulative) runTotal += total;
       final value = _gran == _HeatGran.cumulative ? runTotal : total;
-      weekAggs.add((total: value, turns: turns, tools: tools, first: first ?? '', last: last ?? ''));
+      weekAggs.add((
+        total: value,
+        turns: turns,
+        tools: tools,
+        first: first ?? '',
+        last: last ?? '',
+      ));
     }
     final weekMax = weekAggs.fold(0.0, (a, w) => a > w.total ? a : w.total);
     // 当日按模型明细（改全量）；结构化行展示，
@@ -2882,144 +2960,159 @@ class _UsageHeatmapViewState extends State<UsageHeatmapView> {
                             // （对抗审查·渲染中）：补 gap——daily 子项宽
                             // hitWidth+gap，周档漏 gap 会右空 132dp（53 周）。
                             padding: EdgeInsets.only(right: gap),
-                            child: Builder(builder: (_) {
-                            final agg = weekAggs[wi];
-                            final lvl = weekMax <= 0 || agg.total <= 0
-                                ? 0
-                                : (1 + (3.999 * agg.total / weekMax).floor())
-                                    .clamp(1, 4);
-                            final color = lvl >= 1 && lvl < 5
-                                ? context.charts.heatmapGreens[lvl]
-                                : emptyCell;
-                            final selected = _selWeek == wi;
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 2.5),
-                              child: GestureDetector(
-                                key: ValueKey('heat-week-cell-$wi'),
-                                behavior: HitTestBehavior.opaque,
-                                onTap: () => setState(
-                                  () => _selWeek = selected ? null : wi,
-                                ),
-                                child: SizedBox(
-                                  width: hitWidth,
-                                  height: gridHeight - 2.5,
-                                  child: Center(
-                                    child: Container(
-                                      width: visualCell,
-                                      height: (gridHeight - 2.5)
-                                          .clamp(11.0, double.infinity),
-                                      decoration: BoxDecoration(
-                                        color: color,
-                                        borderRadius: BorderRadius.circular(2),
-                                        border: selected
-                                            ? Border.all(
-                                                color:
-                                                    context.colors.foreground,
-                                                width: 1.2,
-                                              )
-                                            : null,
+                            child: Builder(
+                              builder: (_) {
+                                final agg = weekAggs[wi];
+                                final lvl = weekMax <= 0 || agg.total <= 0
+                                    ? 0
+                                    : (1 +
+                                              (3.999 * agg.total / weekMax)
+                                                  .floor())
+                                          .clamp(1, 4);
+                                final color = lvl >= 1 && lvl < 5
+                                    ? context.charts.heatmapGreens[lvl]
+                                    : emptyCell;
+                                final selected = _selWeek == wi;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 2.5),
+                                  child: GestureDetector(
+                                    key: ValueKey('heat-week-cell-$wi'),
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => setState(
+                                      () => _selWeek = selected ? null : wi,
+                                    ),
+                                    child: SizedBox(
+                                      width: hitWidth,
+                                      height: gridHeight - 2.5,
+                                      child: Center(
+                                        child: Container(
+                                          width: visualCell,
+                                          height: (gridHeight - 2.5).clamp(
+                                            11.0,
+                                            double.infinity,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: color,
+                                            borderRadius: BorderRadius.circular(
+                                              2,
+                                            ),
+                                            border: selected
+                                                ? Border.all(
+                                                    color: context
+                                                        .colors
+                                                        .foreground,
+                                                    width: 1.2,
+                                                  )
+                                                : null,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ),
-                            );
-                          }),
+                                );
+                              },
+                            ),
                           ),
                       if (_gran == _HeatGran.daily)
                         for (var wi = 0; wi < weeks.length; wi++)
                           SizedBox(
-                          width: hitWidth + gap,
-                          child: Column(
-                            children: [
-                              for (var d = 0; d < 7; d++)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 2.5),
-                                  child: Builder(
-                                    builder: (_) {
-                                      final days = weeks[wi]['days'];
-                                      final day =
-                                          days is List && d < days.length
-                                          ? days[d]
-                                          : null;
-                                      final level = day is Map
-                                          ? day['level']
-                                          : null;
-                                      final lvl = level is int ? level : 0;
-                                      Color color;
-                                      if (_mode == _Heatmode.model) {
-                                        final date = day is Map
-                                            ? normDate(day['date'])
-                                            : '';
-                                        final top = topModelByDate[date];
-                                        // 有活动但无按模型明细（个人套餐
-                                        // monitor 接口不携带该维度）→ 退回
-                                        // 总用量色阶，不显示假色。
-                                        if (lvl >= 1 && lvl < 5 && top != null) {
-                                          color = modelPalette[top.colorIndex]
-                                              .withValues(
-                                            alpha: (0.35 + 0.65 * top.share)
-                                                .clamp(0.35, 1.0),
-                                          );
-                                        } else if (lvl >= 1 && lvl < 5) {
-                                          color =
-                                              context.charts.heatmapGreens[lvl];
+                            width: hitWidth + gap,
+                            child: Column(
+                              children: [
+                                for (var d = 0; d < 7; d++)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 2.5),
+                                    child: Builder(
+                                      builder: (_) {
+                                        final days = weeks[wi]['days'];
+                                        final day =
+                                            days is List && d < days.length
+                                            ? days[d]
+                                            : null;
+                                        final level = day is Map
+                                            ? day['level']
+                                            : null;
+                                        final lvl = level is int ? level : 0;
+                                        Color color;
+                                        if (_mode == _Heatmode.model) {
+                                          final date = day is Map
+                                              ? normDate(day['date'])
+                                              : '';
+                                          final top = topModelByDate[date];
+                                          // 有活动但无按模型明细（个人套餐
+                                          // monitor 接口不携带该维度）→ 退回
+                                          // 总用量色阶，不显示假色。
+                                          if (lvl >= 1 &&
+                                              lvl < 5 &&
+                                              top != null) {
+                                            color = modelPalette[top.colorIndex]
+                                                .withValues(
+                                                  alpha:
+                                                      (0.35 + 0.65 * top.share)
+                                                          .clamp(0.35, 1.0),
+                                                );
+                                          } else if (lvl >= 1 && lvl < 5) {
+                                            color = context
+                                                .charts
+                                                .heatmapGreens[lvl];
+                                          } else {
+                                            color = emptyCell;
+                                          }
                                         } else {
-                                          color = emptyCell;
+                                          color = lvl >= 1 && lvl < 5
+                                              ? context
+                                                    .charts
+                                                    .heatmapGreens[lvl]
+                                              : emptyCell;
                                         }
-                                      } else {
-                                        color = lvl >= 1 && lvl < 5
-                                            ? context.charts.heatmapGreens[lvl]
-                                            : emptyCell;
-                                      }
-                                      final selected = _sel == (wi, d);
-                                      // 命中盒外扩（对抗审查）：视觉格子
-                                      // 11px 低于 44 触控纪律——命中区扩大到
-                                      // 22×22（含邻缝），视觉尺寸不变。
-                                      return GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        // 空格子（day=null）不可选。
-                                        onTap: day is! Map
-                                            ? null
-                                            : () => setState(() {
-                                                _sel = selected
-                                                    ? null
-                                                    : (wi, d);
-                                              }),
-                                        child: SizedBox(
-                                          width: hitWidth,
-                                          height: 22,
-                                          child: Center(
-                                            child: Container(
-                                              width: visualCell,
-                                              height: visualCell,
-                                              decoration: BoxDecoration(
-                                                // 无数据格与 0 级格统一淡灰底
-                                                //（②a：不再与背景融为一体）。
-                                                color: day == null
-                                                    ? emptyCell
-                                                    : color,
-                                                borderRadius:
-                                                    BorderRadius.circular(2),
-                                                border: selected
-                                                    ? Border.all(
-                                                        color: context
-                                                            .colors
-                                                            .foreground,
-                                                        width: 1.2,
-                                                      )
-                                                    : null,
+                                        final selected = _sel == (wi, d);
+                                        // 命中盒外扩（对抗审查）：视觉格子
+                                        // 11px 低于 44 触控纪律——命中区扩大到
+                                        // 22×22（含邻缝），视觉尺寸不变。
+                                        return GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          // 空格子（day=null）不可选。
+                                          onTap: day is! Map
+                                              ? null
+                                              : () => setState(() {
+                                                  _sel = selected
+                                                      ? null
+                                                      : (wi, d);
+                                                }),
+                                          child: SizedBox(
+                                            width: hitWidth,
+                                            height: 22,
+                                            child: Center(
+                                              child: Container(
+                                                width: visualCell,
+                                                height: visualCell,
+                                                decoration: BoxDecoration(
+                                                  // 无数据格与 0 级格统一淡灰底
+                                                  //（②a：不再与背景融为一体）。
+                                                  color: day == null
+                                                      ? emptyCell
+                                                      : color,
+                                                  borderRadius:
+                                                      BorderRadius.circular(2),
+                                                  border: selected
+                                                      ? Border.all(
+                                                          color: context
+                                                              .colors
+                                                              .foreground,
+                                                          width: 1.2,
+                                                        )
+                                                      : null,
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      );
-                                    },
+                                        );
+                                      },
+                                    ),
                                   ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
                     ],
                   ),
                 ),
@@ -3052,14 +3145,16 @@ class _UsageHeatmapViewState extends State<UsageHeatmapView> {
                       ),
                       decoration: BoxDecoration(
                         color: _gran == g
-                            ? context.colors.brandAccent
-                                .withValues(alpha: AppAlpha.faint)
+                            ? context.colors.brandAccent.withValues(
+                                alpha: AppAlpha.faint,
+                              )
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(AppRadius.pill),
                         border: Border.all(
                           color: _gran == g
-                              ? context.colors.brandAccent
-                                  .withValues(alpha: 0.35)
+                              ? context.colors.brandAccent.withValues(
+                                  alpha: 0.35,
+                                )
                               : context.colors.borderFaint,
                         ),
                       ),
@@ -3074,7 +3169,9 @@ class _UsageHeatmapViewState extends State<UsageHeatmapView> {
                           color: _gran == g
                               ? context.colors.brandAccent
                               : context.colors.foregroundSubtle,
-                          fontWeight: _gran == g ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: _gran == g
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
                       ),
                     ),
@@ -3091,186 +3188,194 @@ class _UsageHeatmapViewState extends State<UsageHeatmapView> {
             // 更误导；色阶保持总用量档。
             if (_gran == _HeatGran.daily && topModelByDate.isNotEmpty)
               Row(
-              children: [
-                for (final m in _Heatmode.values) ...[
-                  GestureDetector(
-                    key: ValueKey('heat-mode-${m.name}'),
-                    onTap: () => setState(() => _mode = m),
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _mode == m
-                            ? context.colors.brandAccent
-                                .withValues(alpha: AppAlpha.faint)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        border: Border.all(
+                children: [
+                  for (final m in _Heatmode.values) ...[
+                    GestureDetector(
+                      key: ValueKey('heat-mode-${m.name}'),
+                      onTap: () => setState(() => _mode = m),
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
                           color: _mode == m
-                              ? context.colors.brandAccent
-                                  .withValues(alpha: 0.35)
-                              : context.colors.borderFaint,
+                              ? context.colors.brandAccent.withValues(
+                                  alpha: AppAlpha.faint,
+                                )
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          border: Border.all(
+                            color: _mode == m
+                                ? context.colors.brandAccent.withValues(
+                                    alpha: 0.35,
+                                  )
+                                : context.colors.borderFaint,
+                          ),
+                        ),
+                        child: Text(
+                          m == _Heatmode.total ? '总用量' : '按模型',
+                          style: TextStyle(
+                            fontSize: AppType.uiXs,
+                            color: _mode == m
+                                ? context.colors.brandAccent
+                                : context.colors.foregroundSubtle,
+                            fontWeight: _mode == m
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
                         ),
                       ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  if (_mode == _Heatmode.model)
+                    Expanded(
                       child: Text(
-                        m == _Heatmode.total ? '总用量' : '按模型',
+                        '色=当日用量最高模型',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
                         style: TextStyle(
                           fontSize: AppType.uiXs,
-                          color: _mode == m
-                              ? context.colors.brandAccent
-                              : context.colors.foregroundSubtle,
-                          fontWeight: _mode == m
-                              ? FontWeight.w600
-                              : FontWeight.w400,
+                          color: context.colors.foregroundSubtlest,
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
                 ],
-                if (_mode == _Heatmode.model)
-                  Expanded(
-                    child: Text(
-                      '色=当日用量最高模型',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontSize: AppType.uiXs,
-                        color: context.colors.foregroundSubtlest,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+              ),
             const SizedBox(height: 6),
             // 周档明细卡（每周/累计共用——累计档数值为截至该周
             // 的滚动累计，明细仍列该周内按日数据）。
             if (_gran != _HeatGran.daily && _selWeek != null) ...[
-              Builder(builder: (_) {
-                final agg = weekAggs[_selWeek!];
-                // 该周日期集合 → dailyModelUsage 聚合该周按模型全量。
-                final weekDates = <String>{
-                  for (final d in listOf(weeks[_selWeek!]['days']) ?? const [])
-                    if (d is Map) normDate(d['date']),
-                };
-                final mTotals = <String, num>{};
-                for (final e in widget.dailyModelUsage ?? const []) {
-                  if (e is! Map || !weekDates.contains(normDate(e['date']))) {
-                    continue;
+              Builder(
+                builder: (_) {
+                  final agg = weekAggs[_selWeek!];
+                  // 该周日期集合 → dailyModelUsage 聚合该周按模型全量。
+                  final weekDates = <String>{
+                    for (final d
+                        in listOf(weeks[_selWeek!]['days']) ?? const [])
+                      if (d is Map) normDate(d['date']),
+                  };
+                  final mTotals = <String, num>{};
+                  for (final e in widget.dailyModelUsage ?? const []) {
+                    if (e is! Map || !weekDates.contains(normDate(e['date']))) {
+                      continue;
+                    }
+                    for (final m in listOf(e['models']) ?? const []) {
+                      if (m is! Map) continue;
+                      final t = numOf(m['totalTokens']) ?? 0;
+                      if (t <= 0) continue;
+                      final name = '${m['modelId'] ?? '未知'}';
+                      mTotals[name] = (mTotals[name] ?? 0) + t;
+                    }
                   }
-                  for (final m in listOf(e['models']) ?? const []) {
-                    if (m is! Map) continue;
-                    final t = numOf(m['totalTokens']) ?? 0;
-                    if (t <= 0) continue;
-                    final name = '${m['modelId'] ?? '未知'}';
-                    mTotals[name] = (mTotals[name] ?? 0) + t;
-                  }
-                }
-                final wModels = [
-                  for (final e in mTotals.entries)
-                    (name: e.key, tokens: e.value),
-                ]..sort((a, b) => b.tokens.compareTo(a.tokens));
-                // （对抗审查·口径混用）：总额=累计、轮次/工具/模型行=当周
-                // ——两组口径并存须显式标注，标题已带「累计（截至本周）」，
-                // 计数行前缀「本周」消歧。
-                final label = _gran == _HeatGran.cumulative ? '累计（截至本周）' : '本周';
-                return Container(
-                  key: const ValueKey('heat-week-detail'),
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: context.colors.surface,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(color: context.colors.borderFaint),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '$label ${agg.first} ~ ${agg.last}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                  final wModels = [
+                    for (final e in mTotals.entries)
+                      (name: e.key, tokens: e.value),
+                  ]..sort((a, b) => b.tokens.compareTo(a.tokens));
+                  // （对抗审查·口径混用）：总额=累计、轮次/工具/模型行=当周
+                  // ——两组口径并存须显式标注，标题已带「累计（截至本周）」，
+                  // 计数行前缀「本周」消歧。
+                  final label = _gran == _HeatGran.cumulative
+                      ? '累计（截至本周）'
+                      : '本周';
+                  return Container(
+                    key: const ValueKey('heat-week-detail'),
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: context.colors.surface,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      border: Border.all(color: context.colors.borderFaint),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '$label ${agg.first} ~ ${agg.last}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: AppType.uiSm,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              formatTokens(agg.total),
                               style: const TextStyle(
-                                fontSize: AppType.uiSm,
+                                fontSize: AppType.uiBase,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ),
-                          Text(
-                            formatTokens(agg.total),
-                            style: const TextStyle(
-                              fontSize: AppType.uiBase,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${_gran == _HeatGran.cumulative ? '本周 ' : ''}${agg.turns} 轮 · ${agg.tools} 次工具调用',
-                        style: TextStyle(
-                          fontSize: AppType.uiXs,
-                          color: context.colors.foregroundSubtle,
-                        ),
-                      ),
-                      if (wModels.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          '模型用量',
-                          style: TextStyle(
-                            fontSize: AppType.uiXs,
-                            color: context.colors.foregroundSubtlest,
-                          ),
+                          ],
                         ),
                         const SizedBox(height: 4),
-                        for (var i = 0; i < wModels.length; i++)
-                          Padding(
-                            padding: EdgeInsets.only(top: i == 0 ? 0 : 4),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: context.charts.series[
-                                        i % context.charts.series.length],
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    wModels[i].name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: AppType.uiXs,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  formatTokens(wModels[i].tokens),
-                                  style: const TextStyle(
-                                    fontSize: AppType.uiXs,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
+                        Text(
+                          '${_gran == _HeatGran.cumulative ? '本周 ' : ''}${agg.turns} 轮 · ${agg.tools} 次工具调用',
+                          style: TextStyle(
+                            fontSize: AppType.uiXs,
+                            color: context.colors.foregroundSubtle,
+                          ),
+                        ),
+                        if (wModels.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            '模型用量',
+                            style: TextStyle(
+                              fontSize: AppType.uiXs,
+                              color: context.colors.foregroundSubtlest,
                             ),
                           ),
+                          const SizedBox(height: 4),
+                          for (var i = 0; i < wModels.length; i++)
+                            Padding(
+                              padding: EdgeInsets.only(top: i == 0 ? 0 : 4),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color:
+                                          context.charts.series[i %
+                                              context.charts.series.length],
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      wModels[i].name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: AppType.uiXs,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    formatTokens(wModels[i].tokens),
+                                    style: const TextStyle(
+                                      fontSize: AppType.uiXs,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ],
-                    ],
-                  ),
-                );
-              }),
+                    ),
+                  );
+                },
+              ),
             ] else if (_gran != _HeatGran.daily)
               Text(
                 '点击格子查看当周明细',
