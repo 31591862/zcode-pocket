@@ -2516,6 +2516,12 @@ class _ConversationPageState extends State<ConversationPage>
       _error = null;
       _stickToBottom = true;
     });
+    // 发送=回到贴底语义：清结构重锚（否则 trailing「正在思考…」占位会
+    // 插在旧锚点与新消息之间错位），同帧校正到新坐标系贴底位。
+    if (_scroll.hasClients && _listCenterItemKey != null) {
+      _listCenterItemKey = null;
+      _scroll.position.correctPixels(0);
+    }
     if (clearInput) {
       _suppressDraftSync = true;
       try {
@@ -5334,10 +5340,10 @@ class _ConversationPageState extends State<ConversationPage>
                                 _fabPointer = null;
                                 _fabPointerDown = null;
                                 if (total.distance < 8) {
-                                  debugPrint('[fab] back-to-bottom');
-                                  // 反向列表：回底=锚点复位末条，恢复
-                                  // 贴尾跟随（追加/流式不再漂移）。
-                                  _listCenterItemKey = null;
+                                  // 反向列表回底：贴尾跟随恢复。锚点保留到
+                                  // 动画落定——立即清锚会让动画中段帧渲染在
+                                  // 新坐标系的越界偏移上（闪一下）；动画
+                                  // ScrollEnd 由重贴底分支统一清锚+校正。
                                   setState(() => _stickToBottom = true);
                                   _scrollToBottom();
                                   return;
@@ -6158,10 +6164,17 @@ class _ConversationPageState extends State<ConversationPage>
                 final dist =
                     _scroll.position.pixels - _scroll.position.minScrollExtent;
                 if (dist <= 48) {
-                  if (!_stickToBottom) {
+                  // 仅 ScrollEnd 重贴底：惯性中途切锚，剩余弹道轨迹是按
+                  // 旧坐标系算的，继续喂像素=新坐标系下越界/错位渲染
+                  // （滑动回底闪一下的真机实证）；拖拽无弹道故不闪。
+                  // 静止后切换 + 同帧像素校正，无一帧越界。
+                  if (!_stickToBottom && n is ScrollEndNotification) {
                     _listCenterItemKey = null;
                     _pendingReAnchor = false;
                     setState(() => _stickToBottom = true);
+                    // 锚点 X→末条切换的同帧校正：旧坐标贴底邻域（dist≤48，
+                    // 像素可为大负数）在新坐标系（末条锚，min=0）外。
+                    _scroll.position.correctPixels(0);
                     _followUntilStable();
                   }
                 } else if (n is ScrollEndNotification) {
