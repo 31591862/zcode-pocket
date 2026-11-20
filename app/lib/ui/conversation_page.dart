@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/rendering.dart' show RenderBox;
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 
 import '../core/localized_text.dart';
 import '../core/l10n.dart';
@@ -1806,6 +1807,74 @@ class _ConversationPageState extends State<ConversationPage>
   }
 
   bool _inProgrammaticWindow() => _programmaticScrollEndSkips > 0;
+
+  /// 滚动通知统一处理（原内联闭包抽出；帧内派发的通知由调用点延帧末）。
+  bool _handleScrollEvent(ScrollNotification n) {
+    if (n is ScrollUpdateNotification && n.dragDetails != null) {
+      if (_searchOpen) _search.cancelNavigation();
+      final draggingUp = n.dragDetails!.delta.dy > 0;
+      if (draggingUp && _stickToBottom) {
+        // 只有用户真的向上拖才解除粘底（FAB 可见性联动）。
+        // 结构重锚先行（见 _reAnchorAboveRunningTurn）：锚点让位
+        // 后，运行中回合落回 origin 下方负向区，增高零位移。
+        _followTick?.cancel();
+        setState(() => _stickToBottom = false);
+        _reAnchorAboveRunningTurn();
+      } else if ((_followTick?.isActive ?? false)) {
+        _followTick?.cancel();
+      }
+    } else if ((n is ScrollEndNotification ||
+            (n is ScrollUpdateNotification && n.dragDetails == null)) &&
+        _scroll.hasClients) {
+      if (_inProgrammaticWindow()) {
+        // 自己的 jump 序列——消费豁免（每序列一个 End）。
+        if (n is ScrollEndNotification) {
+          _programmaticScrollEndSkips--;
+        }
+        return false;
+      }
+
+      if (_followingReconcileGuard > 0) {
+        return false;
+      }
+
+      // 官方落点裁决（timelineScrollAnchor nextFollowingAfterScroll，
+      // 2026-10-26 对齐批 C）：用户滚动序列（含惯性 fling）结束的
+      // 静止落点距底 ≤48 → 贴底回跟；>48 → 解除跟随——原实现仅
+      // 手指拖拽可解除，惯性滑出后被粘底 tick 拉回（自造怪象，
+      // audit §六.5 实证）。回吸保持 2026-10-23 语义（贴底即恢复）。
+      // 反向列表：距底 = pixels - minScrollExtent。
+      final dist = _scroll.position.pixels - _scroll.position.minScrollExtent;
+      if (dist <= 48) {
+        // 仅 ScrollEnd 重贴底：惯性中途切锚，剩余弹道轨迹是按
+        // 旧坐标系算的，继续喂像素=新坐标系下越界/错位渲染
+        // （滑动回底闪一下的真机实证）；拖拽无弹道故不闪。
+        // 静止后切换 + 同帧像素校正，无一帧越界。
+        if (!_stickToBottom && n is ScrollEndNotification) {
+          _listCenterItemKey = null;
+          _pendingReAnchor = false;
+          setState(() => _stickToBottom = true);
+          // 锚点 X→末条切换的同帧校正：旧坐标贴底邻域（dist≤48，
+          // 像素可为大负数）在新坐标系（末条锚，min=0）外。
+          _scroll.position.correctPixels(0);
+          _followUntilStable();
+        }
+      } else if (n is ScrollEndNotification) {
+        // 静止落点离底=结构重锚（贴底态直接重锚；惯性中途中止
+        // 的 _pendingReAnchor 在此补做）——锚点让位后阅读位置
+        // 对后续增高天然零位移，无需任何补偿。
+        _followTick?.cancel();
+        setState(() => _stickToBottom = false);
+        _reAnchorAboveRunningTurn();
+        _pendingReAnchor = false;
+      } else if (_stickToBottom) {
+        _followTick?.cancel();
+        _pendingReAnchor = true;
+        setState(() => _stickToBottom = false);
+      }
+    }
+    return false;
+  }
 
   /// 反向列表结构修复（2026-11-20 真机日志三代方案实证）：贴底锚点态
   /// 下离开底部时，把锚点移到运行中回合的**上一条目**——回合与后续
@@ -5989,72 +6058,18 @@ class _ConversationPageState extends State<ConversationPage>
             // 用户拖拽滚动时立即取消粘底跟随——否则 100ms 一次的
             // jumpTo 会把慢速上滑反复钉回底部（流式期间尤甚）。
             onNotification: (n) {
-              if (n is ScrollUpdateNotification && n.dragDetails != null) {
-                if (_searchOpen) _search.cancelNavigation();
-                final draggingUp = n.dragDetails!.delta.dy > 0;
-                if (draggingUp && _stickToBottom) {
-                  // 只有用户真的向上拖才解除粘底（FAB 可见性联动）。
-                  // 结构重锚先行（见 _reAnchorAboveRunningTurn）：锚点让位
-                  // 后，运行中回合落回 origin 下方负向区，增高零位移。
-                  _followTick?.cancel();
-                  setState(() => _stickToBottom = false);
-                  _reAnchorAboveRunningTurn();
-                } else if ((_followTick?.isActive ?? false)) {
-                  _followTick?.cancel();
-                }
-              } else if ((n is ScrollEndNotification ||
-                      (n is ScrollUpdateNotification &&
-                          n.dragDetails == null)) &&
-                  _scroll.hasClients) {
-                if (_inProgrammaticWindow()) {
-                  // 自己的 jump 序列——消费豁免（每序列一个 End）。
-                  if (n is ScrollEndNotification) {
-                    _programmaticScrollEndSkips--;
-                  }
-                  return false;
-                }
-
-                if (_followingReconcileGuard > 0) {
-                  return false;
-                }
-
-                // 官方落点裁决（timelineScrollAnchor nextFollowingAfterScroll，
-                // 2026-10-26 对齐批 C）：用户滚动序列（含惯性 fling）结束的
-                // 静止落点距底 ≤48 → 贴底回跟；>48 → 解除跟随——原实现仅
-                // 手指拖拽可解除，惯性滑出后被粘底 tick 拉回（自造怪象，
-                // audit §六.5 实证）。回吸保持 2026-10-23 语义（贴底即恢复）。
-                // 反向列表：距底 = pixels - minScrollExtent。
-                final dist =
-                    _scroll.position.pixels - _scroll.position.minScrollExtent;
-                if (dist <= 48) {
-                  // 仅 ScrollEnd 重贴底：惯性中途切锚，剩余弹道轨迹是按
-                  // 旧坐标系算的，继续喂像素=新坐标系下越界/错位渲染
-                  // （滑动回底闪一下的真机实证）；拖拽无弹道故不闪。
-                  // 静止后切换 + 同帧像素校正，无一帧越界。
-                  if (!_stickToBottom && n is ScrollEndNotification) {
-                    _listCenterItemKey = null;
-                    _pendingReAnchor = false;
-                    setState(() => _stickToBottom = true);
-                    // 锚点 X→末条切换的同帧校正：旧坐标贴底邻域（dist≤48，
-                    // 像素可为大负数）在新坐标系（末条锚，min=0）外。
-                    _scroll.position.correctPixels(0);
-                    _followUntilStable();
-                  }
-                } else if (n is ScrollEndNotification) {
-                  // 静止落点离底=结构重锚（贴底态直接重锚；惯性中途中止
-                  // 的 _pendingReAnchor 在此补做）——锚点让位后阅读位置
-                  // 对后续增高天然零位移，无需任何补偿。
-                  _followTick?.cancel();
-                  setState(() => _stickToBottom = false);
-                  _reAnchorAboveRunningTurn();
-                  _pendingReAnchor = false;
-                } else if (_stickToBottom) {
-                  _followTick?.cancel();
-                  _pendingReAnchor = true;
-                  setState(() => _stickToBottom = false);
-                }
+              // 布局期派发的 Scroll 通知（applyContentDimensions 内
+              // goIdle→ScrollEnd）里 setState 会触发 "Build scheduled
+              // during frame"（history_scroll_anchor 用例实证）——统一
+              // 延到帧末处理，帧内只做透传。
+              if (SchedulerBinding.instance.schedulerPhase ==
+                  SchedulerPhase.persistentCallbacks) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _handleScrollEvent(n);
+                });
+                return false;
               }
-              return false;
+              return _handleScrollEvent(n);
             },
             child: AnchoredChatList(
               key: const ValueKey('chat-scroll'),
