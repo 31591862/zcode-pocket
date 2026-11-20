@@ -429,7 +429,6 @@ class TurnBarState extends State<TurnBar> {
                     row: row,
                     firstSeen: widget.firstSeenOf(row),
                     elapsedMs: widget.elapsedMsOf(row),
-                    turnRunning: running,
                   ),
                   'assistantText' =>
                     // 文本选择（2026-11-16 用户拍板）：正文 selectable 化
@@ -602,10 +601,11 @@ class _RunningWorkLabelState extends State<_RunningWorkLabel> {
 /// 收起时流式显示「正在思考」+ 最后一行思考的单行摘要，完成态显示
 /// 「思考 · 持续了 N 秒」（无时长→「持续了几秒」）；静态大脑图标（长流式
 /// 不做旋转/动画省渲染）；展开为 240px 限高内滚 + 自动吸底 + 左导线。
-/// **回合运行中完成段不回落行高**（2026-11-19 用户反馈）：流式两行→
-/// 完成一行→新段再两行，在贴底反向列表里任何高度变化都移动整页内容
-/// =整页上下弹跳。运行中完成段保持两行（灰字无扫光，保留最后一行
-/// 预览），回合结束统一回落一次（AnimatedSize 平滑）。
+/// **恒定一行**（2026-11-20 用户拍板方案 A，对齐桌面）：流式与完成行高
+/// 恒定，行内文字原地更新——贴底反向列表里任何高度变化都移动整页
+/// 内容，此前「流式两行→完成一行→新段再两行」的节奏正是整页弹跳的
+/// 源头（三代补偿方案均因此而生又因此而被弃）；行高恒定后此类问题
+/// 从源头消失，补偿机制仅剩结构重锚。
 
 class ReasoningTile extends StatefulWidget {
   final Map<String, dynamic> row;
@@ -614,15 +614,10 @@ class ReasoningTile extends StatefulWidget {
   /// 页面级定格的实测时长（收起期间完成等 tile 未挂载场景的兜底）。
   final int? elapsedMs;
 
-  /// 所属回合是否运行中（TurnBar._effectiveRunning 同源）。运行中完成段
-  /// 保持两行定高防整页弹跳（见类注释）；回合结束回落一行。
-  final bool turnRunning;
-
   const ReasoningTile({
     required this.row,
     required this.firstSeen,
     this.elapsedMs,
-    this.turnRunning = false,
   });
 
   @override
@@ -735,11 +730,6 @@ class ReasoningTileState extends State<ReasoningTile> {
     firstSeen: widget.firstSeen,
   );
 
-  /// 运行中完成段保持两行定高的判定（流式分支天然两行，不走这里）：
-  /// 收起态 + 回合运行中 + 有摘要内容。展开态（_userOpen）不受影响。
-  bool get _keepLiveLines =>
-      !_userOpen && widget.turnRunning && _lastLine.isNotEmpty;
-
   @override
   Widget build(BuildContext context) {
     if (_streaming) _startTicker();
@@ -807,13 +797,14 @@ class ReasoningTileState extends State<ReasoningTile> {
                                 _streaming && !_userOpen && _lastLine.isNotEmpty
                                 ? '${_label()} · $_lastLine'
                                 : _label(),
-                            // 批4 反馈②（2026-10-23 用户）：折叠态摘要一行
-                            // 信息量太少（流速快看不清）——升两行。
-                            // 同日反馈二修（批因中途丢失重落地）：内容
-                            // 时长短 1↔2 行切换会让下方内容上蹿下跳——
-                            // minLines 固定两行占位（短句第二行留空）。
-                            maxLines: 2,
-                            minLines: 2,
+                            // 恒定一行（2026-11-20 方案 A，对齐桌面）：行内
+                            // 文字原地更新，行高永不变化——批4 两行方案
+                            // （信息量多）让位于稳定性，预览损失由展开态
+                            // 承接（点开看全文）。minLines=1 触发定高占位
+                            // （与完成态 FixedLinesText 同公式同高，
+                            // 字体自然行高会偏差 0.3px）。
+                            maxLines: 1,
+                            minLines: 1,
                             // 工作区行族 13→14（官方 text-ui-base）。
                             style: TextStyle(
                               fontSize: AppType.uiBase,
@@ -821,20 +812,11 @@ class ReasoningTileState extends State<ReasoningTile> {
                             ),
                           )
                         : FixedLinesText(
-                            // 用户拍板（2026-10-24 第二轮验收）：流式期两行
-                            // 定高（防 1↔2 行跳动），完成态回落一行高（两行
-                            // 占位在收起的流式内容族中突兀）——2→1 的高度
-                            // 收缩由整列 AnimatedSize 平滑过渡。
-                            // 2026-11-19 修订（用户反馈"整页上下弹跳"）：
-                            // 回合运行中完成段不回落——贴底反向列表里高度
-                            // 回落=整页下坠，再遇新思考段又上顶，反复弹跳。
-                            // 运行中保留「N 秒 · 最后一行」两行灰字，回合
-                            // 结束统一回落一次。
-                            text: _keepLiveLines
-                                ? '${_label()} · $_lastLine'
-                                : _label(),
-                            lines: _keepLiveLines ? 2 : 1,
-                            maxLines: _keepLiveLines ? 2 : 1,
+                            // 恒定一行（方案 A）：完成态与流式同行高，
+                            // 「思考 · N 秒」短标签垂直居中。
+                            text: _label(),
+                            lines: 1,
+                            maxLines: 1,
                             style: TextStyle(
                               fontSize: AppType.uiBase,
                               color: color,

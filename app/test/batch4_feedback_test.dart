@@ -2,7 +2,7 @@
 // ① 深色停止键黑底白标（浅色红底白标不动）
 // ②a 流式执行中从入参推 ±N（官方 fileSummaries.ts 同款时序）
 //    + file_diffs 复数形态合计（官方 readFileDiffDisplays 双形态）
-// ②b 思考条流式摘要两行（一行信息量不足）
+// ②b 思考条流式摘要（2026-11-20 方案 A 推翻批4 两行：恒定一行）
 // ③ 输入栏顺序对齐桌面：状态圈（空心）→模型药丸→发送
 // 注入路径同 ui_v4_visual_tour ：AppState 覆写 readSessionCache
 // 预渲 rows（缓存会话不建活流，widget 测试离线稳定）。
@@ -71,169 +71,169 @@ void main() {
       '{"file_path":"a.dart","old_string":"l1\\nl2","new_string":"l1\\nl2\\nl3\\nl4"}';
 
   testWidgets('②a 流式执行中：Edit 行从入参推 +4 -2（先行值）', (tester) async {
-    final app = _RowsApp(
-      [
-        {'rowId': 1, 'kind': 'userInput', 'text': '改一下'},
-        {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
-        {
-          'rowId': 3,
-          'kind': 'toolCall',
-          'toolName': 'Edit',
-          'status': 'running',
-          'inputText': editRunningInput,
-        },
-      ],
-      'running',
+    final app = _RowsApp([
+      {'rowId': 1, 'kind': 'userInput', 'text': '改一下'},
+      {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
+      {
+        'rowId': 3,
+        'kind': 'toolCall',
+        'toolName': 'Edit',
+        'status': 'running',
+        'inputText': editRunningInput,
+      },
+    ], 'running');
+    await tester.pumpWidget(
+      _host(app, const ConversationPage(sessionId: 's1', title: '批4回填')),
     );
-    await tester.pumpWidget(_host(
-        app, const ConversationPage(sessionId: 's1', title: '批4回填')));
     await _pump(tester);
     // 运行轮默认展开（批1 回合状态机），工具行常驻可见。
-    expect(find.textContaining('执行中'), findsWidgets,
-        reason: '工具行状态标签可能因多行工具同时渲染出现多份，≥1 即可');
-    expect(find.textContaining('+4'), findsOneWidget,
-        reason: '流式期应从 input 参数推新增行数（官方 fileSummaries.ts）');
-    expect(find.textContaining('-2'), findsOneWidget,
-        reason: '流式期应从 old_string 推删除行数');
+    expect(
+      find.textContaining('执行中'),
+      findsWidgets,
+      reason: '工具行状态标签可能因多行工具同时渲染出现多份，≥1 即可',
+    );
+    expect(
+      find.textContaining('+4'),
+      findsOneWidget,
+      reason: '流式期应从 input 参数推新增行数（官方 fileSummaries.ts）',
+    );
+    expect(
+      find.textContaining('-2'),
+      findsOneWidget,
+      reason: '流式期应从 old_string 推删除行数',
+    );
   });
 
   testWidgets('②a Write 流式：content 行数推 +3（无删除）', (tester) async {
-    final app = _RowsApp(
-      [
-        {'rowId': 1, 'kind': 'userInput', 'text': '新建'},
-        {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
-        {
-          'rowId': 3,
-          'kind': 'toolCall',
-          'toolName': 'Write',
-          'status': 'running',
-          'inputText': '{"path":"b.dart","content":"a\\nb\\nc"}',
-        },
-      ],
-      'running',
+    final app = _RowsApp([
+      {'rowId': 1, 'kind': 'userInput', 'text': '新建'},
+      {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
+      {
+        'rowId': 3,
+        'kind': 'toolCall',
+        'toolName': 'Write',
+        'status': 'running',
+        'inputText': '{"path":"b.dart","content":"a\\nb\\nc"}',
+      },
+    ], 'running');
+    await tester.pumpWidget(
+      _host(app, const ConversationPage(sessionId: 's1', title: '批4回填')),
     );
-    await tester.pumpWidget(_host(
-        app, const ConversationPage(sessionId: 's1', title: '批4回填')));
     await _pump(tester);
     expect(find.textContaining('+3'), findsOneWidget);
   });
 
   testWidgets('②a 非编辑类工具流式：不显示计数（Bash 无 ±N）', (tester) async {
-    final app = _RowsApp(
-      [
-        {'rowId': 1, 'kind': 'userInput', 'text': '跑测试'},
-        {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
-        {
-          'rowId': 3,
-          'kind': 'toolCall',
-          'toolName': 'Bash',
-          'status': 'running',
-          'inputText': 'npm test --integration',
-        },
-      ],
-      'running',
+    final app = _RowsApp([
+      {'rowId': 1, 'kind': 'userInput', 'text': '跑测试'},
+      {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
+      {
+        'rowId': 3,
+        'kind': 'toolCall',
+        'toolName': 'Bash',
+        'status': 'running',
+        'inputText': 'npm test --integration',
+      },
+    ], 'running');
+    await tester.pumpWidget(
+      _host(app, const ConversationPage(sessionId: 's1', title: '批4回填')),
     );
-    await tester.pumpWidget(_host(
-        app, const ConversationPage(sessionId: 's1', title: '批4回填')));
     await _pump(tester);
-    expect(find.textContaining(RegExp(r'[+-]\d')), findsNothing,
-        reason: '非编辑/写入工具不应出现 ±N 占位');
+    expect(
+      find.textContaining(RegExp(r'[+-]\d')),
+      findsNothing,
+      reason: '非编辑/写入工具不应出现 ±N 占位',
+    );
   });
 
   testWidgets('②a 完成态 file_diffs 复数形态：多文件合计 +7 -1', (tester) async {
-    final app = _RowsApp(
-      [
-        {'rowId': 1, 'kind': 'userInput', 'text': '多文件改'},
-        {'rowId': 2, 'kind': 'turnHeader', 'state': 'completedSuccess'},
-        {
-          'rowId': 3,
-          'kind': 'toolCall',
-          'toolName': 'Edit',
-          'status': 'success',
-          'inputText': '{}',
-          'output': {
-            'display': {
-              'kind': 'file_diffs',
-              'files': [
-                {'filePath': 'a.dart', 'additions': 5, 'deletions': 1},
-                {'filePath': 'b.dart', 'additions': 2, 'deletions': 0},
-              ],
-            },
+    final app = _RowsApp([
+      {'rowId': 1, 'kind': 'userInput', 'text': '多文件改'},
+      {'rowId': 2, 'kind': 'turnHeader', 'state': 'completedSuccess'},
+      {
+        'rowId': 3,
+        'kind': 'toolCall',
+        'toolName': 'Edit',
+        'status': 'success',
+        'inputText': '{}',
+        'output': {
+          'display': {
+            'kind': 'file_diffs',
+            'files': [
+              {'filePath': 'a.dart', 'additions': 5, 'deletions': 1},
+              {'filePath': 'b.dart', 'additions': 2, 'deletions': 0},
+            ],
           },
         },
-      ],
-      'idle',
+      },
+    ], 'idle');
+    await tester.pumpWidget(
+      _host(app, const ConversationPage(sessionId: 's1', title: '批4回填')),
     );
-    await tester.pumpWidget(_host(
-        app, const ConversationPage(sessionId: 's1', title: '批4回填')));
     await _pump(tester);
     // 完成轮默认收起——展开回合见工具行。
     await tester.tap(find.byIcon(Icons.expand_more).first);
     await _pump(tester);
-    expect(find.textContaining('+7'), findsOneWidget,
-        reason: 'file_diffs 复数形态应聚合各文件 additions');
+    expect(
+      find.textContaining('+7'),
+      findsOneWidget,
+      reason: 'file_diffs 复数形态应聚合各文件 additions',
+    );
     expect(find.textContaining('-1'), findsOneWidget);
   });
 
-  testWidgets('②b 思考条流式摘要两行', (tester) async {
-    final app = _RowsApp(
-      [
-        {'rowId': 1, 'kind': 'userInput', 'text': '想想'},
-        {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
-        {
-          'rowId': 3,
-          'kind': 'reasoning',
-          'state': 'streaming',
-          'text': '先看配置加载路径再排查渲染管线',
-        },
-      ],
-      'running',
+  testWidgets('②b 思考条流式摘要恒定一行（方案 A 推翻批4 两行）', (tester) async {
+    final app = _RowsApp([
+      {'rowId': 1, 'kind': 'userInput', 'text': '想想'},
+      {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
+      {
+        'rowId': 3,
+        'kind': 'reasoning',
+        'state': 'streaming',
+        'text': '先看配置加载路径再排查渲染管线',
+      },
+    ], 'running');
+    await tester.pumpWidget(
+      _host(app, const ConversationPage(sessionId: 's1', title: '批4回填')),
     );
-    await tester.pumpWidget(_host(
-        app, const ConversationPage(sessionId: 's1', title: '批4回填')));
     await _pump(tester);
     final bars = tester
         .widgetList<ShimmerText>(find.byType(ShimmerText))
         .where((w) => w.text.contains('正在思考'))
         .toList();
     expect(bars, isNotEmpty, reason: '流式思考条应存在扫光摘要');
-    expect(bars.first.maxLines, 2,
-        reason: '批4 反馈②：摘要一行信息量不足，折叠态最多两行');
-    // 对抗审查 （2026-10-24 补—— 批声称回填但从未落库，调用点
-    // 曾两次丢失）：minLines:2 必须在位（定高两行防 1↔2 行切换跳动）。
-    expect(bars.first.minLines, 2,
-        reason: '流式期定高两行占位——此断言丢失曾是「还跳」实锤根因');
+    // 方案 A（2026-11-20 用户拍板，对齐桌面）：恒定一行——流式与完成
+    // 行高一致，行内文字原地更新。minLines:1 必须在位（触发 ShimmerText
+    // 定高占位与完成态 FixedLinesText 同公式，字体自然行高偏差 0.3px）。
+    expect(bars.first.maxLines, 1, reason: '方案 A：折叠态摘要一行');
+    expect(bars.first.minLines, 1, reason: '定高一行的公式开关——丢失会退化成字体自然行高（±0.3px）');
   });
 
-  testWidgets('②b 思考条完成态一行高（用户拍板 2026-10-24 二轮：流式两行'
-      '→完成一行，收缩由 AnimatedSize 平滑）', (tester) async {
-    // 流式期 minLines:2 定高两行防跳动；完成态 FixedLinesText(lines:1)
-    // 一行高（两行占位在收起的流式内容族中突兀）——短/长句占位恒等。
+  testWidgets('②b 思考条完成态一行高（方案 A：与流式同行高恒定）', (tester) async {
+    // 完成态 FixedLinesText(lines:1) 与流式 ShimmerText(minLines:1)
+    // 同公式同高——短/长句占位恒等。
     Future<double> heightOf(String text, String state) async {
-      final app = _RowsApp(
-        [
-          {'rowId': 1, 'kind': 'userInput', 'text': '想想'},
-          {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
-          {
-            'rowId': 3,
-            'kind': 'reasoning',
-            'state': state,
-            'text': text,
-            if (state != 'streaming') 'durationMs': 5000,
-          },
-        ],
-        'running',
+      final app = _RowsApp([
+        {'rowId': 1, 'kind': 'userInput', 'text': '想想'},
+        {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
+        {
+          'rowId': 3,
+          'kind': 'reasoning',
+          'state': state,
+          'text': text,
+          if (state != 'streaming') 'durationMs': 5000,
+        },
+      ], 'running');
+      await tester.pumpWidget(
+        _host(app, const ConversationPage(sessionId: 's1', title: '批4回填')),
       );
-      await tester.pumpWidget(_host(
-          app, const ConversationPage(sessionId: 's1', title: '批4回填')));
       await _pump(tester);
       return tester.getSize(find.byType(FixedLinesText).first).height;
     }
 
     final short = await heightOf('短', 'complete');
     final long = await heightOf('很长'.padRight(400, '长'), 'complete');
-    expect(short, closeTo(long, 0.5),
-        reason: '完成态定高一行——短句/长句占位恒等');
+    expect(short, closeTo(long, 0.5), reason: '完成态定高一行——短句/长句占位恒等');
   });
 
   testWidgets('① 停止键：深色黑底白标+描边；浅色红底白标不动', (tester) async {
@@ -242,56 +242,71 @@ void main() {
       {'rowId': 2, 'kind': 'turnHeader', 'state': 'running'},
     ];
     Color bgOf(WidgetTester t) {
-      final btn = t.widget<IconButton>(find.byKey(const ValueKey('stop-button')));
+      final btn = t.widget<IconButton>(
+        find.byKey(const ValueKey('stop-button')),
+      );
       return btn.style!.backgroundColor!.resolve({})!;
     }
 
     // 深色：黑底（background）+白标（brand）。
-    await tester.pumpWidget(_host(
+    await tester.pumpWidget(
+      _host(
         _RowsApp(List.of(rows), 'running'),
         const ConversationPage(sessionId: 's1', title: '批4回填'),
-        b: Brightness.dark));
+        b: Brightness.dark,
+      ),
+    );
     await _pump(tester);
     expect(find.byKey(const ValueKey('stop-button')), findsOneWidget);
-    expect(bgOf(tester), AppThemeSpec.dark.colors.background,
-        reason: '批4 反馈①：深色停止键改黑底（红底扎眼）');
-    final darkBtn =
-        tester.widget<IconButton>(find.byKey(const ValueKey('stop-button')));
-    expect(darkBtn.style!.foregroundColor!.resolve({}),
-        AppThemeSpec.dark.colors.brand);
+    expect(
+      bgOf(tester),
+      AppThemeSpec.dark.colors.background,
+      reason: '批4 反馈①：深色停止键改黑底（红底扎眼）',
+    );
+    final darkBtn = tester.widget<IconButton>(
+      find.byKey(const ValueKey('stop-button')),
+    );
+    expect(
+      darkBtn.style!.foregroundColor!.resolve({}),
+      AppThemeSpec.dark.colors.brand,
+    );
     expect(darkBtn.style!.side, isNotNull, reason: '深色停止键带描边（浮起感）');
 
     // 浅色：红底白标保持官方系不动。
-    await tester.pumpWidget(_host(
+    await tester.pumpWidget(
+      _host(
         _RowsApp(List.of(rows), 'running'),
-        const ConversationPage(sessionId: 's1', title: '批4回填')));
+        const ConversationPage(sessionId: 's1', title: '批4回填'),
+      ),
+    );
     await _pump(tester);
-    expect(bgOf(tester), AppThemeSpec.light.colors.destructive,
-        reason: '浅色停止键保持红底（回归红线）');
+    expect(
+      bgOf(tester),
+      AppThemeSpec.light.colors.destructive,
+      reason: '浅色停止键保持红底（回归红线）',
+    );
   });
 
   testWidgets('③ 输入栏：状态圈在模型药丸左侧且为空心圈', (tester) async {
-    final app = _RowsApp(
-      [
-        {'rowId': 1, 'kind': 'userInput', 'text': 'hi'},
-        {'rowId': 2, 'kind': 'turnHeader', 'state': 'completedSuccess'},
-      ],
-      'idle',
+    final app = _RowsApp([
+      {'rowId': 1, 'kind': 'userInput', 'text': 'hi'},
+      {'rowId': 2, 'kind': 'turnHeader', 'state': 'completedSuccess'},
+    ], 'idle');
+    await tester.pumpWidget(
+      _host(app, const ConversationPage(sessionId: 's1', title: '批4回填')),
     );
-    await tester.pumpWidget(_host(
-        app, const ConversationPage(sessionId: 's1', title: '批4回填')));
     await _pump(tester);
     final dot = tester.getTopLeft(find.byKey(const ValueKey('status-dot')));
     final pill = tester.getTopLeft(find.byKey(const ValueKey('model-switch')));
-    expect(dot.dx < pill.dx, isTrue,
-        reason: '批4 反馈③：对齐桌面输入栏——状态圈在模型药丸左侧');
+    expect(dot.dx < pill.dx, isTrue, reason: '批4 反馈③：对齐桌面输入栏——状态圈在模型药丸左侧');
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('status-dot')),
         matching: find.byKey(const ValueKey('context-usage-ring')),
       ),
       findsOneWidget,
-      reason: '状态指示为上下文占用进度环（2026-10-26 对齐桌面 '
+      reason:
+          '状态指示为上下文占用进度环（2026-10-26 对齐桌面 '
           'context.tsx：底环 25%+进度弧 70%；原空心圈退役）',
     );
   });
@@ -317,8 +332,9 @@ void main() {
     // 里 EditableText 的 renderObject 是 _RenderCompositionCallback 代理
     // 壳——沿渲染树向下取真正的正文节点（selectable 路径=RenderEditable，
     // 非 selectable=RenderParagraph），两形态命中盒 API 略异，分流处理。
-    final ro = tester
-        .renderObject(find.textContaining('theme.dart', findRichText: true));
+    final ro = tester.renderObject(
+      find.textContaining('theme.dart', findRichText: true),
+    );
     RenderObject? inner;
     void walk(RenderObject n) {
       if (inner != null) return;

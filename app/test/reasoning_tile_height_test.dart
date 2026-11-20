@@ -1,7 +1,7 @@
-// 思考条行高稳定性（2026-11-19 用户反馈"整页上下弹跳"）：
-// 贴底反向列表里任何高度变化都会移动整页内容——「流式两行→完成回落
-// 一行→新段再顶两行」的反复收缩/顶起=整页弹跳。规则：回合运行中
-// 完成段保持两行定高（灰字保留末行预览），回合结束统一回落一行。
+// 思考条行高稳定性（2026-11-20 方案 A，对齐桌面）：贴底反向列表里任何
+// 高度变化都会移动整页内容——流式两行→完成一行→新段再两行的反复
+// 收缩/顶起=整页弹跳（真机三代补偿方案实证均不可持续）。方案 A：
+// **恒定一行**——流式与完成行高恒定，行内文字原地更新，高度永不变化。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcode_pocket/core/theme.dart';
@@ -15,52 +15,45 @@ Map<String, dynamic> row(String state) => {
   'text': '第一段\n正在切换 pub.dev 源',
 };
 
-Widget host(Map<String, dynamic> r, {required bool turnRunning}) => MaterialApp(
+Widget host(Map<String, dynamic> r) => MaterialApp(
   theme: buildAppTheme(),
   home: Scaffold(
-    body: ReasoningTile(
-      row: r,
-      firstSeen: DateTime.now(),
-      turnRunning: turnRunning,
-    ),
+    body: ReasoningTile(row: r, firstSeen: DateTime.now()),
   ),
 );
 
 void main() {
-  testWidgets('运行中完成段保持两行（保留末行预览），回合结束回落一行', (tester) async {
-    await tester.pumpWidget(host(row('streaming'), turnRunning: true));
-    // 流式=固定两行（ShimmerText 定高公式）；tile 本体撑满 body，不可测。
+  testWidgets('流式→完成行高恒定一行；预览随流式存在、完成消失', (tester) async {
+    await tester.pumpWidget(host(row('streaming')));
     final streamingH = tester.getSize(find.byType(ShimmerText)).height;
-
-    // 完成边沿（回合仍运行）：高度不得变化，预览保留。
-    await tester.pumpWidget(host(row('complete'), turnRunning: true));
-    await tester.pump(const Duration(milliseconds: 350));
-    final completedH = tester.getSize(find.byType(FixedLinesText)).height;
-    expect(completedH, streamingH, reason: '运行中完成段保持两行定高');
     expect(
       find.textContaining('正在切换 pub.dev 源'),
       findsOneWidget,
-      reason: '保留最后一行预览（灰字无扫光）',
+      reason: '流式摘要=「正在思考 · 最后一行」',
     );
 
-    // 回合结束：统一回落一行。
-    await tester.pumpWidget(host(row('complete'), turnRunning: false));
-    await tester.pumpAndSettle();
-    expect(
-      tester.getSize(find.byType(FixedLinesText)).height,
-      lessThan(completedH),
-      reason: '回合结束才回落一行',
-    );
-    expect(find.textContaining('正在切换 pub.dev 源'), findsNothing);
-  });
-
-  testWidgets('历史完成轮（turnRunning=false）维持一行旧行为', (tester) async {
-    await tester.pumpWidget(host(row('complete'), turnRunning: false));
+    // 完成边沿：行高不变（恒定一行），预览收起为短标签。
+    await tester.pumpWidget(host(row('complete')));
     await tester.pump(const Duration(milliseconds: 350));
+    final completedH = tester.getSize(find.byType(FixedLinesText)).height;
+    expect(completedH, streamingH, reason: '恒定一行：完成不回落行高');
     expect(
       find.textContaining('正在切换 pub.dev 源'),
       findsNothing,
-      reason: '完成轮不保留预览',
+      reason: '完成态=「思考 · 持续了 N 秒」短标签',
+    );
+  });
+
+  testWidgets('流式摘要超长截断为单行（不换行不撑高）', (tester) async {
+    final long = row('streaming')..['text'] = '第一段\n${'很长的思考内容' * 20}';
+    await tester.pumpWidget(host(long));
+    final hLong = tester.getSize(find.byType(ShimmerText)).height;
+    expect(find.textContaining('很长的思考内容'), findsOneWidget);
+    await tester.pumpWidget(host(row('streaming')));
+    expect(
+      tester.getSize(find.byType(ShimmerText)).height,
+      hLong,
+      reason: '超长摘要不得撑高行盒（恒定一行）',
     );
   });
 }
