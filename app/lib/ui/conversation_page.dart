@@ -475,6 +475,11 @@ class _ConversationPageState extends State<ConversationPage>
   /// 落点补做结构重锚。
   bool _pendingReAnchor = false;
 
+  /// 最近一次拖拽方向（true=朝历史/离开底部）。48px 回吸只对"向底部
+  /// 方向结束"的手势生效——用户主动上滑读历史、松手落在 48px 内时不
+  /// 回吸（真机实证：小上滑全被 correctPixels(0) 拽回底部=滑不动）。
+  bool _lastDragTowardOlder = false;
+
   bool _initialSubscribePending = false;
 
   // ------------------------------------------------ 会话缓存首帧（阶段 3）
@@ -1851,9 +1856,15 @@ class _ConversationPageState extends State<ConversationPage>
 
   /// 滚动通知统一处理（原内联闭包抽出；帧内派发的通知由调用点延帧末）。
   bool _handleScrollEvent(ScrollNotification n) {
+    if (n is ScrollStartNotification) {
+      // 新滚动序列开始：清掉上一手势的方向记忆（否则 FAB 回底等
+      // 程序化滚动会被旧手势的"朝历史"标记挡住回吸）。
+      _lastDragTowardOlder = false;
+    }
     if (n is ScrollUpdateNotification && n.dragDetails != null) {
       if (_searchOpen) _search.cancelNavigation();
       final draggingUp = n.dragDetails!.delta.dy > 0;
+      _lastDragTowardOlder = draggingUp;
       if (draggingUp && _stickToBottom) {
         // 只有用户真的向上拖才解除粘底（FAB 可见性联动）。
         // 结构重锚先行（见 _reAnchorAboveRunningTurn）：锚点让位
@@ -1891,9 +1902,12 @@ class _ConversationPageState extends State<ConversationPage>
         // 旧坐标系算的，继续喂像素=新坐标系下越界/错位渲染
         // （滑动回底闪一下的真机实证）；拖拽无弹道故不闪。
         // 静止后切换 + 同帧像素校正，无一帧越界。
-        if (!_stickToBottom && n is ScrollEndNotification) {
+        if (!_stickToBottom &&
+            n is ScrollEndNotification &&
+            !_lastDragTowardOlder) {
           _listCenterItemKey = null;
           _pendingReAnchor = false;
+          _lastDragTowardOlder = false;
           setState(() => _stickToBottom = true);
           // 锚点 X→末条切换的同帧校正：旧坐标贴底邻域（dist≤48，
           // 像素可为大负数）在新坐标系（末条锚，min=0）外。
