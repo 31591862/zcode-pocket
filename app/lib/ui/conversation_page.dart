@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Text;
+import 'package:flutter/rendering.dart' show RenderBox;
 
 import '../core/localized_text.dart';
 import '../core/l10n.dart';
@@ -459,6 +460,22 @@ class _ConversationPageState extends State<ConversationPage>
   /// 单源直通路径不读它。会话内保持。
   bool _statusTrayExpanded = false;
   bool _stickToBottom = true;
+
+  // ── 非贴底视口钉住（2026-11-19 用户反馈"上滑到历史后每输出一行，
+  // 页面还向下溜一行"）──
+  // 贴底反向列表：锚点条目（末条=运行中回合）增高会把上方内容顶起，
+  // 非贴底阅读历史时=视口被"自动下滑"。方案：帧末实测锚点条目高度
+  // 增量，补偿到 offset——它精确等于"上方内容被顶起的量"，且不受
+  // 历史前插/懒列表远端估算修正污染（那些只改 maxScrollExtent 不动
+  // 可视内容，曾按 max 增量补偿=真机大幅震荡，废弃）。
+  // 锚点条目身份变更（新条目追加/轮切换）与宽度重排（旋转）重置
+  // 基线不补偿；贴底态、主动导航态（center key 非空）、拖拽/动画中
+  // 只更新基线不介入。
+  final GlobalKey _liveAnchorBoxKey = GlobalKey();
+
+  /// 惯性中途中止粘底（ScrollUpdate dist>48）时置位，ScrollEnd 静止
+  /// 落点补做结构重锚。
+  bool _pendingReAnchor = false;
 
   bool _initialSubscribePending = false;
 
@@ -1821,6 +1838,7 @@ class _ConversationPageState extends State<ConversationPage>
 
   void _scrollToBottom() {
     if (!mounted || !_scroll.hasClients) return;
+    debugPrint('[jump] scrollToBottom animate');
     _scroll.animateTo(
       _scroll.position.minScrollExtent,
       duration: const Duration(milliseconds: 180),
@@ -1840,6 +1858,51 @@ class _ConversationPageState extends State<ConversationPage>
   }
 
   bool _inProgrammaticWindow() => _programmaticScrollEndSkips > 0;
+
+  /// 反向列表结构修复（2026-11-20 真机日志三代方案实证）：贴底锚点态
+  /// 下离开底部时，把锚点移到运行中回合的**上一条目**——回合与后续
+  /// 新增内容（文件卡/新回合）全部落入 origin 下方的负向区，增高向下
+  /// 生长=任何阅读位置零位移，无需补偿。
+  ///
+  /// 三代废弃方案：① maxScrollExtent 增量补偿（懒列表估算混入→大幅
+  /// 震荡）；② 锚点高度增量补偿（构建驱动跟不上 AnimatedSize 动画帧
+  /// →锯齿）；③ 帧循环驱动（锚点身份切换帧——回合收起+文件卡顶替，
+  /// 真机 -1300px——基线重置漏补）。结构修复一并消除。
+  ///
+  /// offset 平移推导：新锚点 X 底边=旧锚点顶边。旧布局 X 底边距
+  /// origin = pad+trailing+H；新布局 = pad+trailing（X 成锚点）。
+  /// X 底边可视高度相等 ⇒ P' = P − H（pad/trailing 相消，H=旧锚点
+  /// 实测高度）。P' 可为负（新 min 覆盖负向区，几何上必在范围内）。
+  void _reAnchorAboveRunningTurn() {
+    if (!mounted || !_scroll.hasClients || _listCenterItemKey != null) {
+      return;
+    }
+    // 仅末回合生长中（phase=running）才需要让位：完成会话的 ensureVisible
+    // /吸底动画同样会以"离底落点"收尾，重锚会打断其定位（expand_follow
+    // 首展用例实证）。完成态内容不再生长，贴底/离底均零位移。
+    final st = _sub?.state;
+    if (st == null || st.phase != 'running') return;
+    final items = _cachedChatItems;
+    if (items.isEmpty || items.length < 2) return;
+    final oldIdx = items.length - 1;
+    final box = _liveAnchorBoxKey.currentContext?.findRenderObject();
+    final h = box is RenderBox && box.hasSize ? box.size.height : null;
+    if (h == null || h <= 0) return;
+    final xKey = chatItemKey(items[oldIdx - 1], oldIdx - 1);
+    // P' = P − H 可为负（负向区即原锚点回合一身）：新坐标系 min 覆盖
+    // 负向区，几何上必在范围内——**不得用旧 dims clamp**（旧 min=0 会
+    // 把它钳回 0 = 视口直接跳到上一条目，真机实证）。
+    final target = _scroll.offset - h;
+    debugPrint(
+      '[reanchor] key=$xKey H=${h.toStringAsFixed(1)} '
+      '${_scroll.offset.toStringAsFixed(1)}->${target.toStringAsFixed(1)}',
+    );
+    _listCenterItemKey = xKey;
+    // correctPixels：免通知免活动的像素改写——同帧后续渲染即新布局
+    // 新像素，无一帧闪跳；clamp 仅防病态值。
+    _scroll.position.correctPixels(target);
+    setState(() {});
+  }
 
   /// 滚动记忆 upsert（官方 chatSessionScrollMemory 持续保存语义：每次
   /// 静止落点更新——不依赖退出时机）。 ：remove+assign
@@ -5271,6 +5334,7 @@ class _ConversationPageState extends State<ConversationPage>
                                 _fabPointer = null;
                                 _fabPointerDown = null;
                                 if (total.distance < 8) {
+                                  debugPrint('[fab] back-to-bottom');
                                   // 反向列表：回底=锚点复位末条，恢复
                                   // 贴尾跟随（追加/流式不再漂移）。
                                   _listCenterItemKey = null;
@@ -6060,8 +6124,11 @@ class _ConversationPageState extends State<ConversationPage>
                 final draggingUp = n.dragDetails!.delta.dy > 0;
                 if (draggingUp && _stickToBottom) {
                   // 只有用户真的向上拖才解除粘底（FAB 可见性联动）。
+                  // 结构重锚先行（见 _reAnchorAboveRunningTurn）：锚点让位
+                  // 后，运行中回合落回 origin 下方负向区，增高零位移。
                   _followTick?.cancel();
                   setState(() => _stickToBottom = false);
+                  _reAnchorAboveRunningTurn();
                 } else if ((_followTick?.isActive ?? false)) {
                   _followTick?.cancel();
                 }
@@ -6093,11 +6160,21 @@ class _ConversationPageState extends State<ConversationPage>
                 if (dist <= 48) {
                   if (!_stickToBottom) {
                     _listCenterItemKey = null;
+                    _pendingReAnchor = false;
                     setState(() => _stickToBottom = true);
                     _followUntilStable();
                   }
+                } else if (n is ScrollEndNotification) {
+                  // 静止落点离底=结构重锚（贴底态直接重锚；惯性中途中止
+                  // 的 _pendingReAnchor 在此补做）——锚点让位后阅读位置
+                  // 对后续增高天然零位移，无需任何补偿。
+                  _followTick?.cancel();
+                  setState(() => _stickToBottom = false);
+                  _reAnchorAboveRunningTurn();
+                  _pendingReAnchor = false;
                 } else if (_stickToBottom) {
                   _followTick?.cancel();
+                  _pendingReAnchor = true;
                   setState(() => _stickToBottom = false);
                 }
                 _saveScrollMemory();
@@ -6238,6 +6315,10 @@ class _ConversationPageState extends State<ConversationPage>
                 if (item is UserItem &&
                     intOf(item.row['rowId']) == _jumpAlignRowId) {
                   child = KeyedSubtree(key: _jumpAlignKey, child: child);
+                }
+                if (idx == centerIndex) {
+                  // 锚点条目：供帧末高度测量（视口钉住）。
+                  child = KeyedSubtree(key: _liveAnchorBoxKey, child: child);
                 }
                 final fresh = _seenRowKeys.add(itemKey);
                 // 原 Builder 只为收集 itemContext
