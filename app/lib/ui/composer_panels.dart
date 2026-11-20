@@ -222,7 +222,6 @@ Future<void> showModelSheet(
   /// 思考档被联动作废（新模型不含旧档）时的清除回调——页面挂起值同步
   /// 清除（#7：弹层清了、页面照旧提交=白清）。
   VoidCallback? onDraftThoughtCleared,
-  VoidCallback? onClearDraft,
 }) async {
   final app = AppStateScope.of(context);
   await showModalBottomSheet<void>(
@@ -246,7 +245,6 @@ Future<void> showModelSheet(
         onDraftModel: onDraftModel,
         onDraftThought: onDraftThought,
         onDraftThoughtCleared: onDraftThoughtCleared,
-        onClearDraft: onClearDraft,
       ),
     ),
   );
@@ -273,7 +271,6 @@ class _ModelSheetLoader extends StatefulWidget {
   final void Function(String provider, String model)? onDraftModel;
   final void Function(String value)? onDraftThought;
   final VoidCallback? onDraftThoughtCleared;
-  final VoidCallback? onClearDraft;
 
   const _ModelSheetLoader({
     required this.app,
@@ -285,7 +282,6 @@ class _ModelSheetLoader extends StatefulWidget {
     this.onDraftModel,
     this.onDraftThought,
     this.onDraftThoughtCleared,
-    this.onClearDraft,
   });
 
   @override
@@ -707,7 +703,6 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
         onDraftModel: widget.onDraftModel,
         onDraftThought: widget.onDraftThought,
         onDraftThoughtCleared: widget.onDraftThoughtCleared,
-        onClearDraft: widget.onClearDraft,
         onRetry: _fetch,
       );
     }
@@ -721,7 +716,6 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
       onDraftModel: widget.onDraftModel,
       onDraftThought: widget.onDraftThought,
       onDraftThoughtCleared: widget.onDraftThoughtCleared,
-      onClearDraft: widget.onClearDraft,
       onRetry: _fetch,
     );
   }
@@ -918,7 +912,6 @@ class _ModelSheet extends StatefulWidget {
   final void Function(String provider, String model)? onDraftModel;
   final void Function(String value)? onDraftThought;
   final VoidCallback? onDraftThoughtCleared;
-  final VoidCallback? onClearDraft;
   final VoidCallback onRetry;
 
   const _ModelSheet({
@@ -931,7 +924,6 @@ class _ModelSheet extends StatefulWidget {
     this.onDraftModel,
     this.onDraftThought,
     this.onDraftThoughtCleared,
-    this.onClearDraft,
     required this.onRetry,
   });
 
@@ -943,8 +935,6 @@ class _ModelSheetState extends State<_ModelSheet> {
   late String? _draftProvider = widget.pendingModelProvider;
   late String? _draftModel = widget.pendingModelId;
   late String? _draftThought = widget.pendingThought;
-
-  bool get _hasDraft => _draftModel != null || _draftThought != null;
 
   /// 视觉代理复验（2026-10-17 夜）：目录分区标题与选项 chips 均为服务端
   /// 英文——中文界面基准下做已知词映射，未知原样透传。
@@ -1155,34 +1145,6 @@ class _ModelSheetState extends State<_ModelSheet> {
           },
         ),
       );
-    }
-    if (_hasDraft) {
-      sections.addAll([
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                '选择将随下一条消息发送时生效（桌面同款语义）',
-                style: TextStyle(
-                  fontSize: AppType.uiCaption,
-                  color: context.colors.linkBlue,
-                ),
-              ),
-            ),
-            // 唯一取消挂起的入口（模型+思考档一并清除）。
-            TextButton(
-              onPressed: () => setState(() {
-                _draftProvider = null;
-                _draftModel = null;
-                _draftThought = null;
-                widget.onClearDraft?.call();
-              }),
-              child: const Text('清除挂起'),
-            ),
-          ],
-        ),
-      ]);
     }
     if (options.isEmpty) {
       sections.addAll([

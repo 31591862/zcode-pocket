@@ -5898,11 +5898,6 @@ class _ConversationPageState extends State<ConversationPage>
       // 弹层联动作废思考档（新模型不含旧档）：页面挂起值同步清除——
       // 否则发送时照旧提交不支持的思考档（弹层与页面两份真值漂移）。
       onDraftThoughtCleared: () => setState(() => _pendingThought = null),
-      onClearDraft: () => setState(() {
-        _pendingModelProvider = null;
-        _pendingModelId = null;
-        _pendingThought = null;
-      }),
     );
   }
 
