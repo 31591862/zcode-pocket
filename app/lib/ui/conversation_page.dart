@@ -651,6 +651,9 @@ class _ConversationPageState extends State<ConversationPage>
 
   /// 用量详情卡（状态点开关）：entitlement/重置机会拉取缓存。
   bool _usageCardOpen = false;
+
+  /// 悬浮层矩形锚（外点关闭用：卡内点击排除）。
+  final GlobalKey _floatingLayerKey = GlobalKey();
   Map<String, dynamic>? _entCache;
   // 验收#2：缓存所属套餐档——档位切换后旧快照不得复用。
   String? _entCachePlanKind;
@@ -3714,6 +3717,31 @@ class _ConversationPageState extends State<ConversationPage>
     return (used / max).clamp(0.0, 1.0);
   }
 
+  /// 悬浮层外点关闭（见 body Listener 注释）。
+  void _maybeDismissFloating(PointerDownEvent event) {
+    final open =
+        _usageCardOpen ||
+        _slashCandidates.isNotEmpty ||
+        _fileCandidates.isNotEmpty;
+    if (!open) return;
+    final ctx = _floatingLayerKey.currentContext;
+    if (ctx != null) {
+      final box = ctx.findRenderObject();
+      if (box is RenderBox &&
+          box.attached &&
+          (box.localToGlobal(Offset.zero) & box.size).contains(
+            event.position,
+          )) {
+        return;
+      }
+    }
+    setState(() {
+      _usageCardOpen = false;
+      _slashCandidates = const [];
+      _fileCandidates = const [];
+    });
+  }
+
   /// 状态点开关：用量详情卡（桌面绿色圆圈悬停卡的手机等价物——
   /// 用户 2026-10-17 提议，点击开/再点关）。首次开启拉一次额度快照。
   void _toggleUsageCard() {
@@ -4915,107 +4943,61 @@ class _ConversationPageState extends State<ConversationPage>
           child: Container(height: 1, color: context.colors.border),
         ),
       ),
-      body: Column(
-        children: [
-          if (_searchOpen)
-            ConversationSearchBar(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              query: _searchController.text,
-              matches: _searchMatches,
-              activeIndex: _searchActiveIndex,
-              loading: _searchLoading,
-              truncated: _searchTruncated,
-              error: _searchError,
-              partialNotice: _searchPartialNotice,
-              onChanged: _onConversationSearchChanged,
-              onPrevious: () => _stepConversationSearch(-1),
-              onNext: () => _stepConversationSearch(1),
-              onClose: _closeConversationSearch,
-              onRetry: _search.retry,
-            ),
-          // 桥降级/恢复期反馈（统一叙事的一部分）：会话页不再静默
-          if (state != null && app2.phase != LinkPhase.online)
-            Material(
-              color: context.colors.linkBlue.withValues(alpha: AppAlpha.light),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 5,
-                ),
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        // （2026-10-26 断线批）：relay 已连而桥未建时
-                        // "连接恢复中"是假话——横幅说正在恢复工作区；
-                        // 其余档的括号内容来自 computeStatusDetail（不再
-                        // 出现空括号——此前 error/reconnecting 档返回空串）。
-                        app2.workspaceRestoring
-                            ? '连接已恢复，正在重新打开工作区…'
-                            : '连接恢复中…（${tr(app2.phaseDetail ?? '网络波动')}）消息将在恢复后继续',
-                        style: TextStyle(
-                          fontSize: AppType.uiXs,
-                          color: context.colors.linkBlue,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+      body: Listener(
+        // 悬浮层外点关闭（2026-11-20 用户反馈：输入栏周围点不关）：
+        // 页面级指针按下即判——落在浮动卡矩形内不关（卡内按钮照常），
+        // 其余任意位置关闭用量卡/能力面板。审批横幅在卡矩形内不受影响。
+        onPointerDown: _maybeDismissFloating,
+        child: Column(
+          children: [
+            if (_searchOpen)
+              ConversationSearchBar(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                query: _searchController.text,
+                matches: _searchMatches,
+                activeIndex: _searchActiveIndex,
+                loading: _searchLoading,
+                truncated: _searchTruncated,
+                error: _searchError,
+                partialNotice: _searchPartialNotice,
+                onChanged: _onConversationSearchChanged,
+                onPrevious: () => _stepConversationSearch(-1),
+                onNext: () => _stepConversationSearch(1),
+                onClose: _closeConversationSearch,
+                onRetry: _search.retry,
               ),
-            ),
-          // 缓存同步中提示（阶段 3）：当前内容来自本地缓存（页面预渲或
-          // 订阅种子），实时帧到达后自动切换（点按可重试订阅）。
-          if (_cachePreview != null &&
-                  (state == null || (!state.ready && state.rows.isEmpty)) ||
-              _sub != null &&
-                  state != null &&
-                  state.ready &&
-                  !_sub!.hasLiveFrames)
-            Material(
-              key: const ValueKey('cache-sync-strip'),
-              // strip 只认订阅错误专档（_syncError）——
-              // 发送/停止失败渗入 _error 时不得被误标成「同步失败」。
-              color:
-                  (_syncError == null
-                          ? context.colors.linkBlue
-                          : context.colors.destructive)
-                      .withValues(alpha: AppAlpha.faint),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 5,
+            // 桥降级/恢复期反馈（统一叙事的一部分）：会话页不再静默
+            if (state != null && app2.phase != LinkPhase.online)
+              Material(
+                color: context.colors.linkBlue.withValues(
+                  alpha: AppAlpha.light,
                 ),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _syncError == null ? null : _retrySubscribe,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 5,
+                  ),
                   child: Row(
                     children: [
-                      if (_syncError == null)
-                        const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      else
-                        const Icon(Icons.error_outline, size: 13),
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          _syncError == null
-                              ? '正在同步最新消息…（当前显示本地缓存）'
-                              : '同步失败：$_syncError（当前显示本地缓存，点按重试）',
+                          // （2026-10-26 断线批）：relay 已连而桥未建时
+                          // "连接恢复中"是假话——横幅说正在恢复工作区；
+                          // 其余档的括号内容来自 computeStatusDetail（不再
+                          // 出现空括号——此前 error/reconnecting 档返回空串）。
+                          app2.workspaceRestoring
+                              ? '连接已恢复，正在重新打开工作区…'
+                              : '连接恢复中…（${tr(app2.phaseDetail ?? '网络波动')}）消息将在恢复后继续',
                           style: TextStyle(
                             fontSize: AppType.uiXs,
-                            color: _syncError == null
-                                ? context.colors.linkBlue
-                                : context.colors.destructive,
+                            color: context.colors.linkBlue,
                           ),
                         ),
                       ),
@@ -5023,785 +5005,845 @@ class _ConversationPageState extends State<ConversationPage>
                   ),
                 ),
               ),
-            ),
-          // 发送类错误显示顶部横幅；订阅类错误在内容区带重试按钮展示。
-          // 回合失败可见性（介入点 2 实锤修复）：createSession 已受理但
-          // 服务端约 200ms 打挂回合（phase=error，如选了不可用模型）——
-          // 此前零提示用户只能干等。与发送错误同横幅。
-          // （2026-10-19 审查）：原门禁 `_sub?.state != null` 把草稿态
-          // （无订阅）的发送错误全部吞掉——createSession 本身失败时界面
-          // 退回"发送第一条消息"零提示。现在 _error 在草稿态或已有订阅
-          // 时都渲染；已有会话的 phase=error 路径语义不变（订阅失败仍由
-          // 内容区加载态+重试呈现，不进本横幅）。
-          if ((_error != null && (_sub?.state != null || _sessionId == null)) ||
-              (_sub?.state != null &&
-                  _sub!.state.phase == 'error' &&
-                  !_sub!.state.isRunning))
-            Material(
-              color: context.colors.destructive.withValues(
-                alpha: AppAlpha.faint,
-              ),
-              child: Padding(
-                // 独立视觉复核必修3（2026-11-07）：3 行形态时 6dp 上下
-                // 内距糊成红墙——提到 12dp（横向 16 不变）。
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      size: 14,
-                      color: context.colors.destructive,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _error ??
-                            '这条消息服务端处理失败（常见原因：所选模型不可'
-                                '用）。换模型后重发即可',
-                        style: TextStyle(
-                          fontSize: AppType.uiXs,
-                          color: context.colors.destructive,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, viewportCons) {
-                // 视口缩小（键盘弹起/输入卡多行展开）时粘底跟随——
-                // ListView 视口变小不会自动滚，最后一条会沉到输入卡后
-                // （用户实锤「输入框展开挡住对话底部」）。
-                final last = _lastViewportH;
-                if (last != null &&
-                    viewportCons.maxHeight < last - 1 &&
-                    _stickToBottom) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) _jumpToBottom();
-                  });
-                }
-                _lastViewportH = viewportCons.maxHeight;
-                // 视口缩小（键盘弹起/审批横幅出现）后旧停靠位可能沉出
-                // 界外被 Stack 裁掉——拉回界内（球消失的用户观感即此）。
-                final rest = _fabRest;
-                final maxDx = viewportCons.maxWidth - 48;
-                final maxDy = viewportCons.maxHeight - 48;
-                if (_fabDragging == null &&
-                    rest != null &&
-                    maxDx >= 0 &&
-                    maxDy >= 0 &&
-                    (rest.dx > maxDx || rest.dy > maxDy)) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) {
-                      setState(() {
-                        _fabRest = Offset(
-                          rest.dx.clamp(0.0, maxDx),
-                          rest.dy.clamp(0.0, maxDy),
-                        );
-                      });
-                    }
-                  });
-                }
-                return GestureDetector(
-                  // 验收①：详情卡开着时，点消息区任意位置收起（除绿点开关
-                  // 外的第二关闭路径，桌面 hover 消失语义的手机等价）。
-                  behavior: HitTestBehavior.translucent,
-                  onTap: _usageCardOpen
-                      ? () => setState(() => _usageCardOpen = false)
-                      : null,
-                  // 验收（2026-10-18）：内容不足一屏时列表不参与手势竞争，
-                  // 竖向下滑由此兜底接收 → 收起输入法（可滚动时列表胜出，
-                  // 既有 滚动收键盘路径不变）。
-                  onVerticalDragEnd: (_) => _inputFocusNode.unfocus(),
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        // 缓存首帧（阶段 3）：live 快照未到且本地缓存可用 →
-                        // 先渲缓存（复用同一渲染器），快照到达自动让位。
-                        child: () {
-                          final cacheState =
-                              (state == null ||
-                                  (!state.ready && state.rows.isEmpty))
-                              ? _cachePreview
-                              : null;
-                          if (cacheState != null) {
-                            return _buildMessageList(cacheState);
-                          }
-                          return state == null
-                              ? _buildLoadingOrDraft()
-                              : _buildMessageList(state);
-                        }(),
-                      ),
-                      // 回到底部（官方常见聊天 UX；回溯历史后一键回底）。
-                      // 2026-10-22 用户反馈补：悬浮球可拖动、松手吸左右边
-                      // （tap=跳底，pan=拖动，手势不冲突）。
-                      // 2026-10-25 问题②：缓存预渲期也要有——冻结重进
-                      // live state 尚未就绪时列表已是缓存渲染，用户上滑
-                      // 翻读后没箭头回不了底（真机实锤「展开之后没有
-                      // 一键到底」的主场景）。
-                      // 悬浮卡（批⑥ 2026-11-18 用户拍板）：技能/审批卡
-                      // 与用量详情卡改**悬浮**——不再挤占消息列表高度。
-                      // 钉在列表底部=输入栏正上方；列表内容从卡下滚过。
-                      // 阴影用列级柔光（两卡各自容器不动）。
-                      if (state != null &&
-                          (state.pendingInteractions.isNotEmpty ||
-                              _usageCardOpen ||
-                              _slashCandidates.isNotEmpty ||
-                              _fileCandidates.isNotEmpty))
-                        Positioned(
-                          left: 10,
-                          right: 10,
-                          bottom: 6,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.18),
-                                  blurRadius: 24,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (_usageCardOpen)
-                                  Builder(
-                                    builder: (_) {
-                                      final cwNow =
-                                          state.usage?['contextWindow'];
-                                      final bdNow = cwNow is Map
-                                          ? cwNow['breakdown']
-                                          : null;
-                                      if (bdNow is List && bdNow.isNotEmpty) {
-                                        _lastBreakdown[_sessionId ?? ''] = bdNow
-                                            .whereType<Map>()
-                                            .toList();
-                                      }
-                                      return ConstrainedBox(
-                                        constraints: BoxConstraints(
-                                          maxHeight:
-                                              MediaQuery.sizeOf(context)
-                                                  .height *
-                                              0.55,
-                                        ),
-                                        child: SingleChildScrollView(
-                                          keyboardDismissBehavior:
-                                              ScrollViewKeyboardDismissBehavior
-                                                  .onDrag,
-                                          child: ContextDetailsCard(
-                                            state: state,
-                                            entitlement: _entCache,
-                                            entitlementLoading: _entLoading,
-                                            resetStatus: _resetStatusCache,
-                                            onUseReset: _useReset,
-                                            cachedBreakdown:
-                                                _lastBreakdown[_sessionId ??
-                                                    ''],
-                                            onCompact: _sessionId != null
-                                                ? () => _sendCompact(
-                                                    AppStateScope.of(context),
-                                                  )
-                                                : null,
-                                            onDrillDown: _sessionId != null
-                                                ? () => Navigator.of(context).push(
-                                                    MaterialPageRoute(
-                                                      builder: (_) =>
-                                                          ContextCompositionPage(
-                                                            sessionId:
-                                                                _sessionId!,
-                                                          ),
-                                                    ),
-                                                  )
-                                                : null,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                if (state.pendingInteractions.isNotEmpty)
-                                  SlideIn(
-                                    child: InteractionBanner(
-                                      state: state,
-                                      sessionId: _sessionId,
-                                    ),
-                                  ),
-                                // 能力选择卡（命令·能力/文件面板）同入悬浮
-                                // 层（批⑥ 2026-11-18 用户拍板：不再顶内容）。
-                                ComposerPanels(
-                                  slashCandidates: _slashCandidates,
-                                  fileCandidates: _fileCandidates,
-                                  onPick: _insertCompletion,
-                                  // ②：不选也能收起（原仅输入变化路径可关
-                                  // ——空输入时触不到）。
-                                  onClose: () => setState(() {
-                                    _slashCandidates = const [];
-                                    _fileCandidates = const [];
-                                  }),
-                                ),
-                              ],
+            // 缓存同步中提示（阶段 3）：当前内容来自本地缓存（页面预渲或
+            // 订阅种子），实时帧到达后自动切换（点按可重试订阅）。
+            if (_cachePreview != null &&
+                    (state == null || (!state.ready && state.rows.isEmpty)) ||
+                _sub != null &&
+                    state != null &&
+                    state.ready &&
+                    !_sub!.hasLiveFrames)
+              Material(
+                key: const ValueKey('cache-sync-strip'),
+                // strip 只认订阅错误专档（_syncError）——
+                // 发送/停止失败渗入 _error 时不得被误标成「同步失败」。
+                color:
+                    (_syncError == null
+                            ? context.colors.linkBlue
+                            : context.colors.destructive)
+                        .withValues(alpha: AppAlpha.faint),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 5,
+                  ),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _syncError == null ? null : _retrySubscribe,
+                    child: Row(
+                      children: [
+                        if (_syncError == null)
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          const Icon(Icons.error_outline, size: 13),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _syncError == null
+                                ? '正在同步最新消息…（当前显示本地缓存）'
+                                : '同步失败：$_syncError（当前显示本地缓存，点按重试）',
+                            style: TextStyle(
+                              fontSize: AppType.uiXs,
+                              color: _syncError == null
+                                  ? context.colors.linkBlue
+                                  : context.colors.destructive,
                             ),
                           ),
                         ),
-                      if ((state != null || _cachePreview != null) &&
-                          !_stickToBottom)
-                        () {
-                          Offset fabDefault() => Offset(
-                            viewportCons.maxWidth - 48 - 14,
-                            viewportCons.maxHeight - 48 - 14,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            // 发送类错误显示顶部横幅；订阅类错误在内容区带重试按钮展示。
+            // 回合失败可见性（介入点 2 实锤修复）：createSession 已受理但
+            // 服务端约 200ms 打挂回合（phase=error，如选了不可用模型）——
+            // 此前零提示用户只能干等。与发送错误同横幅。
+            // （2026-10-19 审查）：原门禁 `_sub?.state != null` 把草稿态
+            // （无订阅）的发送错误全部吞掉——createSession 本身失败时界面
+            // 退回"发送第一条消息"零提示。现在 _error 在草稿态或已有订阅
+            // 时都渲染；已有会话的 phase=error 路径语义不变（订阅失败仍由
+            // 内容区加载态+重试呈现，不进本横幅）。
+            if ((_error != null &&
+                    (_sub?.state != null || _sessionId == null)) ||
+                (_sub?.state != null &&
+                    _sub!.state.phase == 'error' &&
+                    !_sub!.state.isRunning))
+              Material(
+                color: context.colors.destructive.withValues(
+                  alpha: AppAlpha.faint,
+                ),
+                child: Padding(
+                  // 独立视觉复核必修3（2026-11-07）：3 行形态时 6dp 上下
+                  // 内距糊成红墙——提到 12dp（横向 16 不变）。
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 14,
+                        color: context.colors.destructive,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _error ??
+                              '这条消息服务端处理失败（常见原因：所选模型不可'
+                                  '用）。换模型后重发即可',
+                          style: TextStyle(
+                            fontSize: AppType.uiXs,
+                            color: context.colors.destructive,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, viewportCons) {
+                  // 视口缩小（键盘弹起/输入卡多行展开）时粘底跟随——
+                  // ListView 视口变小不会自动滚，最后一条会沉到输入卡后
+                  // （用户实锤「输入框展开挡住对话底部」）。
+                  final last = _lastViewportH;
+                  if (last != null &&
+                      viewportCons.maxHeight < last - 1 &&
+                      _stickToBottom) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) _jumpToBottom();
+                    });
+                  }
+                  _lastViewportH = viewportCons.maxHeight;
+                  // 视口缩小（键盘弹起/审批横幅出现）后旧停靠位可能沉出
+                  // 界外被 Stack 裁掉——拉回界内（球消失的用户观感即此）。
+                  final rest = _fabRest;
+                  final maxDx = viewportCons.maxWidth - 48;
+                  final maxDy = viewportCons.maxHeight - 48;
+                  if (_fabDragging == null &&
+                      rest != null &&
+                      maxDx >= 0 &&
+                      maxDy >= 0 &&
+                      (rest.dx > maxDx || rest.dy > maxDy)) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        setState(() {
+                          _fabRest = Offset(
+                            rest.dx.clamp(0.0, maxDx),
+                            rest.dy.clamp(0.0, maxDy),
                           );
-                          final fabPos =
-                              _fabDragging ?? _fabRest ?? fabDefault();
-                          // 2026-11-05 反馈③（A 一次性引导）：悬浮球首次
-                          // 出现时 SnackBar 提示长按菜单，持久化标记只提
-                          // 一次（每页 State 只查一次，读写走 postFrame）。
-                          if (!_fabHintChecked) {
-                            _fabHintChecked = true;
-                            // asserts 态（flutter test 全生态）抑制引导：
-                            // 测试环境 UiPrefs 恒为未展示，SnackBar 会混进
-                            // 像素基线且动画帧不定；release/profile 真机
-                            // 照常展示一次。
-                            bool assertsOn = false;
-                            assert(() {
-                              assertsOn = true;
-                              return true;
-                            }());
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!mounted ||
-                                  (assertsOn &&
-                                      !ConversationPage.debugFabHintForce)) {
-                                return;
-                              }
-                              final app = AppStateScope.of(context);
-                              if (app.uiPrefs.fabMenuHintShown) return;
-                              app.uiPrefs.setFabMenuHintShown();
-                              // 引导改悬浮卡（批①）：黑条 SnackBar 改与
-                              // 被引导对象（悬浮球）同位的悬浮小卡。
-                              if (mounted) {
-                                setState(() => _fabHintVisible = true);
-                                _fabHintTimer?.cancel();
-                                _fabHintTimer = Timer(
-                                  const Duration(seconds: 4),
-                                  () {
-                                    if (mounted) {
-                                      setState(() => _fabHintVisible = false);
-                                    }
-                                  },
-                                );
-                              }
-                            });
-                          }
-                          return AnimatedPositioned(
-                            key: const ValueKey('jump-bottom'),
-                            duration: _fabDragging == null
-                                ? const Duration(milliseconds: 250)
-                                : Duration.zero,
-                            curve: Curves.easeOutCubic,
-                            left: fabPos.dx,
-                            top: fabPos.dy,
-                            child: Listener(
-                              behavior: HitTestBehavior.opaque,
-                              onPointerDown: (e) {
-                                _fabPointer = e.pointer;
-                                _fabPointerDown = e.position;
-                                _fabDragStartPos = fabPos;
-                                _fabLongPressTriggered = false;
-                              },
-                              onPointerMove: (e) {
-                                if (e.pointer != _fabPointer ||
-                                    _fabPointerDown == null) {
-                                  return;
-                                }
-                                final total = e.position - _fabPointerDown!;
-                                if (total.distance < 4) return; // 抖动死区
-                                setState(() {
-                                  _fabDragging = Offset(
-                                    // 视口 <48px
-                                    // 时上限为负=clamp 抛 ArgumentError
-                                    // ——上限先钳到 ≥0。
-                                    (_fabDragStartPos!.dx + total.dx).clamp(
-                                      0.0,
-                                      math.max(0.0, viewportCons.maxWidth - 48),
+                        });
+                      }
+                    });
+                  }
+                  return GestureDetector(
+                    // 验收①：详情卡开着时，点消息区任意位置收起（除绿点开关
+                    // 外的第二关闭路径，桌面 hover 消失语义的手机等价）。
+                    behavior: HitTestBehavior.translucent,
+                    onTap: _usageCardOpen
+                        ? () => setState(() => _usageCardOpen = false)
+                        : null,
+                    // 验收（2026-10-18）：内容不足一屏时列表不参与手势竞争，
+                    // 竖向下滑由此兜底接收 → 收起输入法（可滚动时列表胜出，
+                    // 既有 滚动收键盘路径不变）。
+                    onVerticalDragEnd: (_) => _inputFocusNode.unfocus(),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          // 缓存首帧（阶段 3）：live 快照未到且本地缓存可用 →
+                          // 先渲缓存（复用同一渲染器），快照到达自动让位。
+                          child: () {
+                            final cacheState =
+                                (state == null ||
+                                    (!state.ready && state.rows.isEmpty))
+                                ? _cachePreview
+                                : null;
+                            if (cacheState != null) {
+                              return _buildMessageList(cacheState);
+                            }
+                            return state == null
+                                ? _buildLoadingOrDraft()
+                                : _buildMessageList(state);
+                          }(),
+                        ),
+                        // 回到底部（官方常见聊天 UX；回溯历史后一键回底）。
+                        // 2026-10-22 用户反馈补：悬浮球可拖动、松手吸左右边
+                        // （tap=跳底，pan=拖动，手势不冲突）。
+                        // 2026-10-25 问题②：缓存预渲期也要有——冻结重进
+                        // live state 尚未就绪时列表已是缓存渲染，用户上滑
+                        // 翻读后没箭头回不了底（真机实锤「展开之后没有
+                        // 一键到底」的主场景）。
+                        // 悬浮卡（批⑥ 2026-11-18 用户拍板）：技能/审批卡
+                        // 与用量详情卡改**悬浮**——不再挤占消息列表高度。
+                        // 钉在列表底部=输入栏正上方；列表内容从卡下滚过。
+                        // 阴影用列级柔光（两卡各自容器不动）。
+                        if (state != null &&
+                            (state.pendingInteractions.isNotEmpty ||
+                                _usageCardOpen ||
+                                _slashCandidates.isNotEmpty ||
+                                _fileCandidates.isNotEmpty))
+                          Positioned(
+                            left: 10,
+                            right: 10,
+                            bottom: 6,
+                            child: Container(
+                              key: _floatingLayerKey,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.18),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  if (_usageCardOpen)
+                                    Builder(
+                                      builder: (_) {
+                                        final cwNow =
+                                            state.usage?['contextWindow'];
+                                        final bdNow = cwNow is Map
+                                            ? cwNow['breakdown']
+                                            : null;
+                                        if (bdNow is List && bdNow.isNotEmpty) {
+                                          _lastBreakdown[_sessionId ?? ''] =
+                                              bdNow.whereType<Map>().toList();
+                                        }
+                                        return ConstrainedBox(
+                                          constraints: BoxConstraints(
+                                            maxHeight:
+                                                MediaQuery.sizeOf(context)
+                                                    .height *
+                                                0.55,
+                                          ),
+                                          child: SingleChildScrollView(
+                                            keyboardDismissBehavior:
+                                                ScrollViewKeyboardDismissBehavior
+                                                    .onDrag,
+                                            child: ContextDetailsCard(
+                                              state: state,
+                                              entitlement: _entCache,
+                                              entitlementLoading: _entLoading,
+                                              resetStatus: _resetStatusCache,
+                                              onUseReset: _useReset,
+                                              cachedBreakdown:
+                                                  _lastBreakdown[_sessionId ??
+                                                      ''],
+                                              onCompact: _sessionId != null
+                                                  ? () => _sendCompact(
+                                                      AppStateScope.of(context),
+                                                    )
+                                                  : null,
+                                              onDrillDown: _sessionId != null
+                                                  ? () => Navigator.of(context).push(
+                                                      MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            ContextCompositionPage(
+                                                              sessionId:
+                                                                  _sessionId!,
+                                                            ),
+                                                      ),
+                                                    )
+                                                  : null,
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
-                                    (_fabDragStartPos!.dy + total.dy).clamp(
-                                      0.0,
-                                      math.max(
-                                        0.0,
-                                        viewportCons.maxHeight - 48,
+                                  if (state.pendingInteractions.isNotEmpty)
+                                    SlideIn(
+                                      child: InteractionBanner(
+                                        state: state,
+                                        sessionId: _sessionId,
                                       ),
                                     ),
+                                  // 能力选择卡（命令·能力/文件面板）同入悬浮
+                                  // 层（批⑥ 2026-11-18 用户拍板：不再顶内容）。
+                                  ComposerPanels(
+                                    slashCandidates: _slashCandidates,
+                                    fileCandidates: _fileCandidates,
+                                    onPick: _insertCompletion,
+                                    // ②：不选也能收起（原仅输入变化路径可关
+                                    // ——空输入时触不到）。
+                                    onClose: () => setState(() {
+                                      _slashCandidates = const [];
+                                      _fileCandidates = const [];
+                                    }),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if ((state != null || _cachePreview != null) &&
+                            !_stickToBottom)
+                          () {
+                            Offset fabDefault() => Offset(
+                              viewportCons.maxWidth - 48 - 14,
+                              viewportCons.maxHeight - 48 - 14,
+                            );
+                            final fabPos =
+                                _fabDragging ?? _fabRest ?? fabDefault();
+                            // 2026-11-05 反馈③（A 一次性引导）：悬浮球首次
+                            // 出现时 SnackBar 提示长按菜单，持久化标记只提
+                            // 一次（每页 State 只查一次，读写走 postFrame）。
+                            if (!_fabHintChecked) {
+                              _fabHintChecked = true;
+                              // asserts 态（flutter test 全生态）抑制引导：
+                              // 测试环境 UiPrefs 恒为未展示，SnackBar 会混进
+                              // 像素基线且动画帧不定；release/profile 真机
+                              // 照常展示一次。
+                              bool assertsOn = false;
+                              assert(() {
+                                assertsOn = true;
+                                return true;
+                              }());
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted ||
+                                    (assertsOn &&
+                                        !ConversationPage.debugFabHintForce)) {
+                                  return;
+                                }
+                                final app = AppStateScope.of(context);
+                                if (app.uiPrefs.fabMenuHintShown) return;
+                                app.uiPrefs.setFabMenuHintShown();
+                                // 引导改悬浮卡（批①）：黑条 SnackBar 改与
+                                // 被引导对象（悬浮球）同位的悬浮小卡。
+                                if (mounted) {
+                                  setState(() => _fabHintVisible = true);
+                                  _fabHintTimer?.cancel();
+                                  _fabHintTimer = Timer(
+                                    const Duration(seconds: 4),
+                                    () {
+                                      if (mounted) {
+                                        setState(() => _fabHintVisible = false);
+                                      }
+                                    },
                                   );
-                                });
-                              },
-                              onPointerUp: (e) {
-                                if (e.pointer != _fabPointer) return;
-                                final total = _fabPointerDown == null
-                                    ? Offset.zero
-                                    : e.position - _fabPointerDown!;
-                                if (_fabLongPressTriggered) {
+                                }
+                              });
+                            }
+                            return AnimatedPositioned(
+                              key: const ValueKey('jump-bottom'),
+                              duration: _fabDragging == null
+                                  ? const Duration(milliseconds: 250)
+                                  : Duration.zero,
+                              curve: Curves.easeOutCubic,
+                              left: fabPos.dx,
+                              top: fabPos.dy,
+                              child: Listener(
+                                behavior: HitTestBehavior.opaque,
+                                onPointerDown: (e) {
+                                  _fabPointer = e.pointer;
+                                  _fabPointerDown = e.position;
+                                  _fabDragStartPos = fabPos;
+                                  _fabLongPressTriggered = false;
+                                },
+                                onPointerMove: (e) {
+                                  if (e.pointer != _fabPointer ||
+                                      _fabPointerDown == null) {
+                                    return;
+                                  }
+                                  final total = e.position - _fabPointerDown!;
+                                  if (total.distance < 4) return; // 抖动死区
+                                  setState(() {
+                                    _fabDragging = Offset(
+                                      // 视口 <48px
+                                      // 时上限为负=clamp 抛 ArgumentError
+                                      // ——上限先钳到 ≥0。
+                                      (_fabDragStartPos!.dx + total.dx).clamp(
+                                        0.0,
+                                        math.max(
+                                          0.0,
+                                          viewportCons.maxWidth - 48,
+                                        ),
+                                      ),
+                                      (_fabDragStartPos!.dy + total.dy).clamp(
+                                        0.0,
+                                        math.max(
+                                          0.0,
+                                          viewportCons.maxHeight - 48,
+                                        ),
+                                      ),
+                                    );
+                                  });
+                                },
+                                onPointerUp: (e) {
+                                  if (e.pointer != _fabPointer) return;
+                                  final total = _fabPointerDown == null
+                                      ? Offset.zero
+                                      : e.position - _fabPointerDown!;
+                                  if (_fabLongPressTriggered) {
+                                    _fabPointer = null;
+                                    _fabPointerDown = null;
+                                    _fabLongPressTriggered = false;
+                                    return;
+                                  }
                                   _fabPointer = null;
                                   _fabPointerDown = null;
-                                  _fabLongPressTriggered = false;
-                                  return;
-                                }
-                                _fabPointer = null;
-                                _fabPointerDown = null;
-                                if (total.distance < 8) {
-                                  // 反向列表回底：贴尾跟随恢复。锚点保留到
-                                  // 动画落定——立即清锚会让动画中段帧渲染在
-                                  // 新坐标系的越界偏移上（闪一下）；动画
-                                  // ScrollEnd 由重贴底分支统一清锚+校正。
-                                  setState(() => _stickToBottom = true);
-                                  _scrollToBottom();
-                                  return;
-                                }
-                                _fabSnapToEdge(fabPos, viewportCons);
-                              },
-                              onPointerCancel: (e) {
-                                if (e.pointer != _fabPointer) return;
-                                _fabLongPressTriggered = false;
-                                _fabPointer = null;
-                                _fabPointerDown = null;
-                                _fabSnapToEdge(fabPos, viewportCons);
-                              },
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onLongPress: () {
-                                  _fabLongPressTriggered = true;
-                                  _showTurnQuickActions();
+                                  if (total.distance < 8) {
+                                    // 反向列表回底：贴尾跟随恢复。锚点保留到
+                                    // 动画落定——立即清锚会让动画中段帧渲染在
+                                    // 新坐标系的越界偏移上（闪一下）；动画
+                                    // ScrollEnd 由重贴底分支统一清锚+校正。
+                                    setState(() => _stickToBottom = true);
+                                    _scrollToBottom();
+                                    return;
+                                  }
+                                  _fabSnapToEdge(fabPos, viewportCons);
                                 },
-                                child: SizedBox(
-                                  width: 48,
-                                  height: 48,
-                                  child: Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      Center(
-                                        child: Material(
-                                          color: context.colors.card,
-                                          elevation: 2,
-                                          shape: const CircleBorder(),
-                                          child: SizedBox(
-                                            width: 40,
-                                            height: 40,
+                                onPointerCancel: (e) {
+                                  if (e.pointer != _fabPointer) return;
+                                  _fabLongPressTriggered = false;
+                                  _fabPointer = null;
+                                  _fabPointerDown = null;
+                                  _fabSnapToEdge(fabPos, viewportCons);
+                                },
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onLongPress: () {
+                                    _fabLongPressTriggered = true;
+                                    _showTurnQuickActions();
+                                  },
+                                  child: SizedBox(
+                                    width: 48,
+                                    height: 48,
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        Center(
+                                          child: Material(
+                                            color: context.colors.card,
+                                            elevation: 2,
+                                            shape: const CircleBorder(),
+                                            child: SizedBox(
+                                              width: 40,
+                                              height: 40,
+                                              child: Icon(
+                                                Icons.arrow_downward,
+                                                size: 18,
+                                                color: context
+                                                    .colors
+                                                    .foregroundSubtle,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        // 2026-11-05 反馈③（B 常驻角标）：
+                                        // 右下小「⋮」暗示藏有长按菜单
+                                        //（回到本回合开始/收起展开——纯
+                                        // 长按无任何发现性）。
+                                        Positioned(
+                                          right: 0,
+                                          bottom: 0,
+                                          child: Container(
+                                            width: 14,
+                                            height: 14,
+                                            decoration: BoxDecoration(
+                                              color: context.colors.card,
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: context.colors.border,
+                                              ),
+                                            ),
                                             child: Icon(
-                                              Icons.arrow_downward,
-                                              size: 18,
+                                              Icons.more_horiz,
+                                              size: 10,
                                               color: context
                                                   .colors
                                                   .foregroundSubtle,
                                             ),
                                           ),
                                         ),
-                                      ),
-                                      // 2026-11-05 反馈③（B 常驻角标）：
-                                      // 右下小「⋮」暗示藏有长按菜单
-                                      //（回到本回合开始/收起展开——纯
-                                      // 长按无任何发现性）。
-                                      Positioned(
-                                        right: 0,
-                                        bottom: 0,
-                                        child: Container(
-                                          width: 14,
-                                          height: 14,
-                                          decoration: BoxDecoration(
-                                            color: context.colors.card,
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: context.colors.border,
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            Icons.more_horiz,
-                                            size: 10,
-                                            color:
-                                                context.colors.foregroundSubtle,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
+                            );
+                          }(),
+                        // 引导悬浮卡（批① 2026-11-18）：挂在悬浮球正上方。
+                        if (_fabHintVisible)
+                          Positioned(
+                            left: (viewportCons.maxWidth - 48 - 14 - 36).clamp(
+                              8.0,
+                              viewportCons.maxWidth - 230,
                             ),
-                          );
-                        }(),
-                      // 引导悬浮卡（批① 2026-11-18）：挂在悬浮球正上方。
-                      if (_fabHintVisible)
-                        Positioned(
-                          left: (viewportCons.maxWidth - 48 - 14 - 36).clamp(
-                            8.0,
-                            viewportCons.maxWidth - 230,
-                          ),
-                          top: (viewportCons.maxHeight - 48 - 14 - 44).clamp(
-                            8.0,
-                            viewportCons.maxHeight - 90,
-                          ),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: context.colors.card,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: context.colors.borderFaint,
+                            top: (viewportCons.maxHeight - 48 - 14 - 44).clamp(
+                              8.0,
+                              viewportCons.maxHeight - 90,
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: context.colors.card,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: context.colors.borderFaint,
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.touch_app_outlined,
+                                    size: 13,
+                                    color: context.colors.brandAccent,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '长按悬浮球：回到回合开始 / 收起输出',
+                                    style: TextStyle(
+                                      fontSize: AppType.uiXs,
+                                      color: context.colors.foreground,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.touch_app_outlined,
-                                  size: 13,
-                                  color: context.colors.brandAccent,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '长按悬浮球：回到回合开始 / 收起输出',
-                                  style: TextStyle(
-                                    fontSize: AppType.uiXs,
-                                    color: context.colors.foreground,
-                                  ),
-                                ),
-                              ],
-                            ),
                           ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            // 配额横幅（官方 ConversationQuotaBanner 手机版；快照陈旧>10min
+            // 才重拉——外部 API，避免每次进页都打；失败后按 退避压制）。
+            Builder(
+              builder: (_) {
+                final stale = entitlementShouldReload(
+                  now: DateTime.now(),
+                  loadedAt: _entLoadedAt,
+                  lastAttemptAt: _entLastAttemptAt,
+                  failCount: _entFailCount,
+                );
+                if (stale && !_entLoading) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _loadEntitlement();
+                  });
+                }
+                // 修复批：官方总门——活跃 provider 为 Start Plan 家族
+                // 且与快照一致才出桶式横幅（Coding Pro 载荷整路拦截）；
+                // 低额提醒走"展示即记录"持久化（UiPrefs，官方 reminderStore
+                // 语义），本页实例已展示过的键继续显示（owner 语义）。
+                final cfg = _sub?.state.config;
+                final cfgModel = '${cfg?['model'] ?? ''}';
+                final qs = buildQuotaBannerState(
+                  _entCache,
+                  activeProviderId: '${cfg?['provider'] ?? ''}',
+                  modelId: cfgModel.contains('/')
+                      ? cfgModel.substring(cfgModel.indexOf('/') + 1)
+                      : cfgModel,
+                );
+                if (qs == null) return const SizedBox.shrink();
+                if (!qs.exhausted) {
+                  if (_quotaDismissedKeys.contains(qs.reminderKey)) {
+                    return const SizedBox.shrink();
+                  }
+                  final shownHere = _quotaShownKeys.contains(qs.reminderKey);
+                  if (!shownHere) {
+                    final prefs = AppStateScope.of(context).uiPrefs;
+                    if (prefs.isQuotaReminderHidden(
+                      qs.reminderKey,
+                      qs.referenceTime ?? 0,
+                    )) {
+                      return const SizedBox.shrink();
+                    }
+                    _quotaShownKeys.add(qs.reminderKey);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      AppStateScope.of(context).uiPrefs.markQuotaReminderShown(
+                        qs.reminderKey,
+                        qs.reminderExpiresAt ?? 0,
+                        qs.referenceTime ?? 0,
+                      );
+                    });
+                  }
+                }
+                return QuotaBanner(
+                  state: qs,
+                  dismissedKeys: _quotaDismissedKeys,
+                  onDismiss: () =>
+                      setState(() => _quotaDismissedKeys.add(qs.reminderKey)),
+                );
+              },
+            ),
+            // Goal 面板（有目标时置顶于 chrome 区）
+            if (state != null) GoalPanel(state: state, sessionId: _sessionId),
+            // 技能/审批卡与用量卡已改悬浮（批⑥ 2026-11-18 用户拍板：
+            // 不再挤占消息列表高度）——见消息列表 Stack 内悬浮层。
+            if (state != null) QueueStrip(state: state, sessionId: _sessionId),
+            // 用量详情卡（状态点开关，桌面悬停卡的手机等价物——用户设计）。
+            // 信息条（用户 2026-10-17 设计定稿二）：上下文用量+模式紧凑左组，
+
+            // 模型/思考/状态开关在输入卡内——各归其位，无大片空白。
+
+            // 2026-10-22：数据源兼容缓存预渲（订阅种子到达前的打开瞬间
+
+            // 信息条常驻，不闪没；视觉验收 工装同路径）。
+            if (state != null || _cachePreview != null)
+              InfoRow(
+                state: state ?? _cachePreview!,
+
+                sessionId: _sessionId,
+
+                modeLabel: _modeLabelOf(effState),
+
+                modeIcon: switch (_effectiveModeOf(effState)) {
+                  // 官方图标映射 display.tsx:252-275：yolo=ShieldAlert、
+
+                  // build=Hand、edit/guarded=ShieldCheck。
+                  'yolo' => Icons.gpp_maybe_outlined,
+
+                  'edit' || 'guarded' => Icons.verified_user_outlined,
+
+                  _ => Icons.front_hand_outlined,
+                },
+
+                // 完全访问=warning 橙（官方 yolo 选中→text-warning #ff8a30，
+
+                // 用户截图实锤）；自主=icon-blue 同官方。
+                modeIconColor: switch (_effectiveModeOf(effState)) {
+                  'yolo' => context.colors.warning,
+
+                  'guarded' => context.colors.brandAccent,
+
+                  _ => context.colors.foreground,
+                },
+
+                modeLabelColor: _effectiveModeOf(effState) == 'yolo'
+                    ? context.colors.warning
+                    : null,
+
+                modePending: _pendingMode != null,
+
+                planEnabled: _planEnabledOf(effState),
+
+                onModeTap: () => _showModeSheet(effState),
+              ),
+
+            // ── 状态托盘（status-tray-1109，用户拍板）：输入侧状态合并
+            // 治理——结果未知/暂存/排队 三源（compactness-feedback-1109
+            // 反馈②：后台工作整类撤出输入区，归 ⋮ 二级页）。单源直通原
+            // 条带（零回归），≥2 源合并成一行摘要（段点+计数），展开=
+            // 限高 240 堆叠原条带（撤销/核对动作原样）。
+            Builder(
+              builder: (_) {
+                Widget unknownBody() => Padding(
+                  key: const ValueKey('draft-submission-unknown'),
+                  padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.help_outline,
+                        size: 15,
+                        color: context.colors.warning,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _resultUnknownConverged
+                              ? tr('已确认上次发送送达（无需重发），横幅稍后消失')
+                              : tr('上次发送结果未知，请核对会话后再决定是否重发'),
+                          style: TextStyle(
+                            fontSize: AppType.uiXs,
+                            color: _resultUnknownConverged
+                                ? context.colors.success
+                                : context.colors.warning,
+                          ),
+                        ),
+                      ),
+                      if (!_resultUnknownConverged)
+                        TextButton(
+                          key: const ValueKey('draft-unknown-recheck'),
+                          onPressed: _busyResultRecheck
+                              ? null
+                              : () => unawaited(_recheckLastSendResult()),
+                          child: Text(tr('重新核对')),
                         ),
                     ],
                   ),
                 );
-              },
-            ),
-          ),
-          // 配额横幅（官方 ConversationQuotaBanner 手机版；快照陈旧>10min
-          // 才重拉——外部 API，避免每次进页都打；失败后按 退避压制）。
-          Builder(
-            builder: (_) {
-              final stale = entitlementShouldReload(
-                now: DateTime.now(),
-                loadedAt: _entLoadedAt,
-                lastAttemptAt: _entLastAttemptAt,
-                failCount: _entFailCount,
-              );
-              if (stale && !_entLoading) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) _loadEntitlement();
-                });
-              }
-              // 修复批：官方总门——活跃 provider 为 Start Plan 家族
-              // 且与快照一致才出桶式横幅（Coding Pro 载荷整路拦截）；
-              // 低额提醒走"展示即记录"持久化（UiPrefs，官方 reminderStore
-              // 语义），本页实例已展示过的键继续显示（owner 语义）。
-              final cfg = _sub?.state.config;
-              final cfgModel = '${cfg?['model'] ?? ''}';
-              final qs = buildQuotaBannerState(
-                _entCache,
-                activeProviderId: '${cfg?['provider'] ?? ''}',
-                modelId: cfgModel.contains('/')
-                    ? cfgModel.substring(cfgModel.indexOf('/') + 1)
-                    : cfgModel,
-              );
-              if (qs == null) return const SizedBox.shrink();
-              if (!qs.exhausted) {
-                if (_quotaDismissedKeys.contains(qs.reminderKey)) {
-                  return const SizedBox.shrink();
-                }
-                final shownHere = _quotaShownKeys.contains(qs.reminderKey);
-                if (!shownHere) {
-                  final prefs = AppStateScope.of(context).uiPrefs;
-                  if (prefs.isQuotaReminderHidden(
-                    qs.reminderKey,
-                    qs.referenceTime ?? 0,
-                  )) {
-                    return const SizedBox.shrink();
-                  }
-                  _quotaShownKeys.add(qs.reminderKey);
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) return;
-                    AppStateScope.of(context).uiPrefs.markQuotaReminderShown(
-                      qs.reminderKey,
-                      qs.reminderExpiresAt ?? 0,
-                      qs.referenceTime ?? 0,
-                    );
-                  });
-                }
-              }
-              return QuotaBanner(
-                state: qs,
-                dismissedKeys: _quotaDismissedKeys,
-                onDismiss: () =>
-                    setState(() => _quotaDismissedKeys.add(qs.reminderKey)),
-              );
-            },
-          ),
-          // Goal 面板（有目标时置顶于 chrome 区）
-          if (state != null) GoalPanel(state: state, sessionId: _sessionId),
-          // 技能/审批卡与用量卡已改悬浮（批⑥ 2026-11-18 用户拍板：
-          // 不再挤占消息列表高度）——见消息列表 Stack 内悬浮层。
-          if (state != null) QueueStrip(state: state, sessionId: _sessionId),
-          // 用量详情卡（状态点开关，桌面悬停卡的手机等价物——用户设计）。
-          // 信息条（用户 2026-10-17 设计定稿二）：上下文用量+模式紧凑左组，
-
-          // 模型/思考/状态开关在输入卡内——各归其位，无大片空白。
-
-          // 2026-10-22：数据源兼容缓存预渲（订阅种子到达前的打开瞬间
-
-          // 信息条常驻，不闪没；视觉验收 工装同路径）。
-          if (state != null || _cachePreview != null)
-            InfoRow(
-              state: state ?? _cachePreview!,
-
-              sessionId: _sessionId,
-
-              modeLabel: _modeLabelOf(effState),
-
-              modeIcon: switch (_effectiveModeOf(effState)) {
-                // 官方图标映射 display.tsx:252-275：yolo=ShieldAlert、
-
-                // build=Hand、edit/guarded=ShieldCheck。
-                'yolo' => Icons.gpp_maybe_outlined,
-
-                'edit' || 'guarded' => Icons.verified_user_outlined,
-
-                _ => Icons.front_hand_outlined,
-              },
-
-              // 完全访问=warning 橙（官方 yolo 选中→text-warning #ff8a30，
-
-              // 用户截图实锤）；自主=icon-blue 同官方。
-              modeIconColor: switch (_effectiveModeOf(effState)) {
-                'yolo' => context.colors.warning,
-
-                'guarded' => context.colors.brandAccent,
-
-                _ => context.colors.foreground,
-              },
-
-              modeLabelColor: _effectiveModeOf(effState) == 'yolo'
-                  ? context.colors.warning
-                  : null,
-
-              modePending: _pendingMode != null,
-
-              planEnabled: _planEnabledOf(effState),
-
-              onModeTap: () => _showModeSheet(effState),
-            ),
-
-          // ── 状态托盘（status-tray-1109，用户拍板）：输入侧状态合并
-          // 治理——结果未知/暂存/排队 三源（compactness-feedback-1109
-          // 反馈②：后台工作整类撤出输入区，归 ⋮ 二级页）。单源直通原
-          // 条带（零回归），≥2 源合并成一行摘要（段点+计数），展开=
-          // 限高 240 堆叠原条带（撤销/核对动作原样）。
-          Builder(
-            builder: (_) {
-              Widget unknownBody() => Padding(
-                key: const ValueKey('draft-submission-unknown'),
-                padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
-                child: Row(
+                Widget unsentBody() => Row(
+                  key: const ValueKey('status-tray-unsent'),
                   children: [
-                    Icon(
-                      Icons.help_outline,
-                      size: 15,
-                      color: context.colors.warning,
-                    ),
-                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        _resultUnknownConverged
-                            ? tr('已确认上次发送送达（无需重发），横幅稍后消失')
-                            : tr('上次发送结果未知，请核对会话后再决定是否重发'),
+                        '有一条发送失败的消息已暂存',
                         style: TextStyle(
                           fontSize: AppType.uiXs,
-                          color: _resultUnknownConverged
-                              ? context.colors.success
-                              : context.colors.warning,
+                          color: context.colors.warning,
                         ),
                       ),
                     ),
-                    if (!_resultUnknownConverged)
-                      TextButton(
-                        key: const ValueKey('draft-unknown-recheck'),
-                        onPressed: _busyResultRecheck
-                            ? null
-                            : () => unawaited(_recheckLastSendResult()),
-                        child: Text(tr('重新核对')),
+                    TextButton(
+                      key: const ValueKey('restore-unsent'),
+                      onPressed: _restoreUnsentDraft,
+                      child: const Text('恢复'),
+                    ),
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: IconButton(
+                        key: const ValueKey('discard-unsent'),
+                        padding: EdgeInsets.zero,
+                        iconSize: 16,
+                        tooltip: tr('丢弃暂存消息'),
+                        onPressed: () {
+                          setState(() => _unsentDraft = null);
+                          _onDraftMutated();
+                        },
+                        icon: const Icon(Icons.close),
                       ),
+                    ),
                   ],
-                ),
-              );
-              Widget unsentBody() => Row(
-                key: const ValueKey('status-tray-unsent'),
-                children: [
-                  Expanded(
-                    child: Text(
-                      '有一条发送失败的消息已暂存',
-                      style: TextStyle(
-                        fontSize: AppType.uiXs,
-                        color: context.colors.warning,
+                );
+                Widget queueBody() => OfflineSendQueueStrip(
+                  entries: _queueEntries,
+                  expanded: true,
+                  onToggle: () => setState(_queue.toggleExpanded),
+                  onCancel: _cancelQueuedEntry,
+                );
+                final sections = <StatusTraySection>[
+                  if (_draftResultUnknown || _resultUnknownConverged)
+                    StatusTraySection(
+                      id: 'unknown',
+                      label: _resultUnknownConverged ? tr('已确认送达') : tr('结果未知'),
+                      detail: '',
+                      accent: _resultUnknownConverged
+                          ? context.colors.success
+                          : context.colors.warning,
+                      body: unknownBody,
+                    ),
+                  if (_unsentDraft != null)
+                    StatusTraySection(
+                      id: 'unsent',
+                      label: tr('暂存消息'),
+                      detail: '',
+                      accent: context.colors.warning,
+                      body: unsentBody,
+                    ),
+                  if (_queueEntries.isNotEmpty && !widget.readOnly)
+                    StatusTraySection(
+                      id: 'queue',
+                      label: tr('排队'),
+                      detail: '${_queueEntries.length} ${tr('条')}',
+                      accent: context.colors.brandAccent,
+                      body: queueBody,
+                    ),
+                ];
+                return StatusTray(
+                  sections: sections,
+                  expanded: _statusTrayExpanded,
+                  onToggle: () => setState(
+                    () => _statusTrayExpanded = !_statusTrayExpanded,
+                  ),
+                );
+              },
+            ),
+            if (draftWorkspace != null && !widget.readOnly)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    key: const ValueKey('draft-workspace-chip'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: context.colors.accent.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      border: Border.all(
+                        color: context.colors.accent.withValues(alpha: 0.22),
                       ),
                     ),
-                  ),
-                  TextButton(
-                    key: const ValueKey('restore-unsent'),
-                    onPressed: _restoreUnsentDraft,
-                    child: const Text('恢复'),
-                  ),
-                  SizedBox(
-                    width: 32,
-                    height: 32,
-                    child: IconButton(
-                      key: const ValueKey('discard-unsent'),
-                      padding: EdgeInsets.zero,
-                      iconSize: 16,
-                      tooltip: tr('丢弃暂存消息'),
-                      onPressed: () {
-                        setState(() => _unsentDraft = null);
-                        _onDraftMutated();
-                      },
-                      icon: const Icon(Icons.close),
-                    ),
-                  ),
-                ],
-              );
-              Widget queueBody() => OfflineSendQueueStrip(
-                entries: _queueEntries,
-                expanded: true,
-                onToggle: () => setState(_queue.toggleExpanded),
-                onCancel: _cancelQueuedEntry,
-              );
-              final sections = <StatusTraySection>[
-                if (_draftResultUnknown || _resultUnknownConverged)
-                  StatusTraySection(
-                    id: 'unknown',
-                    label: _resultUnknownConverged ? tr('已确认送达') : tr('结果未知'),
-                    detail: '',
-                    accent: _resultUnknownConverged
-                        ? context.colors.success
-                        : context.colors.warning,
-                    body: unknownBody,
-                  ),
-                if (_unsentDraft != null)
-                  StatusTraySection(
-                    id: 'unsent',
-                    label: tr('暂存消息'),
-                    detail: '',
-                    accent: context.colors.warning,
-                    body: unsentBody,
-                  ),
-                if (_queueEntries.isNotEmpty && !widget.readOnly)
-                  StatusTraySection(
-                    id: 'queue',
-                    label: tr('排队'),
-                    detail: '${_queueEntries.length} ${tr('条')}',
-                    accent: context.colors.brandAccent,
-                    body: queueBody,
-                  ),
-              ];
-              return StatusTray(
-                sections: sections,
-                expanded: _statusTrayExpanded,
-                onToggle: () =>
-                    setState(() => _statusTrayExpanded = !_statusTrayExpanded),
-              );
-            },
-          ),
-          if (draftWorkspace != null && !widget.readOnly)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  key: const ValueKey('draft-workspace-chip'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: context.colors.accent.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    border: Border.all(
-                      color: context.colors.accent.withValues(alpha: 0.22),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.folder_outlined,
-                        size: 14,
-                        color: context.colors.accent,
-                      ),
-                      const SizedBox(width: 5),
-                      Flexible(
-                        child: Text(
-                          '新建于 $draftWorkspace',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: AppType.uiXs,
-                            fontWeight: FontWeight.w500,
-                            color: context.colors.foreground,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.folder_outlined,
+                          size: 14,
+                          color: context.colors.accent,
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            '新建于 $draftWorkspace',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: AppType.uiXs,
+                              fontWeight: FontWeight.w500,
+                              color: context.colors.foreground,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          if (widget.readOnly)
-            ReadOnlyBar()
-          else
-            InputBar(
-              controller: _input,
-              focusNode: _inputFocusNode,
-              running: running,
-              sending: _sending,
-              onSend: _send,
-              onStop: _stop,
-              // 纯附件发送（2026-11-16）：托盘有附件时发送键亮发送态，
-              // 不再退麦克风/停止键。
-              hasAttachments: _pendingAtts.isNotEmpty,
-              // 合并药丸（2026-10-19）：模型+思考档一体展示，挂起点统一
-              // （任一挂起即亮）—— 角标语义延续。批4 同族回落：
-              // 缓存预渲期 config 也从缓存读（离线/首帧药丸不空转「模型」）。
-              selectionMain: _selectionMain(effState),
-              selectionSub: _selectionSub(effState),
-              selectionBrand: brandLogoAsset(
-                _pendingModelId ?? '${effState?.config?['model'] ?? ''}',
-              ),
-              selectionBrandModelId:
+            if (widget.readOnly)
+              ReadOnlyBar()
+            else
+              InputBar(
+                controller: _input,
+                focusNode: _inputFocusNode,
+                running: running,
+                sending: _sending,
+                onSend: _send,
+                onStop: _stop,
+                // 纯附件发送（2026-11-16）：托盘有附件时发送键亮发送态，
+                // 不再退麦克风/停止键。
+                hasAttachments: _pendingAtts.isNotEmpty,
+                // 合并药丸（2026-10-19）：模型+思考档一体展示，挂起点统一
+                // （任一挂起即亮）—— 角标语义延续。批4 同族回落：
+                // 缓存预渲期 config 也从缓存读（离线/首帧药丸不空转「模型」）。
+                selectionMain: _selectionMain(effState),
+                selectionSub: _selectionSub(effState),
+                selectionBrand: brandLogoAsset(
                   _pendingModelId ?? '${effState?.config?['model'] ?? ''}',
-              selectionPending:
-                  _pendingModelId != null || _pendingThought != null,
-              // 面板数据源与药丸同用 effState（含缓存
-              // 回落）——离线/缓存首帧点开不再显示空「模型/思考档」。
-              onSelectionTap: () => _openModelSheet(effState),
-              onAdd: _sending ? null : _showAddSheet,
-              onVoice: voiceRecognitionAvailable ? _startVoiceInput : null,
-              statusColor: _statusDotColor(context),
-              statusProgress: _contextUsageProgress(effState),
-              onStatusTap: _toggleUsageCard,
-              attachmentsBar: _pendingAtts.isEmpty
-                  ? null
-                  : PendingAttachmentChips(
-                      attachments: _pendingAtts,
-                      onRemove: _removeAttachment,
-                      onRetry: _retryAttachment,
-                      onAnnotate: _annotateAttachmentById,
-                    ),
-            ),
-        ],
+                ),
+                selectionBrandModelId:
+                    _pendingModelId ?? '${effState?.config?['model'] ?? ''}',
+                selectionPending:
+                    _pendingModelId != null || _pendingThought != null,
+                // 面板数据源与药丸同用 effState（含缓存
+                // 回落）——离线/缓存首帧点开不再显示空「模型/思考档」。
+                onSelectionTap: () => _openModelSheet(effState),
+                onAdd: _sending ? null : _showAddSheet,
+                onVoice: voiceRecognitionAvailable ? _startVoiceInput : null,
+                statusColor: _statusDotColor(context),
+                statusProgress: _contextUsageProgress(effState),
+                onStatusTap: _toggleUsageCard,
+                attachmentsBar: _pendingAtts.isEmpty
+                    ? null
+                    : PendingAttachmentChips(
+                        attachments: _pendingAtts,
+                        onRemove: _removeAttachment,
+                        onRetry: _retryAttachment,
+                        onAnnotate: _annotateAttachmentById,
+                      ),
+              ),
+          ],
+        ),
       ),
     );
   }
