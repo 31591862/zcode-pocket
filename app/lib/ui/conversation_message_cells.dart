@@ -840,74 +840,78 @@ class UserBubble extends StatelessWidget {
                   ),
                 ),
               // #10：纯附件消息（空文本）不渲染空壳气泡。
+              // 2026-11-21 用户校正：左缘 3px 品牌蓝竖条移除（纯装饰，
+              // 与桌面不一致）——气泡自身浅底+描边已足够辨识。
               if (text.trim().isNotEmpty)
-                // V2 审美优化：左缘 3px 品牌蓝竖条——「我的话」成为
-                // 长会话滚动的视觉锚点（评审 2.2#1）。竖条为独立元素
-                // （视觉验收 实锤：多色 Border + borderRadius 触发
-                // Flutter paint 断言「borders with uniform colors」）。
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 3,
-                        margin: const EdgeInsets.only(left: 56),
-                        decoration: BoxDecoration(
-                          color: context.colors.brandAccent,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            // R 轮审美（2026-10-17 用户反馈"自己发的信息
-                            // 不明显"）：品牌色 6% 浅底保辨识（surface 与
-                            // 背景几乎同色）。描边对抗审查收敛 2026-10-22：
-                            // 38% 是加竖条锚点之前的历史浓度，官方仅
-                            // border(10%)——竖条在，描边降 15% 不丢辨识。
-                            // 批4 拍板 a（2026-10-23 用户）：深色气泡改亮
-                            // 于卡片一档（secondary #363636）——业界 11/11
-                            // 全员做法+真镜像语义（浅色气泡暗于背景，翻转
-                            // 后应亮于）；亮底后描边同步降档（15%→10% 白，
-                            // 官方 border 档）防抢眼。浅色不动（红线）。
-                            color:
-                                Theme.of(context).brightness == Brightness.dark
-                                ? context.colors.secondary
-                                : context.colors.brand.withValues(alpha: 0.06),
-                            border: Border.all(
+                // 左缘最小留白（2026-11-21）：竖条移除后不能连约束一起
+                // 丢——原竖条 margin-left 56 + 竖条 3 + 间隙 6 = 65dp，
+                // 即气泡距内容区左缘的最小距离（列表 16dp 内边距之外，
+                // 距屏幕左缘 81dp）。外层 maxWidth 520 继续限制大屏
+                // （气泡最大 455dp）；长文本不再左右顶满。
+                Padding(
+                  padding: const EdgeInsets.only(left: 65),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Container(
+                            key: const ValueKey('user-bubble-surface'),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              // R 轮审美（2026-10-17 用户反馈"自己发的信息
+                              // 不明显"）：品牌色 6% 浅底保辨识（surface 与
+                              // 背景几乎同色）。描边对抗审查收敛 2026-10-22：
+                              // 38% 是加竖条锚点之前的历史浓度，官方仅
+                              // border(10%)——竖条在，描边降 15% 不丢辨识。
+                              // 批4 拍板 a（2026-10-23 用户）：深色气泡改亮
+                              // 于卡片一档（secondary #363636）——业界 11/11
+                              // 全员做法+真镜像语义（浅色气泡暗于背景，翻转
+                              // 后应亮于）；亮底后描边同步降档（15%→10% 白，
+                              // 官方 border 档）防抢眼。浅色不动（红线）。
                               color:
                                   Theme.of(context).brightness ==
                                       Brightness.dark
-                                  ? context.colors.border
-                                  : context.colors.foreground.withValues(
-                                      alpha: 0.15,
+                                  ? context.colors.secondary
+                                  : context.colors.brand.withValues(
+                                      alpha: 0.06,
                                     ),
+                              border: Border.all(
+                                color:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
+                                    ? context.colors.border
+                                    : context.colors.foreground.withValues(
+                                        alpha: 0.15,
+                                      ),
+                              ),
+                              // 2026-11-21 用户校正：气泡"尾巴"小圆角应在
+                              // **右下**（自己消息贴右，尾部朝下/右）——
+                              // 此前放在右上，形状反了。
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(AppRadius.bubble),
+                                topRight: Radius.circular(AppRadius.bubble),
+                                bottomLeft: Radius.circular(AppRadius.bubble),
+                                bottomRight: Radius.circular(
+                                  AppRadius.bubbleTail,
+                                ),
+                              ),
                             ),
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(AppRadius.bubble),
-                              topRight: Radius.circular(
-                                AppRadius.bubbleTail,
-                              ), // 官方 rounded-tr-xs
-                              bottomLeft: Radius.circular(AppRadius.bubble),
-                              bottomRight: Radius.circular(AppRadius.bubble),
+                            child: FoldableUserText(
+                              text: text,
+                              selectable: (data) =>
+                                  _selectableText(context, data),
+                              searchReveal: searchReveal,
+                              searchQuery: searchQuery,
                             ),
-                          ),
-                          child: FoldableUserText(
-                            text: text,
-                            selectable: (data) =>
-                                _selectableText(context, data),
-                            searchReveal: searchReveal,
-                            searchQuery: searchQuery,
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
             ],

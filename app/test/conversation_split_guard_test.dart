@@ -17,7 +17,8 @@ void main() {
       'class SubagentPairUnit',
       'List<WorkUnit> buildWorkUnits(',
       'String? turnTailTimestampLabel(',
-      'int? turnHeaderCreatedAt(',
+      'int? turnHeaderStartedAt(',
+      'int? turnHeaderEndedAt(',
     ]) {
       expect(model.contains(symbol), isTrue, reason: symbol);
     }
@@ -25,7 +26,8 @@ void main() {
     expect(page.contains('class RowUnit'), isFalse);
     expect(page.contains('List<WorkUnit> _buildWorkUnits('), isFalse);
     expect(page.contains('String? turnTailTimestampLabel('), isFalse);
-    expect(page.contains('int? turnHeaderCreatedAt('), isFalse);
+    expect(page.contains('int? turnHeaderStartedAt('), isFalse);
+    expect(page.contains('int? turnHeaderEndedAt('), isFalse);
     expect(page.contains("import 'turn_model.dart'"), isTrue);
     expect(
       _read('lib/ui/conversation_turn_view.dart').contains('buildWorkUnits('),
