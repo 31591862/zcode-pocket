@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart' hide Text;
 
+import 'display_images.dart';
+
 import '../core/localized_text.dart';
 import '../core/payload_guard.dart';
 import '../core/theme.dart';
@@ -366,6 +368,13 @@ class TurnBarState extends State<TurnBar> {
                 ),
               ),
             ),
+            // 收起态「成果截图」条（2026-11-20 对齐桌面）：轮内工具行的
+            // display 图片汇总；固定尺寸槽位（解码前后布局不跳）。
+            if (work.toolRows.any(hasDisplayImages))
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: TurnDisplayImages(rows: work.toolRows.toList()),
+              ),
             // 轮尾操作行（2026-10-23 用户反馈批，桌面 ConversationRowView
             // :1580-1649 对位）：复制/点赞/点踩/分支 ghost 一排。
             // 对抗审查 /：仅轮正常完成（官方只认 complete）且为轮内

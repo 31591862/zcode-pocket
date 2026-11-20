@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart' hide Text;
+
+import 'display_images.dart';
+
 import 'package:flutter/services.dart';
 
 import '../core/code_highlight.dart';
@@ -572,6 +575,13 @@ class ToolCallTileState extends State<ToolCallTile> {
                 fraction: progressFraction,
                 message: progressMessage,
               ),
+            ),
+          // 对齐桌面（2026-11-20）：工具行 display 图片（浏览器截图等）
+          // 缩略图，点击看大图；折叠态也可见（桌面同款内联缩略图）。
+          if (hasDisplayImages(row))
+            ToolDisplayImages(
+              rowId: _rowId ?? -1,
+              display: row['display'] as Map,
             ),
           // ②折叠动画（官方 300ms 高度过渡对位，用户拍板 2026-10-22）。
           AnimatedSize(
