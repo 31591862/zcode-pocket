@@ -147,8 +147,10 @@ class ComposerPanels extends StatelessWidget {
 /// [cursor]=光标偏移（null/越界=按文尾）； /：
 /// 只认光标前的末 token——中段编辑不弹文尾 token 的面板；分隔符同时
 /// 认空格与换行（多行输入里 "@文件" 前是 \n 时也出补全）。
-({String type, String token})? activeCompletionToken(String text,
-    {int? cursor}) {
+({String type, String token})? activeCompletionToken(
+  String text, {
+  int? cursor,
+}) {
   final end = cursor == null || cursor < 0 || cursor > text.length
       ? text.length
       : cursor;
@@ -216,6 +218,7 @@ Future<void> showModelSheet(
   String? pendingThought,
   void Function(String provider, String model)? onDraftModel,
   void Function(String value)? onDraftThought,
+
   /// 思考档被联动作废（新模型不含旧档）时的清除回调——页面挂起值同步
   /// 清除（#7：弹层清了、页面照旧提交=白清）。
   VoidCallback? onDraftThoughtCleared,
@@ -419,7 +422,8 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
                     // 白名单过滤：getView 里没有的 providerId 丢弃
                     //（hidden 泄漏——offpeak/highspeed 从 registry 直出）。
                     if (meta.containsKey(v.modelProviderId ?? ''))
-                      v.toRaw()..addAll(meta[v.modelProviderId ?? ''] ?? const {}),
+                      v.toRaw()
+                        ..addAll(meta[v.modelProviderId ?? ''] ?? const {}),
                 ],
               })
             : o,
@@ -461,9 +465,9 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
     } else {
       final sessionId = widget.sessionId!;
       // 会话路径元数据与任务目录并行拉。
-      final metaFuture = widget.app
-          .modelSelectionView()
-          .catchError((Object _) => null);
+      final metaFuture = widget.app.modelSelectionView().catchError(
+        (Object _) => null,
+      );
       final cached = _taskCatalogCache[sessionId];
       final useCache =
           cached != null &&
@@ -552,13 +556,10 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
       if (!mounted || epoch != _loadEpoch || taskOptions.isEmpty) return;
       final meta = _metaFromView(await metaFuture);
       if (!mounted || epoch != _loadEpoch) return;
-      final fresh = _augmentOptions(
-        [
-          for (final o in taskOptions)
-            if (o is ConfigOption) o,
-        ],
-        meta,
-      );
+      final fresh = _augmentOptions([
+        for (final o in taskOptions)
+          if (o is ConfigOption) o,
+      ], meta);
       _rawTaskOptions = taskOptions;
       _thoughtOptions = _thoughtFrom(taskOptions);
       if (_optionsSignature(fresh) != _optionsSignature(_taskOptions)) {
@@ -598,8 +599,26 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
           setState(() => _taskOptions = fresh);
         }
       } else {
+        // 2026-11-21 修复（"模型目录刷新 start plan 不及时"）：旧实现
+        // 后台只重读 host getView 元数据、叠加在打开时的任务目录上——
+        // 任务级目录（getTaskConfigOptions，Start Plan 新模型从这里来）
+        // 可能还是 60s 缓存值，provider 刷新完也不会出现。这里绕过缓存
+        // 重拉任务目录并写回，再用新目录+新元数据重建列表。
+        final sessionId = widget.sessionId!;
+        final freshTask = await widget.app
+            .getTaskConfigOptions(sessionId)
+            .catchError((Object _) => const <dynamic>[]);
+        if (!mounted || epoch != _loadEpoch) return;
+        if (freshTask.isNotEmpty) {
+          _taskCatalogCache[sessionId] = (
+            at: DateTime.now(),
+            options: freshTask,
+          );
+          _rawTaskOptions = freshTask;
+          _thoughtOptions = _thoughtFrom(freshTask);
+        }
         if (_rawTaskOptions.isEmpty) {
-          // 任务目录尚未到达：用刷新后的 host 快照校准，别清空快路径列表。
+          // 任务目录仍不可用：用刷新后的 host 快照校准，别清空快路径列表。
           final host = await widget.app.modelSelectionOptions();
           if (!mounted || epoch != _loadEpoch) return;
           if (host is List &&
@@ -611,13 +630,10 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
         }
         final view = await widget.app.modelSelectionView();
         if (!mounted || epoch != _loadEpoch) return;
-        final fresh = _augmentOptions(
-          [
-            for (final o in _rawTaskOptions)
-              if (o is ConfigOption) o,
-          ],
-          _metaFromView(view),
-        );
+        final fresh = _augmentOptions([
+          for (final o in _rawTaskOptions)
+            if (o is ConfigOption) o,
+        ], _metaFromView(view));
         if (_optionsSignature(fresh) != _optionsSignature(_taskOptions)) {
           setState(() => _taskOptions = fresh);
         }
@@ -721,9 +737,7 @@ String modelIdOf(ConfigOptionValue v) {
   if (pid.isNotEmpty && value.startsWith('$pid/')) {
     return value.substring(pid.length + 1);
   }
-  return value.contains('/')
-      ? value.substring(value.indexOf('/') + 1)
-      : value;
+  return value.contains('/') ? value.substring(value.indexOf('/') + 1) : value;
 }
 
 /// 1.0.1 验收终修（用户拍板「分组按照桌面端的方式来」）：桌面按
@@ -746,10 +760,13 @@ String planBadgeOf(ConfigOptionValue v) {
   var kind = v.modelAccessMode ?? '';
   if (kind.isEmpty) {
     final pid = v.modelProviderId ?? '';
-    if (pid.contains('start-plan')) kind = 'start-plan';
-    else if (pid.contains('team-coding-plan')) kind = 'team-coding-plan';
+    if (pid.contains('start-plan'))
+      kind = 'start-plan';
+    else if (pid.contains('team-coding-plan'))
+      kind = 'team-coding-plan';
     else if (pid.contains('individual-coding-plan') ||
-        pid.contains('coding-plan')) kind = 'individual-coding-plan';
+        pid.contains('coding-plan'))
+      kind = 'individual-coding-plan';
   }
   // 1.0.1 验收修复：非套餐 provider 兜底 'API'——真机实锤四个
   // BigModel 组头两组完全同名不可辨；桌面语义=每个 provider 组都
@@ -825,10 +842,13 @@ bool isPlanProvider(ConfigOptionValue v) {
   var kind = v.modelAccessMode ?? '';
   if (kind.isEmpty) {
     final pid = v.modelProviderId ?? '';
-    if (pid.contains('start-plan')) kind = 'start-plan';
-    else if (pid.contains('team-coding-plan')) kind = 'team-coding-plan';
+    if (pid.contains('start-plan'))
+      kind = 'start-plan';
+    else if (pid.contains('team-coding-plan'))
+      kind = 'team-coding-plan';
     else if (pid.contains('individual-coding-plan') ||
-        pid.contains('coding-plan')) kind = 'individual-coding-plan';
+        pid.contains('coding-plan'))
+      kind = 'individual-coding-plan';
   }
   return kind == 'individual-coding-plan' ||
       kind == 'team-coding-plan' ||
@@ -1307,7 +1327,7 @@ class _ModelListState extends State<_ModelList> {
         final meta = groupMeta[k]!;
         final ck = '${meta.label}|${meta.badge}';
         if ((collisions[ck] ?? 0) > 1) {
-          final nth = (seen[ck] ?? 0)  + 1;
+          final nth = (seen[ck] ?? 0) + 1;
           seen[ck] = nth;
           groupMeta[k] = (
             label: '${meta.label}·${_groupDisambigSuffix(k, nth)}',
@@ -1317,10 +1337,9 @@ class _ModelListState extends State<_ModelList> {
       }
     }
     // 排序：套餐组（isPlanProvider）按 label 字母序在前，其余原序在后。
-    final planKeys = groups.keys
-        .where((k) => isPlanProvider(groups[k]!.first))
-        .toList()
-      ..sort((a, b) => groupMeta[a]!.label.compareTo(groupMeta[b]!.label));
+    final planKeys =
+        groups.keys.where((k) => isPlanProvider(groups[k]!.first)).toList()
+          ..sort((a, b) => groupMeta[a]!.label.compareTo(groupMeta[b]!.label));
     final otherKeys = groups.keys
         .where((k) => !isPlanProvider(groups[k]!.first))
         .toList();
@@ -1339,18 +1358,20 @@ class _ModelListState extends State<_ModelList> {
     // 对抗审查高④：原模糊回退被 selectedIndex>=0 挡死（精确必中时
     // 不需要、selectedIndex==-1 时被门挡），真机 provider 不匹配的
     // 场景仍全收起。修：selectedIndex<0 且有 current 时走模糊匹配。
-    final selectedGroup = ordered
-        .where(
-          (g) => g.value.any((v) => globalIndexOf[v] == selectedIndex),
-        )
-        .map((g) => g.key)
-        .firstOrNull ??
+    final selectedGroup =
+        ordered
+            .where((g) => g.value.any((v) => globalIndexOf[v] == selectedIndex))
+            .map((g) => g.key)
+            .firstOrNull ??
         (selectedIndex < 0 && widget.current.isNotEmpty
             ? ordered
-                  .where((g) => g.value.any(
-                        (v) => modelIdOf(v).toLowerCase() ==
-                            widget.current.toLowerCase(),
-                      ))
+                  .where(
+                    (g) => g.value.any(
+                      (v) =>
+                          modelIdOf(v).toLowerCase() ==
+                          widget.current.toLowerCase(),
+                    ),
+                  )
                   .map((g) => g.key)
                   .firstOrNull
             : null);
