@@ -6,8 +6,8 @@ import 'dart:typed_data';
 import 'protocol_drift.dart';
 import 'relay_v2.dart' show RelayV2AuthRequired, relayV2MaxHttpResponseBytes;
 
-/// 官方营销投放/福利领取直连客户端（marketing-claim-1，；
-/// 对抗审查修复批 marketing-claim-review-1 全面收紧）。
+/// 官方营销投放直连客户端（marketing-claim-1，；marketing-reminder-1
+/// 起收敛为 touch 投放展示+电脑端提醒——手机端只读，不在本端领取）。
 ///
 /// 契约出处（官方最新源码快照 3.18.2 源码，已核实到行）：
 /// - 投放查询：`GET /api/v1/marketing/touch?seq=N`，headers
@@ -17,37 +17,22 @@ import 'relay_v2.dart' show RelayV2AuthRequired, relayV2MaxHttpResponseBytes;
 ///   信封 `{code:0, data:{server_time(秒), language, deliveries[]}}`；
 ///   单条坏投放丢弃不影响其余（marketingTouch.ts parseMarketingTouchResponse）；
 ///   deliveries>32 官方 zod max(32) 拒整个响应——同款拒绝不截断（:153）。
-/// - 领取：`POST /api/v1/zcode-plan/billing/claim`，body `{plan_id}`，
-///   headers=Authorization/Content-Type/X-ZCode-App-Version/X-Platform
-///   （bigmodelCodingPlanSubscriptionProvider.ts:352-358——**不带**
-///   Device-Mid/Client-Language）。
-///   code=0 且 data.plan 在场=成功；1001-1005 终态失败；code 可为数字
-///   字符串；失败文案在 `data.message`（服务端已翻译），成功在 `msg`。
 /// - 行为上报：`POST /api/v1/marketing/touch/action`，body
 ///   `{campaign_id, action_type: confirm|cancel}`，成功=code=0（仅分析用）。
-/// - 反滥用层（request-security-edition）官方开源实现为空桩，裸 Bearer
-///   即可领取（claim.ts:4-11 / verification-policy.ts:19-23）。
 /// - HTTP 栈对齐官方 readApiJson（apiJson.ts:74-95）：**非 2xx 一律抛错
 ///   不读业务字段**；redirect:error（touch/action）=重定向按传输失败。
 ///
 /// 与 [RelayV2Api] 的关系：不复用其 `_request`——按端点组头的信封语义
-/// 不同（claim 的 code 可为字符串、错误文案在 data.message），且该类
-/// 文档限定终端两只读调用。4MiB 上限沿用 relay 常量（官方 touch 理论
-/// 极值可超此值，属客户端更严约束）；401 语义复用 [RelayV2AuthRequired]。
+/// 不同，且该类文档限定终端两只读调用。4MiB 上限沿用 relay 常量（官方
+/// touch 理论极值可超此值，属客户端更严约束）；401 语义复用
+/// [RelayV2AuthRequired]。
 class MarketingApiClient {
   static const touchPath = '/api/v1/marketing/touch';
   static const touchActionPath = '/api/v1/marketing/touch/action';
-  static const claimPath = '/api/v1/zcode-plan/billing/claim';
 
   /// 官方投放 deliveries 上限（marketingTouch.ts :153 z.array.max(32)——
   /// 超限整个信封非法，不截断）。
   static const maxDeliveries = 32;
-
-  /// 官方 claim 终态错误码（MarketingTouchProvider.tsx:275）。
-  static const terminalClaimCodes = {1001, 1002, 1003, 1004, 1005};
-
-  /// 服务端失败文案截断（审查中-7：无长度契约，防撑爆卡面/SnackBar）。
-  static const maxMessageLength = 300;
 
   final Uri origin;
   final Future<String?> Function() jwtProvider;
@@ -108,20 +93,21 @@ class MarketingApiClient {
         retryable: envelope['code'] == 0,
       );
     }
-    noteProtocolDrift(
-      'marketing.touch',
-      data,
-      const ['server_time', 'language', 'deliveries'],
-      onLog: onLog == null ? null : (line) => onLog?.call(line),
-    );
+    noteProtocolDrift('marketing.touch', data, const [
+      'server_time',
+      'language',
+      'deliveries',
+    ], onLog: onLog == null ? null : (line) => onLog?.call(line));
     final serverTime = data['server_time'];
     final rawDeliveries = data['deliveries'];
     // marketing-diag-1：真机无卡取证——成功路径也打响应摘要（原始
     // deliveries 截断 800 字符；无 PII，campaign/plan id 属服务端数据）。
     // ignore: avoid_print
-    print('[marketing] touch seq=$seq lang=${data['language']} '
-        'deliveries=${rawDeliveries is List ? rawDeliveries.length : '非List'} '
-        'raw=${_clip(rawDeliveries)}');
+    print(
+      '[marketing] touch seq=$seq lang=${data['language']} '
+      'deliveries=${rawDeliveries is List ? rawDeliveries.length : '非List'} '
+      'raw=${_clip(rawDeliveries)}',
+    );
     if (serverTime is! num || rawDeliveries is! List) {
       throw const MarketingUnavailable(
         'touch data 缺 server_time/deliveries',
@@ -164,80 +150,17 @@ class MarketingApiClient {
     );
   }
 
-  /// 领取套餐。语义（审查、修复）：
-  /// - 仅 2xx 响应读业务字段；非 2xx（含 3xx）抛 [MarketingUnavailable]
-  ///   →控制器按「结果未知」（POST 可能已送达）；
-  /// - 发送前 JWT 缺失抛 [RelayV2AuthRequired]（→authRequired 引导重登）；
-  /// - 已发出后收到 401 抛 [MarketingUnavailable]（→uncertain，官方口径：
-  ///   submitted 后一切异常按 uncertain）。
-  Future<MarketingClaimResult> claim(String planId) async {
-    // 发送前凭据预检（区分 401 分类：缺失=authRequired、已发出=uncertain）。
-    final jwt = await jwtProvider();
-    if (jwt == null || jwt.isEmpty) throw const RelayV2AuthRequired();
-    final envelope = await _request('POST', claimPath, body: {
-      'plan_id': planId,
-    }, onAuthRequired: () => const MarketingUnavailable(
-      'claim 收到 401（已提交，结果未知）',
-      retryable: true,
-    ));
-    // 官方：code 缺失不推断成功；数字字符串需归一（"1001"/"0"）；
-    // 整值 double（JSON 50.0）按整数接受（审查）。
-    final rawCode = envelope['code'];
-    final int code;
-    if (rawCode is int) {
-      code = rawCode;
-    } else if (rawCode is num && rawCode == rawCode.roundToDouble()) {
-      code = rawCode.toInt();
-    } else if (rawCode is String && RegExp(r'^\d+$').hasMatch(rawCode)) {
-      code = int.parse(rawCode);
-    } else {
-      noteProtocolDrift('marketing.claim', envelope, const ['code'],
-          onLog: onLog == null ? null : (line) => onLog?.call(line));
-      code = -1;
-    }
-    final data = envelope['data'];
-    final dataMap = data is Map ? data : null;
-    final plan = dataMap?['plan'];
-    final planMap = plan is Map ? plan : null;
-    if (code != 0 || planMap == null) {
-      return MarketingClaimResult(
-        success: false,
-        code: code,
-        // 失败文案在 data.message（服务端已翻译）；缺失由 UI 本地兜底；
-        // 无长度契约→截断（审查中-7）。
-        message: _clipMessage(dataMap?['message']),
-        terminal: terminalClaimCodes.contains(code),
-        entitlements: const [],
-      );
-    }
-    final entitlements = <MarketingClaimEntitlement>[];
-    final rawEnt = planMap['entitlements'];
-    if (rawEnt is List) {
-      for (final e in rawEnt) {
-        if (e is! Map) continue;
-        final id = '${e['entitlement_id'] ?? ''}'.trim();
-        if (id.isEmpty) continue;
-        entitlements.add(
-          MarketingClaimEntitlement(id, '${e['show_name'] ?? ''}'.trim()),
-        );
-      }
-    }
-    return MarketingClaimResult(
-      success: true,
-      code: code,
-      message: _clipMessage(envelope['msg']),
-      terminal: false,
-      entitlements: entitlements,
-    );
-  }
-
   /// 行为上报（confirm/cancel）。非 0 视为失败——调用方 fire-and-forget，
   /// 失败仅记录，不影响领取结果。
   Future<void> reportAction(String campaignId, {required bool confirm}) async {
-    final envelope = await _request('POST', touchActionPath, body: {
-      'campaign_id': campaignId,
-      'action_type': confirm ? 'confirm' : 'cancel',
-    });
+    final envelope = await _request(
+      'POST',
+      touchActionPath,
+      body: {
+        'campaign_id': campaignId,
+        'action_type': confirm ? 'confirm' : 'cancel',
+      },
+    );
     if (envelope['code'] != 0) {
       throw MarketingUnavailable(
         'action 上报 code=${envelope['code']}',
@@ -252,19 +175,11 @@ class MarketingApiClient {
     return text.length > 800 ? text.substring(0, 800) : text;
   }
 
-  static String _clipMessage(dynamic raw) {
-    if (raw is! String) return '';
-    final trimmed = raw.trim();
-    if (trimmed.length <= maxMessageLength) return trimmed;
-    return '${trimmed.substring(0, maxMessageLength)}…';
-  }
-
   Future<dynamic> _request(
     String method,
     String path, {
     Map<String, String>? query,
     Map<String, dynamic>? body,
-    MarketingUnavailable Function()? onAuthRequired,
   }) async {
     final jwt = await jwtProvider();
     if (jwt == null || jwt.isEmpty) throw const RelayV2AuthRequired();
@@ -281,32 +196,23 @@ class MarketingApiClient {
       if (body != null) {
         req.headers.set(io.HttpHeaders.contentTypeHeader, 'application/json');
       }
-      // 按端点组头（审查 对齐官方）：
-      // - touch/action：Device-Mid/Client-Language/App-Version
-      //   （marketingTouchService.ts:42-47）。
-      // - claim：App-Version/X-Platform（provider :352-358，无设备头）。
-      if (path == claimPath) {
-        req.headers.set('X-ZCode-App-Version', appVersion);
-        req.headers.set('X-Platform', platform);
-      } else {
-        req.headers.set('X-Device-Mid', deviceMid);
-        req.headers.set('X-Client-Language', locale);
-        req.headers.set('X-ZCode-App-Version', appVersion);
-      }
-      // 官方 touch/action redirect:"error"（:59/:80）→ 不跟随；claim
-      // 官方默认跟随，本实现统一不跟随——claim 的 3xx 归 uncertain
-      // （审查 ：语义等同「不可确认结果」，决策记录 留痕）。
+      // 按端点组头（审查 对齐官方）：Device-Mid/Client-Language/
+      // App-Version（marketingTouchService.ts:42-47）。
+      req.headers.set('X-Device-Mid', deviceMid);
+      req.headers.set('X-Client-Language', locale);
+      req.headers.set('X-ZCode-App-Version', appVersion);
+      // 官方 touch/action redirect:"error"（:59/:80）→ 不跟随，重定向
+      // 按传输失败处理。
       req.followRedirects = false;
       if (body != null) req.write(jsonEncode(body));
       final res = await req.close().timeout(timeout);
       if (res.statusCode == 401) {
         unawaited(res.drain<void>().catchError((_) {}));
-        if (onAuthRequired != null) throw onAuthRequired();
         throw const RelayV2AuthRequired();
       }
       // 审查 ：非 2xx 一律不读业务字段（官方 apiJson !response.ok 即
       // 抛错）；3xx 在 followRedirects=false 下同走此分支（touch/action
-      // 对齐官方 redirect:error=瞬态失败；claim→uncertain 由控制器归类）。
+      // 对齐官方 redirect:error=瞬态失败）。
       if (res.statusCode < 200 || res.statusCode >= 300) {
         unawaited(res.drain<void>().catchError((_) {}));
         throw MarketingUnavailable(
@@ -315,7 +221,7 @@ class MarketingApiClient {
         );
       }
       // 审查 ：body 收集整体限时——回完头后停 body 的对端会永久挂起
-      // claim（claiming 锁死）；超时即 abort 请求。
+      // 请求；超时即 abort。
       final bodyBytes = BytesBuilder(copy: false);
       try {
         await (() async {
@@ -343,12 +249,10 @@ class MarketingApiClient {
         decoded = jsonDecode(text);
       } on FormatException {
         // 审查 ：非法 JSON 归一为协议不可用，不裸抛 FormatException。
-        throw MarketingUnavailable('HTTP $path 响应非合法 JSON',
-            retryable: false);
+        throw MarketingUnavailable('HTTP $path 响应非合法 JSON', retryable: false);
       }
       if (decoded is! Map) {
-        throw MarketingUnavailable('HTTP $path 响应非 JSON 对象',
-            retryable: false);
+        throw MarketingUnavailable('HTTP $path 响应非 JSON 对象', retryable: false);
       }
       return decoded;
     } on TimeoutException {
@@ -363,38 +267,13 @@ class MarketingApiClient {
 }
 
 /// 营销接口不可用（网络/服务端）。`retryable=false` 表示重试无意义
-/// （体超限/空响应/超限 deliveries 等）；claim 语境下任何失败都可能已
-/// 送达服务端，由控制器按「结果未知」处理（见 [MarketingApiClient.claim]）。
+/// （体超限/空响应/超限 deliveries 等）。
 class MarketingUnavailable implements Exception {
   final String message;
   final bool retryable;
   const MarketingUnavailable(this.message, {this.retryable = true});
   @override
   String toString() => 'MarketingUnavailable($message, retryable=$retryable)';
-}
-
-/// 领取结果：code=0 且 data.plan 在场=成功；terminal=官方终态码
-/// （1001-1005，重试无意义）；message 为服务端已翻译文案（≤300 字符，
-/// 可能为空，UI 需本地兜底）。
-class MarketingClaimResult {
-  final bool success;
-  final int code;
-  final String message;
-  final bool terminal;
-  final List<MarketingClaimEntitlement> entitlements;
-  const MarketingClaimResult({
-    required this.success,
-    required this.code,
-    required this.message,
-    required this.terminal,
-    required this.entitlements,
-  });
-}
-
-class MarketingClaimEntitlement {
-  final String entitlementId;
-  final String showName;
-  const MarketingClaimEntitlement(this.entitlementId, this.showName);
 }
 
 /// 一条营销投放的手机侧投影（v1 只保留领取动作所需的字段）。

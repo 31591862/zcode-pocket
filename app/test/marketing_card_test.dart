@@ -12,8 +12,9 @@ import 'package:zcode_pocket/transport/marketing_client.dart';
 import 'package:zcode_pocket/ui/marketing_claim_card.dart';
 import 'package:zcode_pocket/ui/web_fallback_page.dart';
 
-/// 领取卡 widget 旅程（marketing-claim-1）：文字卡形态、popup 文案透出、
-/// 领取成功/终态 snackbar、busy 态、错误行三档、无卡零渲染、关闭钮。
+/// 福利提醒卡 widget 旅程（marketing-claim-1；marketing-reminder-1 起
+/// 纯提醒）：文字卡形态、popup 文案透出、电脑端提醒 SnackBar、busy 态、
+/// 错误行三档、无卡零渲染、关闭钮。
 /// 控制器真状态机（含 HTTP 全链路）由 marketing_controller_test 覆盖；
 /// 本文件用假控制器钉 UI 契约。
 void main() {
@@ -57,27 +58,23 @@ void main() {
     expect(find.text('官方福利'), findsNothing);
   });
 
-  testWidgets('领取按钮跳奖励中心（marketing-reminder-1：claim 被 WAF 拦→WebView 引导）', (
-    tester,
-  ) async {
+  testWidgets('领取按钮：弹电脑端领取提醒（纯提醒语义，不发起领取）', (tester) async {
     final ctl = _FakeMarketingController(_seed());
     await _pumpCard(tester, ctl);
     await tester.tap(find.text('领取'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    // claim 不再直调——弹领取说明 SnackBar（纯提醒语义）。
+    // 弹电脑端领取说明 SnackBar（纯提醒语义）。
     expect(find.text('请在电脑端打开 ZCode，点击左下角卡片领取'), findsOneWidget);
-    expect(ctl.claimCalls, 0, reason: '不再直调 claim（WAF 拦截）');
   });
 
-  testWidgets('领取按钮跳奖励中心（原终态测试改义：不再直调）', (tester) async {
+  testWidgets('领取按钮：不发起原生领取动作（纯提醒语义）', (tester) async {
     final ctl = _FakeMarketingController(_seed());
     await _pumpCard(tester, ctl);
     await tester.tap(find.text('领取'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('请在电脑端打开 ZCode，点击左下角卡片领取'), findsOneWidget);
-    expect(ctl.claimCalls, 0);
   });
 
   testWidgets('busy 态：领取中…+按钮禁用+关闭禁用', (tester) async {
@@ -300,14 +297,13 @@ void main() {
     expect(find.text('Claim now'), findsNothing);
   });
 
-  testWidgets('领取按钮跳奖励中心（原终态空文案测试改义）', (tester) async {
+  testWidgets('领取按钮：提醒文案可达且不依赖控制器领取路径', (tester) async {
     final ctl = _FakeMarketingController(_seed());
     await _pumpCard(tester, ctl);
     await tester.tap(find.text('领取'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('请在电脑端打开 ZCode，点击左下角卡片领取'), findsOneWidget);
-    expect(ctl.claimCalls, 0);
   });
 
   // ---------------- collapse-1：收起/展开（用户拍板「晚点领」）。
@@ -595,7 +591,7 @@ Future<void> _pumpCard(
   await tester.pump();
 }
 
-/// UI 契约假控制器：claim/dismiss/pull 记录调用并驱动一次性通知字段；
+/// UI 契约假控制器：dismiss/pull 记录调用；
 /// 真状态机见 marketing_controller_test。
 class _FakeMarketingController extends MarketingController {
   _FakeMarketingController(MarketingDelivery? seed)
@@ -614,17 +610,11 @@ class _FakeMarketingController extends MarketingController {
   }
 
   int pullCalls = 0;
-  int claimCalls = 0;
   int dismissCalls = 0;
 
   @override
   Future<void> ensurePulled() async {
     pullCalls++;
-  }
-
-  @override
-  Future<void> claim() async {
-    claimCalls++;
   }
 
   @override

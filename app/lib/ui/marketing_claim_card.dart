@@ -625,9 +625,8 @@ class _MarketingClaimCardState extends State<MarketingClaimCard> {
     BuildContext context,
     MarketingController marketing,
   ) async {
-    // marketing-reminder-1：纯提醒语义——投递可见+明确引导桌面领取。
-    // 不直调 claim、不跳奖励中心（banner 位投放的 campaign 在奖励中心
-    // 也看不到，跳转=误导）。点按钮=展开领取说明。
+    // marketing-reminder-1：纯提醒语义——投递可见+明确引导电脑端领取。
+    // 不在本端发起领取、不跳奖励中心；点按钮=弹电脑端领取提醒。
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(tr('请在电脑端打开 ZCode，点击左下角卡片领取'))));

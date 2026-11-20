@@ -4,31 +4,27 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcode_pocket/transport/marketing_client.dart';
-import 'package:zcode_pocket/transport/relay_v2.dart'
-    show RelayV2AuthRequired;
+import 'package:zcode_pocket/transport/relay_v2.dart' show RelayV2AuthRequired;
 
-/// 营销投放/领取客户端（marketing-claim-1）：loopback
-/// HttpServer 钉协议契约——信封解析（官方 marketingTouch.ts zod 投影）、
-/// claim 数字字符串 code/终态码/文案位置、401/JWT 缺失、上报。
-/// 契约出处 官方最新源码快照：marketingTouchService.ts:50-84、
-/// bigmodelCodingPlanSubscriptionProvider.ts:340-410。
+/// 营销投放客户端（marketing-claim-1，；marketing-reminder-1 起
+/// touch/reminder-only）：loopback HttpServer 钉协议契约——信封解析（官方
+/// marketingTouch.ts zod 投影）、401/JWT 缺失、上报。
+/// 契约出处 官方最新源码快照：marketingTouchService.ts:50-84。
 void main() {
   MarketingApiClient api(
     Uri origin, {
     Future<String?> Function() jwt = _jwtOk,
-  }) =>
-      MarketingApiClient(
-        origin: origin,
-        jwtProvider: jwt,
-        deviceMid: '0f0b9ee9-3b1c-4a4e-9d2f-6d7c8f9a0b1c',
-        locale: 'zh-CN',
-        appVersion: '1.0.7-test',
-        platform: 'android',
-        timeout: const Duration(seconds: 5),
-      );
+  }) => MarketingApiClient(
+    origin: origin,
+    jwtProvider: jwt,
+    deviceMid: '0f0b9ee9-3b1c-4a4e-9d2f-6d7c8f9a0b1c',
+    locale: 'zh-CN',
+    appVersion: '1.0.7-test',
+    platform: 'android',
+    timeout: const Duration(seconds: 5),
+  );
 
-  test('touch：banner 投放解析（按钮文案/plan_id/图资产/头部三件套）',
-      () async {
+  test('touch：banner 投放解析（按钮文案/plan_id/图资产/头部三件套）', () async {
     final hit = <HttpRequest>[];
     final server = await _serve((req, body) {
       hit.add(req);
@@ -160,89 +156,7 @@ void main() {
     );
   });
 
-  test('claim 成功：code=0+data.plan → 权益清单+msg 文案；头部带 X-Platform',
-      () async {
-    HttpRequest? hit;
-    Map<String, dynamic>? claimBody;
-    final server = await _serve((req, body) {
-      hit = req;
-      claimBody = body;
-      return _json({
-        'code': 0,
-        'msg': '领取成功',
-        'data': {
-          'server_time': 1760000000000,
-          'plan': {
-            'user_plan_id': 'up-1',
-            'plan_id': 'plan-glmlite-300m',
-            'status': 'active',
-            'entitlements': [
-              {
-                'entitlement_id': 'ent-1',
-                'show_name': 'GLM-5.3-Flash 300M tokens 额度',
-              },
-              {'entitlement_id': 'ent-2', 'show_name': ''},
-            ],
-          },
-        },
-      });
-    });
-    final result = await api(server).claim('plan-glmlite-300m');
-    expect(result.success, isTrue);
-    expect(result.terminal, isFalse);
-    expect(result.message, '领取成功');
-    // 官方语义保留全部权益（含空 show_name——UI 展示名筛选在控制器做）。
-    expect(result.entitlements, hasLength(2));
-    expect(result.entitlements.first.showName, 'GLM-5.3-Flash 300M tokens 额度');
-    expect(result.entitlements.last.showName, '');
-    expect(claimBody!['plan_id'], 'plan-glmlite-300m');
-    expect(hit!.headers.value('X-Platform'), 'android');
-    expect(hit!.headers.value('Authorization'), 'Bearer jwt-x');
-  });
-
-  test('claim 终态失败：数字字符串 code 1001 + data.message 透传', () async {
-    final server = await _serve((req, body) {
-      return _json({
-        'code': '1001',
-        'data': {'message': '您已领取过该套餐'},
-      });
-    });
-    final result = await api(server).claim('plan-x');
-    expect(result.success, isFalse);
-    expect(result.code, 1001, reason: '官方 code 可为数字字符串');
-    expect(result.terminal, isTrue, reason: '1001-1005 为终态码');
-    expect(result.message, '您已领取过该套餐', reason: '失败文案在 data.message');
-  });
-
-  test('claim 非终态失败与 code 缺失（缺失不推断成功）', () async {
-    final transient = await _serve(
-      (req, body) => _json({
-        'code': 500,
-        'data': {'message': '系统繁忙'},
-      }),
-    );
-    final r1 = await api(transient).claim('p');
-    expect(r1.success, isFalse);
-    expect(r1.terminal, isFalse, reason: '500 可重试');
-    expect(r1.message, '系统繁忙');
-
-    final noCode = await _serve((req, body) => _json({'data': {}}));
-    final r2 = await api(noCode).claim('p');
-    expect(r2.success, isFalse);
-    expect(r2.code, -1);
-  });
-
-  test('claim 传输异常=结果未知（POST 可能已送达）：不可当作未领取', () async {
-    // 未监听端口 → SocketException → MarketingUnavailable。
-    final api2 = api(Uri.parse('http://127.0.0.1:1'));
-    await expectLater(
-      api2.claim('p'),
-      throwsA(isA<MarketingUnavailable>()),
-    );
-  });
-
-  test('鉴权：401 与 JWT 缺失均抛 RelayV2AuthRequired（不自愈重试）',
-      () async {
+  test('鉴权：401 与 JWT 缺失均抛 RelayV2AuthRequired（不自愈重试）', () async {
     final unauthorized = await _serve(
       (req, body) => _json({'code': 40100, 'msg': 'unauthorized'}, status: 401),
     );
@@ -252,7 +166,7 @@ void main() {
     );
     final server = await _serve((req, body) => _json({'code': 0, 'data': {}}));
     await expectLater(
-      api(server, jwt: () async => null).claim('p'),
+      api(server, jwt: () async => null).touch(),
       throwsA(isA<RelayV2AuthRequired>()),
     );
   });
@@ -277,70 +191,23 @@ void main() {
     );
   });
 
-
-  // ---------------- review-1：官方成功判据缺口（审查④高7）。
-
-  test('claim 成功判据三缺档：code=0 但 data/plan 缺失或非对象一律失败',
-      () async {
-    final cases = <Map<String, dynamic>>[
-      {'code': 0},
-      {'code': 0, 'data': {}},
-      {'code': 0, 'data': {'plan': null}},
-      {'code': 0, 'data': {'plan': 'not-an-object'}},
-    ];
-    for (final payload in cases) {
-      final server = await _serve((req, body) => _json(payload));
-      final result = await api(server).claim('p');
-      expect(result.success, isFalse, reason: '载荷 $payload 不得判成功');
-      expect(result.terminal, isFalse);
-    }
-  });
-
-  test('claim code="0"（字符串成功形态）与整值 double（0.0/1001.0）',
-      () async {
-    final strServer = await _serve((req, body) => _json({
-          'code': '0',
-          'msg': '领取成功',
-          'data': {
-            'plan': {'plan_id': 'p'},
-          },
-        }));
-    final r1 = await api(strServer).claim('p');
-    expect(r1.success, isTrue, reason: '数字字符串 "0" 是官方合法成功形态');
-
-    final dblServer = await _serve((req, body) => _json({
-          'code': 0.0,
-          'msg': '领取成功',
-          'data': {
-            'plan': {'plan_id': 'p'},
-          },
-        }));
-    final r2 = await api(dblServer).claim('p');
-    expect(r2.success, isTrue, reason: 'JSON 0.0（整值 double）按 0 归一');
-
-    final termDbl = await _serve((req, body) => _json({
-          'code': 1001.0,
-          'data': {'message': '您已领取过该套餐'},
-        }));
-    final r3 = await api(termDbl).claim('p');
-    expect(r3.success, isFalse);
-    expect(r3.code, 1001);
-    expect(r3.terminal, isTrue);
-  });
-
   // ---------------- review-1：HTTP 状态核（审查①/④高4）。
 
   test('非 2xx 不读业务字段：403/500 带 code=0 体也按不可用失败', () async {
-    final server = await _serve((req, body) => _json({
-          'code': 0,
-          'data': {
-            'plan': {'plan_id': 'p'},
-          },
-        }, status: 403));
+    final server = await _serve(
+      (req, body) => _json({
+        'code': 0,
+        'data': {
+          'server_time': 1,
+          'language': 'zh-CN',
+          'deliveries': <Map<String, dynamic>>[],
+        },
+      }, status: 403),
+    );
     await expectLater(
-      api(server).claim('p'),
+      api(server).touch(),
       throwsA(isA<MarketingUnavailable>()),
-      reason: 'WAF 403 体形如成功信封也不得判领取成功',
+      reason: '非 2xx 体形如成功信封也不得判成功',
     );
     final server500 = await _serve(
       (req, body) => _json({'code': 0}, status: 500),
@@ -351,8 +218,7 @@ void main() {
     );
   });
 
-  test('302（不跟随）按瞬态失败；HTML 体按终态失败（非裸 FormatException）',
-      () async {
+  test('302（不跟随）按瞬态失败；HTML 体按终态失败（非裸 FormatException）', () async {
     final redirect = await _serve(
       (req, body) => _json({'code': 0}, status: 302),
     );
@@ -386,29 +252,9 @@ void main() {
     );
   });
 
-  test('claim 已提交后 401 归 MarketingUnavailable（uncertain）；touch 401 归 AuthRequired',
-      () async {
-    final claimServer = await _serve(
-      (req, body) => _json({'code': 40100}, status: 401),
-    );
-    await expectLater(
-      api(claimServer).claim('p'),
-      throwsA(isA<MarketingUnavailable>()),
-      reason: '官方口径：submitted 后一切异常（含 401）按 uncertain',
-    );
-    final touchServer = await _serve(
-      (req, body) => _json({'code': 40100}, status: 401),
-    );
-    await expectLater(
-      api(touchServer).touch(),
-      throwsA(isA<RelayV2AuthRequired>()),
-    );
-  });
-
   // ------------- review-1：投放解析收紧（审查①M2/M3//、④中2）。
 
-  test('banner 两个非 close 按钮官方拒收；未知 action 类型整条丢弃',
-      () async {
+  test('banner 两个非 close 按钮官方拒收；未知 action 类型整条丢弃', () async {
     final server = await _serve((req, body) {
       return _json({
         'code': 0,
@@ -439,12 +285,10 @@ void main() {
       });
     });
     final snapshot = await api(server).touch();
-    expect(snapshot.deliveries, isEmpty,
-        reason: '官方拒收形态不得静默降级为可领取卡');
+    expect(snapshot.deliveries, isEmpty, reason: '官方拒收形态不得静默降级为可领取卡');
   });
 
-  test('按钮文案与动作绑定同一按钮（popup 双按钮取 claim 自己的文案）',
-      () async {
+  test('按钮文案与动作绑定同一按钮（popup 双按钮取 claim 自己的文案）', () async {
     final server = await _serve((req, body) {
       return _json({
         'code': 0,
@@ -471,8 +315,7 @@ void main() {
     });
     final snapshot = await api(server).touch();
     final d = snapshot.deliveries.single;
-    expect(d.buttonText, '立即领取',
-        reason: '审查①H2：文案取 claim 按钮自身，不得取首个非 close');
+    expect(d.buttonText, '立即领取', reason: '审查①H2：文案取 claim 按钮自身，不得取首个非 close');
     expect(d.claimPlanId, 'p-mixed');
   });
 
@@ -528,13 +371,14 @@ void main() {
     expect(snapshot.deliveries, hasLength(2), reason: 'popup/banner 各留一条');
     final vid = snapshot.deliveries.firstWhere((d) => d.campaignId == 'vid');
     expect(vid.image, isNull, reason: 'video 变体不取图');
-    expect(vid.claimable, isTrue, reason: 'video 投放仍可文字卡领取');
-    final banner = snapshot.deliveries.firstWhere((d) => d.campaignId == 'hero-img');
+    expect(vid.claimable, isTrue, reason: 'video 投放仍可出文字提醒卡');
+    final banner = snapshot.deliveries.firstWhere(
+      (d) => d.campaignId == 'hero-img',
+    );
     expect(banner.image, isNotNull);
   });
 
-  test('text.content 非 String 拒收；asset src 带 userinfo 拒收（领取不受影响）',
-      () async {
+  test('text.content 非 String 拒收；asset src 带 userinfo 拒收（提醒卡不受影响）', () async {
     final badTextServer = await _serve((req, body) {
       return _json({
         'code': 0,
@@ -596,11 +440,10 @@ void main() {
     });
     final d = (await api(badAssetServer).touch()).deliveries.single;
     expect(d.image, isNull, reason: '带凭据 URL 官方拒收');
-    expect(d.claimable, isTrue, reason: '资产拒收不影响领取能力');
+    expect(d.claimable, isTrue, reason: '资产拒收不影响提醒卡展示');
   });
 
-  test('deliveries>32 拒整个信封（官方 zod max(32)，不静默截断）',
-      () async {
+  test('deliveries>32 拒整个信封（官方 zod max(32)，不静默截断）', () async {
     final server = await _serve((req, body) {
       return _json({
         'code': 0,
@@ -624,39 +467,6 @@ void main() {
       throwsA(isA<MarketingUnavailable>()),
       reason: '超限是协议漂移信号，须上浮不得截断吞掉',
     );
-  });
-
-  test('服务端失败文案截断 ≤300 字符', () async {
-    final server = await _serve((req, body) => _json({
-          'code': 500,
-          'data': {'message': '长' * 1000},
-        }));
-    final result = await api(server).claim('p');
-    expect(result.message.length, lessThanOrEqualTo(301));
-    expect(result.message.endsWith('…'), isTrue);
-  });
-
-  test('按端点头：claim 不带 X-Device-Mid/X-Client-Language（官方集合）',
-      () async {
-    HttpRequest? hit;
-    final server = await _serve((req, body) {
-      hit = req;
-      return _json({
-        'code': 0,
-        'msg': 'ok',
-        'data': {
-          'plan': {'plan_id': 'p'},
-        },
-      });
-    });
-    await api(server).claim('p');
-    expect(hit!.headers.value('X-Platform'), 'android');
-    expect(hit!.headers.value('X-ZCode-App-Version'), '1.0.7-test');
-    expect(hit!.headers.value('X-Device-Mid'), isNull,
-        reason: '官方 claim 头集合不含设备头');
-    expect(hit!.headers.value('X-Client-Language'), isNull);
-    expect(hit!.method, 'POST');
-    expect(hit!.uri.path, '/api/v1/zcode-plan/billing/claim');
   });
 
   test('响应体超 2MiB 的投放图直弃（remote_banner_image 上限）', () async {
@@ -684,21 +494,20 @@ Map<String, dynamic> _popup(
   String title = '福利',
   String desc = '领取',
   String actionType = 'claim_zcode_plan',
-}) =>
+}) => {
+  'layout': 'v1',
+  'title': {'format': 'plaintext', 'content': title},
+  'description': {'format': 'plaintext', 'content': desc},
+  'buttons': [
     {
-      'layout': 'v1',
-      'title': {'format': 'plaintext', 'content': title},
-      'description': {'format': 'plaintext', 'content': desc},
-      'buttons': [
-        {
-          'text': {'format': 'plaintext', 'content': '领取'},
-          'action': {
-            'type': actionType,
-            'args': {'plan_id': 'plan-$id'},
-          },
-        },
-      ],
-    };
+      'text': {'format': 'plaintext', 'content': '领取'},
+      'action': {
+        'type': actionType,
+        'args': {'plan_id': 'plan-$id'},
+      },
+    },
+  ],
+};
 
 typedef _Handler = Map<String, dynamic> Function(
   HttpRequest req,
@@ -726,26 +535,25 @@ Future<Uri> _serve(_Handler handler) async {
 const _statusKey = '__status__';
 
 Map<String, dynamic> _json(Map<String, dynamic> map, {int status = 200}) => {
-      ...map,
-      '$_statusKey': status,
-    };
+  ...map,
+  '$_statusKey': status,
+};
 
 Map<String, dynamic> _imageVisual() => {
-      'type': 'image',
-      'image': {
-        'default': {
-          'src': 'https://static.zcode.z.ai/banner.png',
-          'sha256': 'a' * 64,
-        },
-      },
-    };
+  'type': 'image',
+  'image': {
+    'default': {
+      'src': 'https://static.zcode.z.ai/banner.png',
+      'sha256': 'a' * 64,
+    },
+  },
+};
 
 Map<String, dynamic> _button(
   String text,
   String actionType,
   Map<String, dynamic> args,
-) =>
-    {
-      'text': {'format': 'plaintext', 'content': text},
-      'action': {'type': actionType, 'args': args},
-    };
+) => {
+  'text': {'format': 'plaintext', 'content': text},
+  'action': {'type': actionType, 'args': args},
+};

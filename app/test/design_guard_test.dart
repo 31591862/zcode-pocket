@@ -80,17 +80,22 @@ void main() {
 
   testWidgets('守卫·设置-对话子页', (tester) async {
     await _guard(
-        tester, 'SettingsConversationPage', const SettingsConversationPage());
+      tester,
+      'SettingsConversationPage',
+      const SettingsConversationPage(),
+    );
   });
 
   testWidgets('守卫·设置-通知子页', (tester) async {
     await _guard(
-        tester, 'SettingsNotificationsPage', const SettingsNotificationsPage());
+      tester,
+      'SettingsNotificationsPage',
+      const SettingsNotificationsPage(),
+    );
   });
 
   testWidgets('守卫·设置-语音子页', (tester) async {
-    await _guard(
-        tester, 'SettingsVoicePage', const SettingsVoicePage());
+    await _guard(tester, 'SettingsVoicePage', const SettingsVoicePage());
   });
 
   testWidgets('守卫·用量页', (tester) async {
@@ -124,16 +129,17 @@ void main() {
       tester,
       'MarketingClaimCard',
       null,
-      page: const Scaffold(
-        body: Column(children: [MarketingClaimCard()]),
-      ),
+      page: const Scaffold(body: Column(children: [MarketingClaimCard()])),
       app: _GuardMarketingApp(),
     );
   });
 
   testWidgets('守卫·MarkdownView（含宽表格/代码块/长段落）', (tester) async {
     await _guard(
-        tester, 'MarkdownView', const MarkdownView(data: _markdownSample));
+      tester,
+      'MarkdownView',
+      const MarkdownView(data: _markdownSample),
+    );
   });
 
   testWidgets('守卫·QuotaBanner（低额度态）', (tester) async {
@@ -180,8 +186,7 @@ void main() {
     }, app: _GuardCatalogApp());
   });
 
-  testWidgets('守卫·任务中心（「任务」内联分支，H13/H14 扩面 2026-10-25）',
-      (tester) async {
+  testWidgets('守卫·任务中心（「任务」内联分支，H13/H14 扩面 2026-10-25）', (tester) async {
     await _guardSheetLike(
       tester,
       'TaskCenterUnclassified',
@@ -216,7 +221,11 @@ void main() {
     L10n.resetForTest();
     L10n.setTestLocale('en-US');
     L10n.collectMissing = true;
-    await _guard(tester, 'MarkdownView', const MarkdownView(data: _markdownSample));
+    await _guard(
+      tester,
+      'MarkdownView',
+      const MarkdownView(data: _markdownSample),
+    );
     _expectNoMissing('MarkdownView');
   });
 
@@ -267,7 +276,11 @@ void main() {
     L10n.setTestLocale('en-US');
     L10n.collectMissing = true;
     await _guardSheetLike(tester, 'ModelSheet', (context) async {
-      await showModelSheet(context, sessionId: null, state: ConversationState());
+      await showModelSheet(
+        context,
+        sessionId: null,
+        state: ConversationState(),
+      );
     }, app: _GuardCatalogApp());
     _expectNoMissing('ModelSheet');
   });
@@ -299,9 +312,7 @@ void main() {
       tester,
       'MarketingClaimCardFallback',
       null,
-      page: const Scaffold(
-        body: Column(children: [MarketingClaimCard()]),
-      ),
+      page: const Scaffold(body: Column(children: [MarketingClaimCard()])),
       app: app,
     );
     _expectNoMissing('MarketingClaimCardFallback');
@@ -319,9 +330,7 @@ void main() {
         app: preApp,
         child: MaterialApp(
           theme: buildAppTheme(),
-          home: const Scaffold(
-            body: Column(children: [MarketingClaimCard()]),
-          ),
+          home: const Scaffold(body: Column(children: [MarketingClaimCard()])),
         ),
       ),
     );
@@ -337,9 +346,7 @@ void main() {
       tester,
       'MarketingClaimCardCollapsed',
       null,
-      page: const Scaffold(
-        body: Column(children: [MarketingClaimCard()]),
-      ),
+      page: const Scaffold(body: Column(children: [MarketingClaimCard()])),
       app: _GuardMarketingApp(collapsed: true),
     );
   });
@@ -353,9 +360,7 @@ void main() {
       tester,
       'MarketingClaimCardCollapsedEn',
       null,
-      page: const Scaffold(
-        body: Column(children: [MarketingClaimCard()]),
-      ),
+      page: const Scaffold(body: Column(children: [MarketingClaimCard()])),
       app: _GuardMarketingApp(collapsed: true),
     );
     _expectNoMissing('MarketingClaimCardCollapsedEn');
@@ -369,9 +374,7 @@ void main() {
       tester,
       'MarketingClaimCard',
       null,
-      page: const Scaffold(
-        body: Column(children: [MarketingClaimCard()]),
-      ),
+      page: const Scaffold(body: Column(children: [MarketingClaimCard()])),
       app: _GuardMarketingApp(),
     );
     _expectNoMissing('MarketingClaimCard');
@@ -386,6 +389,7 @@ void _expectNoMissing(String label) {
   );
   L10n.resetForTest();
 }
+
 /// [open] 非空=点按钮开弹层；否则直接守卫 [page]。
 Future<void> _guardSheetLike(
   WidgetTester tester,
@@ -410,9 +414,8 @@ Future<void> _guardSheetLike(
       child: MaterialApp(
         theme: buildAppTheme(),
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(_textScale),
-          ),
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(_textScale)),
           child: child!,
         ),
         home: open == null
@@ -449,8 +452,7 @@ Future<void> _guardSheetLike(
       .sublist(before)
       .where((f) => !_touchExemptions.keys.any(f.contains))
       .toList();
-  expect(added, isEmpty,
-      reason: '设计守卫发现：\n${added.join('\n')}');
+  expect(added, isEmpty, reason: '设计守卫发现：\n${added.join('\n')}');
 }
 
 /// 模型弹层目录夹具（扩面）：真 AppState 无栈时目录为空，守卫会
@@ -461,19 +463,19 @@ class _GuardCatalogApp extends AppState {
 
   @override
   Future<List<dynamic>> modelSelectionOptions() async => [
-        ConfigOption.fromMap({
-          'id': 'model',
-          'name': 'Model',
-          'options': [
-            for (var i = 0; i < 6; i++)
-              {
-                'value': 'prov/guard-$i',
-                'name': 'Guard $i',
-                'modelProviderId': 'prov',
-              },
-          ],
-        }),
-      ];
+    ConfigOption.fromMap({
+      'id': 'model',
+      'name': 'Model',
+      'options': [
+        for (var i = 0; i < 6; i++)
+          {
+            'value': 'prov/guard-$i',
+            'name': 'Guard $i',
+            'modelProviderId': 'prov',
+          },
+      ],
+    }),
+  ];
 
   @override
   Future<Map<String, dynamic>?> modelSelectionView() async =>
@@ -481,7 +483,8 @@ class _GuardCatalogApp extends AppState {
 }
 
 /// 「任务」内联分支夹具（扩面）：伪项目选中+两卡数据。
-class _GuardTasksApp extends AppState {  @override
+class _GuardTasksApp extends AppState {
+  @override
   LinkPhase get phase => LinkPhase.online;
 
   @override
@@ -489,21 +492,21 @@ class _GuardTasksApp extends AppState {  @override
 
   @override
   List<Map<String, dynamic>> get unclassifiedTasks => [
-        {
-          'taskId': 'g1',
-          'title': '守卫任务一',
-          'updatedAt': DateTime.now().millisecondsSinceEpoch,
-          'displayStatus': 'idle',
-          'workspacePath': r'C:\guard',
-        },
-        {
-          'taskId': 'g2',
-          'title': '守卫任务二',
-          'updatedAt': DateTime.now().millisecondsSinceEpoch,
-          'displayStatus': 'running',
-          'workspacePath': r'C:\guard',
-        },
-      ];
+    {
+      'taskId': 'g1',
+      'title': '守卫任务一',
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      'displayStatus': 'idle',
+      'workspacePath': r'C:\guard',
+    },
+    {
+      'taskId': 'g2',
+      'title': '守卫任务二',
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      'displayStatus': 'running',
+      'workspacePath': r'C:\guard',
+    },
+  ];
 }
 
 /// 单页守卫流程：折叠态尺寸 + 1.3 字号构建 → 收集溢出异常与触控目标。
@@ -525,9 +528,8 @@ Future<void> _guard(WidgetTester tester, String label, Widget page) async {
       child: MaterialApp(
         theme: buildAppTheme(),
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(_textScale),
-          ),
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(_textScale)),
           child: child!,
         ),
         home: Scaffold(body: page),
@@ -565,8 +567,13 @@ Future<void> _guard(WidgetTester tester, String label, Widget page) async {
       .sublist(findingsBeforeGuard)
       .where((f) => !_touchExemptions.keys.any(f.contains))
       .toList();
-  expect(added, isEmpty, reason: '设计守卫发现（详见 tools/logs/design-guard-findings.txt）：\n'
-      '${added.join('\n')}');
+  expect(
+    added,
+    isEmpty,
+    reason:
+        '设计守卫发现（详见 tools/logs/design-guard-findings.txt）：\n'
+        '${added.join('\n')}',
+  );
 }
 
 /// 遍历已构建的可点元素，命中区域短边 <48dp 记录。
@@ -626,7 +633,8 @@ bool _coveredByFrameworkHitPadding(Element element) {
 
 /// 返回可点元素的描述；非（本守卫口径下的）可点元素返回 null。
 String? _tapDescription(Widget widget) {
-  if (widget is IconButton) return 'IconButton(${widget.tooltip ?? widget.icon})';
+  if (widget is IconButton)
+    return 'IconButton(${widget.tooltip ?? widget.icon})';
   if (widget is FloatingActionButton) return 'FloatingActionButton';
   if (widget is FilledButton ||
       widget is ElevatedButton ||
@@ -673,8 +681,8 @@ final answer = 42; // 代码块守卫样本
 > 引用块样本文字。
 ''';
 
-/// 领取卡守卫夹具（marketing-claim-1）：假控制器播种在展卡——拉取/领取
-/// 全 no-op（守卫只看渲染结构），真状态机见 marketing_controller_test。
+/// 福利提醒卡守卫夹具（marketing-claim-1）：假控制器播种在展卡——拉取/
+/// 关闭全 no-op（守卫只看渲染结构），真状态机见 marketing_controller_test。
 class _GuardMarketingApp extends AppState {
   _GuardMarketingApp({bool bare = false, bool collapsed = false}) {
     marketing = _GuardMarketingController(bare: bare, collapsed: collapsed);
@@ -686,15 +694,15 @@ class _GuardMarketingApp extends AppState {
 
 class _GuardMarketingController extends MarketingController {
   _GuardMarketingController({bool bare = false, bool collapsed = false})
-      : super(
-          accountIdProvider: () async => 'acc-guard',
-          jwtProvider: (id) async => 'jwt',
-          deviceMidProvider: () async => 'mid',
-          localeProvider: () => 'zh-CN',
-          appVersionProvider: () async => '0',
-          platformProvider: () => 'android',
-          originProvider: () => Uri.parse('https://zcode.z.ai'),
-        ) {
+    : super(
+        accountIdProvider: () async => 'acc-guard',
+        jwtProvider: (id) async => 'jwt',
+        deviceMidProvider: () async => 'mid',
+        localeProvider: () => 'zh-CN',
+        appVersionProvider: () async => '0',
+        platformProvider: () => 'android',
+        originProvider: () => Uri.parse('https://zcode.z.ai'),
+      ) {
     card = MarketingCard(
       accountId: 'acc-guard',
       // bare=true：无服务端文案——走本地兜底（官方福利/领取您的专属
@@ -724,9 +732,5 @@ class _GuardMarketingController extends MarketingController {
   Future<void> ensurePulled() async {}
 
   @override
-  Future<void> claim() async {}
-
-  @override
   Future<void> dismiss(MarketingCard expected) async {}
-
 }

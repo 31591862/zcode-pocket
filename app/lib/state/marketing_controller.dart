@@ -5,21 +5,20 @@ import 'package:flutter/foundation.dart';
 import '../transport/marketing_client.dart';
 import '../transport/relay_v2.dart' show RelayV2AuthRequired;
 
-/// 领取失败的呈现分类（UI 据此选文案）。
+/// 卡面错误行的呈现分类（UI 据此选文案）。
 enum MarketingClaimError {
-  /// 服务端明确拒绝且非终态（文案透传，卡保留可重试）。
+  /// 服务端明确拒绝（文案透传，卡保留可重试）。
   server,
 
-  /// 凭据缺失（发送前无 JWT）——本地文案引导重登，卡保留。
+  /// 凭据缺失——本地文案引导重登，卡保留。
   authRequired,
 
-  /// 传输异常（含已提交后的 401）：POST 可能已送达，结果未知——卡保留
-  /// 可重试（若实际已领取，重试会收到服务端终态「已领取」自愈收卡）。
+  /// 传输异常：请求结果未知——卡保留可重试。
   uncertain,
 }
 
-/// 首页领取卡状态机（marketing-claim-1，；对抗审查修复批
-/// marketing-claim-review-1 全面加固）。
+/// 首页福利提醒卡状态机（marketing-claim-1，；marketing-reminder-1
+/// 起收敛为 touch 投放展示+电脑端提醒——纯提醒语义，不在手机端领取）。
 ///
 /// 拉取调度（审查②/ 修复）：
 /// - 触发点=冷启动一次+卡片挂载 ensurePulled（经 AppStateScope 通知，
@@ -29,15 +28,9 @@ enum MarketingClaimError {
 ///   [onAccountChanged] 显式失效缓存立即重拉。
 /// - 每账号每会话成功一次；无后台轮询（电量红线）。
 /// - 拉取失败保旧卡（SWR），但**跨账号的旧卡在拉取前即清**（审查①/
-///   ②M2：B 会话不得展示/领取 A 的投放），且 10 分钟无成功按官方
+///   ②M2：B 会话不得展示 A 的投放），且 10 分钟无成功按官方
 ///   marketingTouchController.ts:190-198 语义收卡。
-///
-/// 领取语义（官方 marketingTouchController 对齐+审查 M3///）：
-/// - claim 入口清一次性通知字段（防上次残留串台）；
-/// - claim 前校验当前账号=卡片账号，不一致清卡放弃（跨账号守卫）；
-/// - claim 在途的迟到拉取换卡不影响收尾——只清当初点击的那张
-///   （identical 判定）；
-/// - 成功/关闭的上报为 fire-and-forget（官方同款）——不阻塞结果反馈；
+/// - 关闭的上报为 fire-and-forget（官方同款）——不阻塞结果反馈；
 /// - suppress 按 `accountId:campaignId` 键控（跨账号不串）。
 class MarketingController extends ChangeNotifier {
   /// 失败退避起点。
@@ -92,19 +85,12 @@ class MarketingController extends ChangeNotifier {
   /// [MarketingClaimError.server] 的服务端文案（已翻译且已截断，可空）。
   String? serverErrorMessage;
 
-  /// 成功领取的权益名（UI 弹一次性 snackbar 后置回 null）。
-  List<String>? lastClaimedNames;
-
-  /// 终态失败文案（UI 弹一次性 snackbar 后置回 null；空串=用本地兜底）。
-  String? lastTerminalMessage;
-
   /// 收起态（marketing-claim-collapse-1，用户拍板「我现在不想领想晚点
   /// 领」）：键=账号+投放（见 [_key]）——**campaign 级延期语义**：同投放
   /// 跨 force 拉取/中间换投放后再投同 campaign 均保持收起（同一活动不
   /// 反复打扰）；换账号（键含账号）或重启回展开；会话级视图态不落盘
   /// 不上报（既非确认也非取消，官方无此概念）。与 dismiss 互不影响：
-  /// dismiss 走 suppress+cancel 上报。claim 入口/失败路径自动展开
-  /// （防收起态藏错误反馈）。
+  /// dismiss 走 suppress+cancel 上报。
   String? _collapsedKey;
 
   /// 当前在展卡是否处于收起态。
@@ -114,9 +100,8 @@ class MarketingController extends ChangeNotifier {
         _collapsedKey == _key(current.accountId, current.delivery.campaignId);
   }
 
-  /// 收起[expected]这张卡（仅视图态；claiming/claim 启动窗口禁用——
-  /// 与 UI 禁用同口径；identical 校验防陈旧点击打到换卡后的新投放，
-  /// 审查②）。
+  /// 收起[expected]这张卡（仅视图态；claiming 中禁用——与 UI 禁用同
+  /// 口径；identical 校验防陈旧点击打到换卡后的新投放，审查②）。
   void collapse(MarketingCard expected) {
     final current = card;
     if (current == null || claiming || !identical(current, expected)) return;
@@ -132,9 +117,8 @@ class MarketingController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 会话内抑制：键=[_key]（账号+投放，长度前缀编码——见 [_key]；领取成功/终态/用户关闭后
-  /// 该账号本会话不再打扰；不落盘——confirm 后服务端不再投放，重启后
-  /// 若服务端仍投说明领取实际未成立应再见）。
+  /// 会话内抑制：键=[_key]（账号+投放，长度前缀编码——见 [_key]；用户
+  /// 关闭后该账号本会话不再打扰；不落盘——重启后若服务端仍投则再提醒）。
   final Set<String> _suppressed = <String>{};
 
   /// 每账号每会话已成功拉取过一次的账号集合。
@@ -200,7 +184,7 @@ class MarketingController extends ChangeNotifier {
   }
 
   Future<void> _pull({required bool force}) async {
-    if (claiming) return; // 领取中不拉，避免换卡打断在途动作。
+    if (claiming) return; // claiming 中不拉取。
     final now = clock();
     // 失败退避闸（force 绕过——下拉/顶栏刷新语义）。
     if (!force && now.isBefore(_nextAttemptAfter)) return;
@@ -229,17 +213,23 @@ class MarketingController extends ChangeNotifier {
       client = await _clientFor(accountId);
       // marketing-diag-1：拉取起点（账号哈希前 8 位，无 PII）。
       // ignore: avoid_print
-      print('[marketing] pull 发起 acc=${accountId.hashCode.toRadixString(16).padLeft(8, '0')}');
+      print(
+        '[marketing] pull 发起 acc=${accountId.hashCode.toRadixString(16).padLeft(8, '0')}',
+      );
       final snapshot = await client.touch();
       succeeded = true;
       // ignore: avoid_print
-      print('[marketing] pull 成功 candidates=${snapshot.deliveries.where((d) => d.claimable).length} '
-          'suppressed=${_suppressed.length}');
+      print(
+        '[marketing] pull 成功 candidates=${snapshot.deliveries.where((d) => d.claimable).length} '
+        'suppressed=${_suppressed.length}',
+      );
       _pulledAccounts.add(accountId);
       // SWR 语义：拉到新快照才换卡（在途失败保旧卡）。
       final candidates = snapshot.deliveries
           .where(
-            (d) => d.claimable && !_suppressed.contains(_key(accountId, d.campaignId)),
+            (d) =>
+                d.claimable &&
+                !_suppressed.contains(_key(accountId, d.campaignId)),
           )
           .toList();
       // banner 优先（带图资产概率最高），其次 popup；官方按
@@ -262,7 +252,7 @@ class MarketingController extends ChangeNotifier {
       if (chosen == null) {
         card = null;
       } else {
-        // 同 campaign 重选（结果未知重拉）不清错误提示。
+        // 同 campaign 重选不清错误提示。
         final sameCampaign =
             card != null && card!.delivery.campaignId == chosen.campaignId;
         if (!sameCampaign) {
@@ -312,93 +302,6 @@ class MarketingController extends ChangeNotifier {
     }
   }
 
-  /// claim 账号读取超时（审查①；测试可注入缩短）。
-  @visibleForTesting
-  Duration claimAccountReadTimeout = const Duration(seconds: 8);
-
-  /// claim 放弃收尾：清卡+复位 claiming（账号不符/读取超时共用）。
-  void _abortClaim(MarketingCard current) {
-    card = null;
-    errorKind = null;
-    serverErrorMessage = null;
-    claiming = false;
-    notifyListeners();
-  }
-
-  /// 执行领取（卡片按钮）。
-  Future<void> claim() async {
-    final current = card;
-    if (current == null || claiming) return;
-    final planId = current.delivery.claimPlanId;
-    if (planId == null || planId.isEmpty) return;
-    // 审查②/③中6：入口清一次性通知字段（防上次残留跨挂载/跨投放串台）。
-    lastClaimedNames = null;
-    lastTerminalMessage = null;
-    // collapse-1 审查②/：claiming **前置到账号读取之前**（同步段）——
-    // 生产账号读取走 Keystore 通道可达数十 ms，原窗口内收起/关闭/二次
-    // 点击均可穿守卫；同时收起态下外部调用 claim 自动展开（错误反馈
-    // 不被薄栏藏匿）。
-    if (isCollapsed) expand();
-    claiming = true;
-    errorKind = null;
-    serverErrorMessage = null;
-    notifyListeners();
-    // 跨账号守卫（审查①）：当前账号≠卡片账号→清卡放弃（claim 是显式
-    // 动作，账号读取不走节流缓存）。
-    // 审查①：账号读取走 Keystore 平台通道——挂起时 claiming 会永久
-    // 转圈；8s 超时按账号不符处理（清卡复位，放弃本次领取）。
-    final String? accountId;
-    try {
-      accountId = await _resolveAccount(fresh: true)
-          .timeout(claimAccountReadTimeout);
-    } on TimeoutException {
-      return _abortClaim(current);
-    }
-    if (accountId == null || accountId != current.accountId) {
-      _abortClaim(current);
-      return;
-    }
-    MarketingApiClient? client;
-    try {
-      client = await _clientFor(current.accountId);
-      final result = await client.claim(planId);
-      if (result.success) {
-        lastClaimedNames = [
-          for (final e in result.entitlements)
-            if (e.showName.isNotEmpty) e.showName,
-        ];
-        _finish(current, reportConfirm: true);
-      } else if (result.terminal) {
-        lastTerminalMessage = result.message;
-        _finish(current, reportConfirm: false);
-      } else {
-        errorKind = MarketingClaimError.server;
-        serverErrorMessage = result.message;
-        claiming = false;
-        notifyListeners();
-      }
-    } on RelayV2AuthRequired {
-      // 仅「发送前凭据缺失」走到这里（client claim 已预检）；已提交的
-      // 401 由 client 转为 MarketingUnavailable=uncertain。
-      errorKind = MarketingClaimError.authRequired;
-      claiming = false;
-      notifyListeners();
-    } on MarketingUnavailable {
-      errorKind = MarketingClaimError.uncertain;
-      claiming = false;
-      notifyListeners();
-    } catch (_) {
-      errorKind = MarketingClaimError.uncertain;
-      claiming = false;
-      notifyListeners();
-    } finally {
-      // 审查②：任何路径（含 provider 抛错）都复位 claiming。
-      client?.close();
-      claiming = false;
-      notifyListeners();
-    }
-  }
-
   /// 最近一次 dismiss 的快照（撤销用——审查①M2：X 误触不可逆代价）。
   MarketingCard? _lastDismissed;
 
@@ -430,24 +333,6 @@ class MarketingController extends ChangeNotifier {
       serverErrorMessage = null;
     }
     notifyListeners();
-  }
-
-  /// 收卡收尾：suppress+清卡（仅当在展卡仍是当初点击的那张——审查②M3：
-  /// 在途拉取换出的新卡不得被吞）；上报 fire-and-forget（审查④高3：
-  /// 官方同款，不阻塞结果反馈）。
-  void _finish(
-    MarketingCard current, {
-    required bool reportConfirm,
-  }) {
-    _suppressed.add(_key(current.accountId, current.delivery.campaignId));
-    if (identical(card, current)) {
-      card = null;
-      errorKind = null;
-      serverErrorMessage = null;
-    }
-    claiming = false;
-    notifyListeners();
-    if (reportConfirm) unawaited(_report(current, confirm: true));
   }
 
   Future<void> _report(MarketingCard current, {required bool confirm}) async {
@@ -491,7 +376,7 @@ class MarketingController extends ChangeNotifier {
       '${accountId.length}:$accountId$campaignId';
 }
 
-/// 在展领取卡：投放 + 归属账号（账号切换判定用）。
+/// 在展福利提醒卡：投放 + 归属账号（账号切换判定用）。
 class MarketingCard {
   final String accountId;
   final MarketingDelivery delivery;

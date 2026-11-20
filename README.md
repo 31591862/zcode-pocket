@@ -134,6 +134,7 @@ desktop **3.16+**):
 
 | Desktop version | Status |
 |---|---|
+| 3.19.0 | Assessed against the official installer package: zero breaking changes, no adaptation needed; verified on device |
 | 3.18.2 | Assessed against the official installer package and sources: zero breaking changes, no adaptation needed; verified on device |
 | 3.18.0 – 3.18.1 | Assessed against official sources: zero breaking changes; 3.18.1 fixes website login failures in mainland China (benefits this app's login page) |
 | 3.17.x | Verified on 3.17.1 on-device; 3.17.2 reviewed against official sources |
