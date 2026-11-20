@@ -436,7 +436,7 @@ class _MarketingClaimCardState extends State<MarketingClaimCard> {
         fallback = tr('账号凭据已失效，请重新登录后再领取。');
       case MarketingClaimError.uncertain:
         server = null;
-        fallback = tr('领取结果未知，请稍后重试或在奖励中心核对。');
+        fallback = tr('领取结果未知，请稍后重试。');
       case null:
         return const SizedBox.shrink();
     }

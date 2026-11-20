@@ -113,7 +113,7 @@ void main() {
     ctl = _FakeMarketingController(_seed());
     ctl.errorKind = MarketingClaimError.uncertain;
     await _pumpCard(tester, ctl);
-    expect(find.text('领取结果未知，请稍后重试或在奖励中心核对。'), findsOneWidget);
+    expect(find.text('领取结果未知，请稍后重试。'), findsOneWidget);
   });
 
   testWidgets('服务端非终态空文案：本地兜底', (tester) async {
@@ -384,7 +384,7 @@ void main() {
     expect(find.byIcon(Icons.card_giftcard_outlined), findsNothing);
     await tester.tap(find.byKey(const ValueKey('marketing-claim-collapsed')));
     await tester.pump();
-    expect(find.text('领取结果未知，请稍后重试或在奖励中心核对。'), findsOneWidget);
+    expect(find.text('领取结果未知，请稍后重试。'), findsOneWidget);
   });
 
   testWidgets('最窄左栏 232dp：收起条不溢出、展开可点', (tester) async {

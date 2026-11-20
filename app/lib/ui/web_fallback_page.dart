@@ -73,10 +73,16 @@ bool shouldInjectTableFit(Uri? uri) {
 @visibleForTesting
 const String kTableFitInjectScript =
     '(function(){if(document.getElementById("zp-table-fit"))return;'
-    'var e=document.createElement("style");e.id="zp-table-fit";'
-    'e.textContent="table{display:block;max-width:100%;'
-    'overflow-x:auto;-webkit-overflow-scrolling:touch}";'
-    'document.head.appendChild(e);})();';
+    'var s=document.createElement("style");s.id="zp-table-fit";'
+    's.textContent=".zp-table-scroll{overflow-x:auto;'
+    '-webkit-overflow-scrolling:touch;max-width:100%}";'
+    'document.head.appendChild(s);'
+    // display:block 破坏 table 内部列宽分配（窄内容列不拉伸→右半空白，
+    // 用户真机实锤）；改为把每张 table 包进横滚 div，保留原生 table 布局。
+    'document.querySelectorAll("table").forEach(function(t){'
+    'if(t.parentElement.classList.contains("zp-table-scroll"))return;'
+    'var w=document.createElement("div");w.className="zp-table-scroll";'
+    't.parentElement.insertBefore(w,t);w.appendChild(t)});})();';
 
 /// 白名单判定（纯函数供测试）：官方域（含子域）、官方 OAuth 提供方
 /// 页面与 WebView 内部协议放行。

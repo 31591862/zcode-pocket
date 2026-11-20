@@ -131,8 +131,15 @@ void main() {
       contains('zp-table-fit'),
       reason: '幂等 id 守卫（SPA 重渲染/onPageFinished 重放不叠加）',
     );
-    expect(kTableFitInjectScript, contains('display:block'));
+    // display:block 方案已退役（破坏 table 列宽分配→右半空白，用户真机
+    // 实锤）；现为 JS 包裹横滚容器，保留原生 table 布局。
+    expect(kTableFitInjectScript, contains('zp-table-scroll'));
     expect(kTableFitInjectScript, contains('overflow-x:auto'));
+    expect(
+      kTableFitInjectScript,
+      isNot(contains('display:block')),
+      reason: 'display:block 使窄内容列不拉伸（候选 05 真机实锤）',
+    );
     expect(
       kTableFitInjectScript,
       isNot(contains('viewport')),

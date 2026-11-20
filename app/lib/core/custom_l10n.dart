@@ -16,18 +16,15 @@ const _customEn = <String, String>{
   // 排队条括号永不闭合。
   ' 条），恢复连接后自动发出': ' message(s). They will be sent automatically when the connection recovers)',
   '展开': 'Expand',
-  // marketing-claim-1（官方福利领取）：领取卡/奖励中心文案——
-  // '奖励中心'/'领取失败，请稍后重试。'/'活动已结束或套餐暂不可领取。'
+  // marketing-claim-1（官方福利领取）：领取卡文案——
+  // '领取失败，请稍后重试。'/'活动已结束或套餐暂不可领取。'
   // 官方词表已有（official_l10n.g），此处只补手机特有。
   '官方福利': 'Official reward',
   '领取您的专属福利': 'Claim your exclusive reward',
   '领取中…': 'Claiming…',
   '账号凭据已失效，请重新登录后再领取。':
       'Account credentials expired. Please sign in again to claim.',
-  '领取结果未知，请稍后重试或在奖励中心核对。':
-      'Claim result unknown. Try again later or check in Rewards.',
-  '已领取，可在模型选择中切换使用': 'Claimed. Switch the model to start using it.',
-  '官方福利/额度/活动': 'Rewards / quota / events',
+  '领取结果未知，请稍后重试。': 'Claim result unknown. Try again later.',
   // marketing-claim-collapse-1：收起条文案（收起/展开已有词表项）。
   '官方福利待领取': 'Reward waiting to be claimed',
   // collapse-1 窄档短文案（审查①：232dp 档全文案只剩「官方福…」）。
