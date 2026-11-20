@@ -153,6 +153,30 @@ class TurnBarState extends State<TurnBar> {
 
   String _durationLabel() => workBarLabel(widget.work);
 
+  /// 搜索命中临时展开判定（build 与头行点击共用）。
+  bool get _searchReveal => widget.work.work.any(
+    (row) => intOf(row['rowId']) == widget.searchTargetRowId,
+  );
+
+  /// 当前**渲染态**是否展开（渲染与头行点击共用单源，2026-11-20）：
+  /// 重挂（懒列表回收后重建）会让本地 _liveCollapsed/_open 回到初值，
+  /// 而权威折叠态在页面级 liveCollapsedByRow——点击若直接翻转本地值
+  /// 会翻到过期基线=「第一次点击无效」真机实证。渲染与点击都从这里
+  /// 取态，保证 Map 优先。
+  bool _isExpanded({
+    required bool running,
+    required bool searchReveal,
+    required bool controlOnly,
+  }) =>
+      searchReveal ||
+      (controlOnly
+          ? true
+          : (running
+                ? !(widget.liveCollapsedByRow?[_turnId] ?? _liveCollapsed)
+                : (widget.liveCollapsedByRow?[_turnId] == null
+                      ? _open
+                      : !widget.liveCollapsedByRow![_turnId]!)));
+
   /// 回合结束时刻（HH:mm；Paseo 参考 2026-10-23）。endedAt 缺失时用
   /// startedAt+activeMs 推（协议权威字段优先）。
   /// 回合开始时刻（HH:mm）：头行时间标签（2026-11-20 用户校正：输出流
@@ -174,18 +198,12 @@ class TurnBarState extends State<TurnBar> {
     // 完成边沿的收敛/ticker 启停在 didUpdateWidget（ #7）。
     // 搜索命中只临时展开目标，不写 _open/liveCollapsedByRow；关闭搜索
     // 或切换命中后恢复用户原有折叠选择。
-    final searchReveal = work.work.any(
-      (row) => intOf(row['rowId']) == widget.searchTargetRowId,
+    final searchReveal = _searchReveal;
+    final expanded = _isExpanded(
+      running: running,
+      searchReveal: searchReveal,
+      controlOnly: controlOnly,
     );
-    final expanded =
-        searchReveal ||
-        (controlOnly
-            ? true
-            : (running
-                  ? !(widget.liveCollapsedByRow?[_turnId] ?? _liveCollapsed)
-                  : (widget.liveCollapsedByRow?[_turnId] == null
-                        ? _open
-                        : !widget.liveCollapsedByRow![_turnId]!)));
     // ③（2026-10-20 二轮澄清）：展开=用户显式想看步骤列表，不受工具
     // 显示开关限制（开关只管运行中的实时展示）；仅无工作行才不可展开。
     // controlOnly 不再钉死收起分支——旧实现把设置轮
@@ -262,17 +280,26 @@ class TurnBarState extends State<TurnBar> {
         ? const SizedBox.shrink()
         : InkWell(
             borderRadius: BorderRadius.circular(4),
-            onTap: () => setState(() {
-              if (running) {
-                _liveCollapsed = !_liveCollapsed;
-                // 运行中的收起是显式选择（重开=回到自动档）。
-                _manuallyCollapsedWhileRunning = _liveCollapsed;
-                widget.onLiveCollapsedChanged?.call(_liveCollapsed);
-              } else {
-                _open = !_open;
-                widget.onLiveCollapsedChanged?.call(!_open);
-              }
-            }),
+            onTap: () {
+              // 以渲染态取反为基线（见 _isExpanded）：重挂后本地副本
+              // 可能过期，直接翻转本地值会翻到旧基线（第一次点击无效）。
+              final nextExpanded = !_isExpanded(
+                running: running,
+                searchReveal: _searchReveal,
+                controlOnly: controlOnly,
+              );
+              setState(() {
+                if (running) {
+                  _liveCollapsed = !nextExpanded;
+                  // 运行中的收起是显式选择（重开=回到自动档）。
+                  _manuallyCollapsedWhileRunning = _liveCollapsed;
+                  widget.onLiveCollapsedChanged?.call(_liveCollapsed);
+                } else {
+                  _open = nextExpanded;
+                  widget.onLiveCollapsedChanged?.call(!_open);
+                }
+              });
+            },
             child: headerRow,
           );
 
