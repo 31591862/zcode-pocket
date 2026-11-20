@@ -1880,6 +1880,15 @@ class _ConversationPageState extends State<ConversationPage>
 
   /// 滚动通知统一处理（原内联闭包抽出；帧内派发的通知由调用点延帧末）。
   bool _handleScrollEvent(ScrollNotification n) {
+    if (const bool.fromEnvironment('SCROLL_TRACE')) {
+      final pos = _scroll.hasClients ? _scroll.position : null;
+      debugPrint(
+        '[scrolltrace] ${n.runtimeType} drag=${n is ScrollUpdateNotification ? n.dragDetails != null : '-'} '
+        'px=${pos?.pixels.toStringAsFixed(1)} min=${pos?.minScrollExtent.toStringAsFixed(1)} '
+        'max=${pos?.maxScrollExtent.toStringAsFixed(1)} anchor=$_listCenterItemKey '
+        'stick=$_stickToBottom lastTowardOlder=$_lastDragTowardOlder',
+      );
+    }
     if (n is ScrollStartNotification) {
       // 新滚动序列开始：清掉上一手势的方向记忆（否则 FAB 回底等
       // 程序化滚动会被旧手势的"朝历史"标记挡住回吸）。
@@ -1935,7 +1944,15 @@ class _ConversationPageState extends State<ConversationPage>
           setState(() => _stickToBottom = true);
           // 锚点 X→末条切换的同帧校正：旧坐标贴底邻域（dist≤48，
           // 像素可为大负数）在新坐标系（末条锚，min=0）外。
-          _scroll.position.correctPixels(0);
+          // 2026-11-21 冻结修复：改走**有通知**的 jumpTo——correctPixels
+          // 免通知免 relayout，锚点本就是末条时（已完成会话）rebuild 不
+          // 改 viewport 任何属性 → paint 停在松手前位置（尾行刚露头）而
+          // pixels 已=0=贴底，再向下拖恒在 min 无通知 → 视觉永久冻结
+          // （真机"尾行刚露头松手后再拖划不动"）。重锚路径无此问题
+          // （centerIndex 变化必然 relayout）。自产 ScrollEnd 由程序化
+          // 窗口豁免消费。
+          _markProgrammatic();
+          _scroll.jumpTo(0);
           _followUntilStable();
         }
       } else if (n is ScrollEndNotification) {
