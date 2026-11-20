@@ -403,6 +403,9 @@ class _ConversationPageState extends State<ConversationPage>
   /// 前插历史时保持该 key，center index 随数据自动后移，阅读坐标不变。
   String? _listCenterItemKey;
 
+  /// 末轮无头自动回填次数（2026-11-20 真机实证，上限 2 页）。
+  int _trailingHeaderBackfillTries = 0;
+
   /// 入场动画水位（2026-11-20 真机实证）：懒列表首次构建的历史条目也会
   /// 命中 EntryFadeSlide（200ms 淡入+下滑），滚动翻历史时逐条"闪"。
   /// 首次非空构建时的最大行号视为存量——仅其后新增的尾部条目播入场
@@ -1500,6 +1503,8 @@ class _ConversationPageState extends State<ConversationPage>
       // 阅读位置记忆，点开会话=看最新（预渲/live 两来源同语义）。
       _stickToBottom = true;
       _snapToBottom();
+      // 空闲会话 live 就绪后可能没有后续帧通知——回填在这里也触发一次。
+      _maybeBackfillLeadingTurn(sub.state);
     } catch (e) {
       // 验收 C（子代理下钻）：lineage-invalid=子会话工作目录≠父任务
       // 根目录（如 官方 app 源码 子目录），3.16.x CLI 订阅校验拒绝且重试必然
@@ -1632,6 +1637,7 @@ class _ConversationPageState extends State<ConversationPage>
     }
     if (state != null && state.ready && state.rows.isNotEmpty) {
       if (_cachePreview != null) _cachePreview = null;
+      _maybeBackfillLeadingTurn(state);
       if (!_perfContentLoaded) {
         _perfContentLoaded = true;
         debugPrint(
@@ -3099,32 +3105,58 @@ class _ConversationPageState extends State<ConversationPage>
 
   /// 所有历史入口共享同一在途 Future；双向锚定列表负责保持阅读位置，
   /// 不再于绘制后按 maxScrollExtent 差值补跳。
-  Future<bool> _loadOlder() {
+  Future<bool> _loadOlder({int limit = 60}) {
     final running = _olderLoadInFlight;
     if (running != null) return running;
     final sessionId = _sessionId;
     if (sessionId == null) return Future.value(false);
     final state = _sub?.state;
     if (state == null || !state.canLoadOlder) return Future.value(false);
-    final future = _performLoadOlder(sessionId, state);
+    final future = _performLoadOlder(sessionId, state, limit: limit);
     _olderLoadInFlight = future;
     return future;
   }
 
   Future<bool> _performLoadOlder(
     String sessionId,
-    ConversationState state,
-  ) async {
+    ConversationState state, {
+    int limit = 60,
+  }) async {
     final beforeCursor = state.oldestRowId;
     setState(() => _loadingOlder = true);
     try {
-      await AppStateScope.of(context).loadOlder(sessionId);
+      await AppStateScope.of(context).loadOlder(sessionId, limit: limit);
       final current = _sub?.state;
       return identical(current, state) && current!.oldestRowId != beforeCursor;
     } finally {
       _olderLoadInFlight = null;
       if (mounted) setState(() => _loadingOlder = false);
     }
+  }
+
+  /// 末轮无头自动回填（2026-11-20 真机实证）：窗口从最后一轮内部开始
+  /// （巨型回合 >1 页）时 turnHeader 不在窗口——文件卡/完成态判定缺失，
+  /// 用户必须上滑触发"加载更早"才补上。live 就绪后自动有界回填（2 页，
+  /// 前插不移动阅读位置）。
+  void _maybeBackfillLeadingTurn(ConversationState? state) {
+    if (state == null ||
+        !state.ready ||
+        state.rows.isEmpty ||
+        _trailingHeaderBackfillTries >= 2 ||
+        !state.canLoadOlder ||
+        _olderLoadInFlight != null ||
+        _loadingOlder) {
+      return;
+    }
+    // 判定：窗口**首行不是 turnHeader** = 从某回合内部开始（真机：缓存
+    // 窗口切在含文件变更的回合内部，该回合 header 在窗口外→文件卡永远
+    // 发不出，必须手动上滑触发加载更早才补上）。回填到头部对齐回合
+    // 边界为止（2 页兜底）。
+    if (state.rows.first['kind'] == 'turnHeader') return;
+    _trailingHeaderBackfillTries++;
+    // 大页请求（200 行/次）：真机实测默认 60 行/页要连拉 2 页才够到
+    // 回合头部（260→320→380），单次大页减少一次慢往返。
+    unawaited(_loadOlder(limit: 200));
   }
 
   /// 两步式深链（2026-11-04 拍板）：通知点进来后弹一次「定位到相关

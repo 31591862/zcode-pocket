@@ -2207,14 +2207,19 @@ class AppState extends ChangeNotifier {
   }
 
   /// 加载更早的历史（rowsRange）。
-  Future<void> loadOlder(String sessionId) async {
+  /// [limit] 单页行数（默认 60；回填补齐回合头部时可调大，减少往返）。
+  Future<void> loadOlder(String sessionId, {int limit = 60}) async {
     final conv = _conv;
     if (conv == null) return;
     final state = _subscriptionStateOf(sessionId);
     if (state == null || !state.canLoadOlder) return;
     final requestEpoch = state.logEpoch;
     final requestCursor = state.oldestRowId;
-    final res = await conv.rowsRange(sessionId, beforeRowId: requestCursor);
+    final res = await conv.rowsRange(
+      sessionId,
+      beforeRowId: requestCursor,
+      limit: limit,
+    );
     if (res is! Map) return;
     // 官方 conversationProjectionStore.loadOlder 陈旧读防护：跨 CLI 重启、
     // 响应纪元不匹配、在途快照替换/游标失效均整页丢弃，不复活旧历史。

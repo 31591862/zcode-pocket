@@ -33,8 +33,10 @@ class _StartApp extends AppState {
   int loadOlderCalls = 0;
 
   @override
-  Future<ConversationSubscription> ensureConversation(String id,
-      {Object? seedCacheEntry}) async {
+  Future<ConversationSubscription> ensureConversation(
+    String id, {
+    Object? seedCacheEntry,
+  }) async {
     if (!sub.state.ready) {
       final fullHistory = olderPages.isEmpty;
       sub.state.applySeed(
@@ -57,7 +59,7 @@ class _StartApp extends AppState {
   }
 
   @override
-  Future<void> loadOlder(String sessionId) async {
+  Future<void> loadOlder(String sessionId, {int limit = 60}) async {
     loadOlderCalls += 1;
     if (olderPages.isEmpty) {
       sub.state.prependOlderRows(const [], null, hasMore: false);

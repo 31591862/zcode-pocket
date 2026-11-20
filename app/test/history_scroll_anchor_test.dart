@@ -36,8 +36,10 @@ class _AnchorApp extends AppState {
   int prependCount = 0;
 
   @override
-  Future<ConversationSubscription> ensureConversation(String id,
-      {Object? seedCacheEntry}) async {
+  Future<ConversationSubscription> ensureConversation(
+    String id, {
+    Object? seedCacheEntry,
+  }) async {
     if (!sub.state.ready) {
       sub.state.applySeed(
         ConversationSeed(
@@ -57,7 +59,7 @@ class _AnchorApp extends AppState {
   }
 
   @override
-  Future<void> loadOlder(String sessionId) async {
+  Future<void> loadOlder(String sessionId, {int limit = 60}) async {
     loadOlderCalls += 1;
     await gate.future;
     sub.state.prependOlderRows(olderRows, null, hasMore: true);
@@ -166,7 +168,8 @@ void main() {
     // 必须稳定。
     final firstFrame = observed.first;
     expect(
-      firstFrame != null && observed.every((v) => v != null && (v - firstFrame).abs() <= 1.0),
+      firstFrame != null &&
+          observed.every((v) => v != null && (v - firstFrame).abs() <= 1.0),
       isTrue,
       reason: '前插后逐帧不得闪走再跳回；逐帧=$observed',
     );

@@ -72,7 +72,7 @@ class _SearchApp extends AppState {
   }
 
   @override
-  Future<void> loadOlder(String sessionId) async {
+  Future<void> loadOlder(String sessionId, {int limit = 60}) async {
     loadOlderCalls++;
     await olderGate?.future;
     if (olderError != null) throw olderError!;
