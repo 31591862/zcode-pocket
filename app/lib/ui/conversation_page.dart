@@ -1266,6 +1266,7 @@ class _ConversationPageState extends State<ConversationPage>
 
   @override
   void dispose() {
+    _branchRetryTimer?.cancel();
     unawaited(_appRef?.draftStore?.flush());
     // 通知查看中抑制解除（仅当仍是本会话——快速切换时新页面已改写）。
     final app = _appRef;
@@ -1765,43 +1766,63 @@ class _ConversationPageState extends State<ConversationPage>
   String? _branchCacheKey;
   String? _branchCurrent;
 
+  /// 分支加载重试（2026-11-20 真机"有时显示有时不显示"）：首次尝试常
+  /// 撞上桥/git 通道未就绪（打开会话瞬间/切工作区后/App 恢复），旧实现
+  /// 失败即把缓存键锁死且不重试——本次页面生命周期内永久不显示。改为
+  /// 失败退避重试（≤3 次）；"非 git 仓库"是终态不重试。
+  int _branchLoadAttempts = 0;
+  Timer? _branchRetryTimer;
+
   void _maybeLoadBranchInfo(AppState app) {
     final ws = app.activeWorkspace;
     final key = ws == null ? null : workspaceKeyOf(ws);
     if (key == null || key == _branchCacheKey) return;
     _branchCacheKey = key;
     _branchCurrent = null;
-    final workspacePath = '${ws?['workspacePath'] ?? key}';
-    app
-        .gitChannelCall('getWorkspaceRepositoryInfo', [
-          {'workspacePath': workspacePath},
-        ])
-        .then((info) {
-          final overview = parseGitOverview(info is Map ? info : null, null);
-          if (!overview.isRepository) return null;
-          return app.gitChannelCall('getLocalBranches', [
-            {'workspacePath': workspacePath},
-          ]);
-        })
-        .then((list) {
-          if (!mounted || list is! Map) return;
-          // 完成时可能已切工作区/电脑（竞态）——key 失配丢弃。
-          if (workspaceKeyOf(
-                AppStateScope.of(context).activeWorkspace ?? const {},
-              ) !=
-              key) {
-            return;
-          }
-          setState(() {
-            _branchCurrent = list['currentBranchName'] is String
-                ? list['currentBranchName'] as String?
-                : null;
-          });
-        })
-        .catchError((Object e) {
-          // 分支标签是锦上添花：静默（桥降级/超时），不打扰会话主路径。
-          debugPrint('[branch] load skipped: $e');
-        });
+    _branchLoadAttempts = 0;
+    _loadBranchInfo(app, key);
+  }
+
+  Future<void> _loadBranchInfo(AppState app, String key) async {
+    final ws = app.activeWorkspace;
+    if (ws == null || workspaceKeyOf(ws) != key) return;
+    final workspacePath = '${ws['workspacePath'] ?? key}';
+    try {
+      final info = await app.gitChannelCall('getWorkspaceRepositoryInfo', [
+        {'workspacePath': workspacePath},
+      ]);
+      final overview = parseGitOverview(info is Map ? info : null, null);
+      if (!overview.isRepository) return; // 非仓库：终态，不重试。
+      final list = await app.gitChannelCall('getLocalBranches', [
+        {'workspacePath': workspacePath},
+      ]);
+      if (!mounted || _branchCacheKey != key) return;
+      if (list is! Map) {
+        _scheduleBranchRetry(app, key);
+        return;
+      }
+      setState(() {
+        _branchCurrent = list['currentBranchName'] is String
+            ? list['currentBranchName'] as String?
+            : null;
+      });
+    } catch (e) {
+      // 分支标签是锦上添花：静默重试（桥降级/超时），不打扰会话主路径。
+      debugPrint('[branch] load failed, retry scheduled: $e');
+      _scheduleBranchRetry(app, key);
+    }
+  }
+
+  void _scheduleBranchRetry(AppState app, String key) {
+    if (!mounted || _branchCacheKey != key || _branchLoadAttempts >= 3) {
+      return;
+    }
+    _branchLoadAttempts++;
+    _branchRetryTimer?.cancel();
+    _branchRetryTimer = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted || _branchCacheKey != key) return;
+      unawaited(_loadBranchInfo(app, key));
+    });
   }
 
   Future<void> _openBranchSheet(AppState app) async {

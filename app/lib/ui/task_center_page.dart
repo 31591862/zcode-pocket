@@ -74,6 +74,11 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
   /// “连接中/恢复中”再进会话；失败后才恢复错误呈现。
   bool _taskNavigationPending = false;
 
+  /// 深链跨工作区打开前的首页上下文（2026-11-20 真机：通知深链切到任务
+  /// 所属项目后，返回首页只剩该项目列表）——会话返回时静默切回。
+  Map<String, dynamic>? _restoreHomeWorkspace;
+  bool _restoreHomeToConversations = false;
+
   // ---- 6.5 展开态双栏（2026-10-29 批次，用户拍板：仿桌面端布局——
   // 窄左栏任务列表+右侧大任务窗口）----
   /// 双栏右栏选中（sessionId null=新建草稿页）。workspaceKey 用于切换
@@ -562,6 +567,38 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
         ?.showSnackBar(const SnackBar(content: Text('该任务不在当前工作区，可能已被移除')));
   }
 
+  /// 深链跨工作区会话返回后恢复原首页上下文（见 _restoreHomeWorkspace）。
+  /// 静默失败：恢复不了就停留在新项目列表，不打断浏览。
+  Future<void> _restoreHomeContextAfterDeepLink() async {
+    final ws = _restoreHomeWorkspace;
+    final toConversations = _restoreHomeToConversations;
+    _restoreHomeWorkspace = null;
+    _restoreHomeToConversations = false;
+    if (!mounted) return;
+    final app = AppStateScope.of(context);
+    if (ws == null) {
+      if (toConversations) app.switchToConversations();
+      return;
+    }
+    try {
+      final key = workspaceKeyOf(ws) ?? '';
+      if (key.isEmpty) return;
+      final current = app.workspaces
+          .where((w) => workspaceKeyOf(w) == key)
+          .firstOrNull;
+      if (current != null) {
+        await app.switchWorkspace(current, keepHomePreview: true);
+        return;
+      }
+      final project = app.projectForKey(key);
+      if (project != null) {
+        await app.switchToProject(project, keepHomePreview: true);
+      }
+    } catch (_) {
+      // 静默降级。
+    }
+  }
+
   /// 统一会话打开路由（6.5 双栏）：宽屏（≥600dp，展开态/平板）=右栏
   /// 就地选中（不跳页）；窄屏=推入整页（原行为）。
   void _openConversation(
@@ -571,16 +608,18 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     int? deepLinkAtMs,
   }) {
     if (!_wideLayout) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ConversationPage(
-            sessionId: sessionId,
-            title: title,
-            waitForWorkspace: waitForWorkspace,
-            deepLinkAtMs: deepLinkAtMs,
-          ),
-        ),
-      );
+      Navigator.of(context)
+          .push(
+            MaterialPageRoute(
+              builder: (_) => ConversationPage(
+                sessionId: sessionId,
+                title: title,
+                waitForWorkspace: waitForWorkspace,
+                deepLinkAtMs: deepLinkAtMs,
+              ),
+            ),
+          )
+          .then((_) => _restoreHomeContextAfterDeepLink());
       return;
     }
     // （对抗审查）：宽屏右栏同传 deepLinkAtMs——平板深链浮层此前恒不弹。
@@ -703,6 +742,9 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
         : project != null
         ? (primaryRootOf(project) ?? 'project-navigation')
         : taskOpenKey(task);
+    // 记录切走前的首页上下文（无活动工作区=「任务」中枢）。
+    _restoreHomeWorkspace = app.activeWorkspace;
+    _restoreHomeToConversations = app.activeWorkspace == null;
     _closeSearch();
     _openConversation(
       taskId,
@@ -895,7 +937,14 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
             onCrossLongPress: _openTaskActionsMenu,
           ),
         );
-        final banner = _taskNavigationPending
+        // 提示条收敛（2026-11-20 用户反馈"悬浮条难看/遮挡"）：
+        // 连接中/重连中/等待确认这类瞬时状态移到顶栏标题副行（不占列表、
+        // 不遮挡内容）；此处只保留**带动作的终态**（失效/被踢/失败）。
+        final terminalPhase =
+            app.phase == LinkPhase.invalid ||
+            app.phase == LinkPhase.kicked ||
+            app.phase == LinkPhase.error;
+        final banner = _taskNavigationPending || !terminalPhase
             ? const SizedBox.shrink()
             : _PhaseBanner();
         void openSettings() =>
@@ -922,7 +971,6 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
         // 官方桌面侧栏对位——新建在侧栏底部）；窄屏保留 FAB 原行为。
         final homeColumn = Column(
           children: [
-            banner,
             // 批量操作（优化批 #22）：多选上下文操作栏——搜索行上方常驻，
             // 首页与搜索结果两视图共用（先筛再选）。
             if (_multiSelectMode)
@@ -935,6 +983,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                 onCancel: _exitMultiSelect,
               ),
             searchRow,
+            banner,
             Expanded(child: taskList),
           ],
         );
@@ -993,6 +1042,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
+              subtitle: _appBarLinkStatus(app, context),
               onRefresh: app.refreshWorkspaces,
               onSearchToggle: () {
                 // 关闭复用 _closeSearch——原实现只清
@@ -1295,15 +1345,55 @@ String? _workspaceLabelOf(Map<String, dynamic> ws) {
 /// 顶栏（V1 审美优化 2026-10-22：GlassChrome 退役，全库 chrome 统一
 /// 实体白 + 底 hairline——摘除模糊后仅剩的半透明白在纯白底上零收益）。
 /// 顶栏常驻当前电脑名，点击弹出档案面板。
+/// 顶栏副行：连接中/重连中/等待确认的瞬时状态（2026-11-20 用户反馈：
+/// 蓝色提示条太高且遮挡列表——状态收进标题副行，不占列表、不遮挡）。
+Widget? _appBarLinkStatus(AppState app, BuildContext context) {
+  final (IconData? icon, String? text, Color? color) = switch (app.phase) {
+    LinkPhase.reconnecting => (
+      Icons.sync,
+      app.phaseDetail ?? '连接中断，自动重连中…',
+      context.colors.linkBlue,
+    ),
+    LinkPhase.connecting => (Icons.sync, '连接中…', context.colors.linkBlue),
+    LinkPhase.waitingDesktop => (
+      Icons.hourglass_top,
+      '等待桌面端确认…',
+      context.colors.linkBlue,
+    ),
+    _ => (null, null, null),
+  };
+  if (icon == null || text == null || color == null) return null;
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 10, color: color),
+      const SizedBox(width: 3),
+      Flexible(
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: AppType.uiXs, color: color),
+        ),
+      ),
+    ],
+  );
+}
+
 class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
   /// 标题组件（批④ 2026-11-17 用户拍板：设备名退役，运行状态顶栏化
   /// ——运行中任务数+脉冲点直接可见；空闲回落设备名保上下文）。
   final Widget title;
+
+  /// 标题下副行（2026-11-20）：连接中/重连中/等待确认的瞬时状态——
+  /// 会话页分支行同款位置，不占列表高度、不遮挡内容。
+  final Widget? subtitle;
   final VoidCallback onRefresh;
   final VoidCallback? onSearchToggle;
 
   const _GlassAppBar({
     required this.title,
+    this.subtitle,
     required this.onRefresh,
     this.onSearchToggle,
   });
@@ -1322,7 +1412,13 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
       // ui-references §V1：AppBar 统一 52 高；会话页同款）。
       toolbarHeight: 52,
       titleSpacing: 8,
-      title: title,
+      title: subtitle == null
+          ? title
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [title, subtitle!],
+            ),
       actions: [
         if (onSearchToggle != null)
           IconButton(
@@ -2790,42 +2886,6 @@ bool _hasHomeData(AppState app) =>
     app.projectTasks.isNotEmpty ||
     (app.taskList?.cards.isNotEmpty ?? false);
 
-/// 非在线但有上次内容时的首页提示条：不伪装实时，也给手动刷新入口。
-class _HomeStaleStrip extends StatelessWidget {
-  final AppState app;
-  const _HomeStaleStrip(this.app);
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      key: const ValueKey('home-stale-strip'),
-      color: context.colors.linkBlue.withValues(alpha: AppAlpha.faint),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        child: Row(
-          children: [
-            Icon(Icons.sync, size: 15, color: context.colors.linkBlue),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '显示上次同步内容 · 正在恢复连接',
-                style: TextStyle(
-                  fontSize: AppType.uiXs,
-                  color: context.colors.linkBlue,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: app.refreshWorkspaces,
-              child: const Text('刷新'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// 任务列表：双源合并模型驱动（置顶/运行中/全部三区，归档剔除）。
 class _TaskList extends StatelessWidget {
   final void Function(TaskCardData) onOpen;
@@ -2909,10 +2969,9 @@ class _TaskList extends StatelessWidget {
       // 树形——槽位恒在（在线=SizedBox.shrink），_TaskHomeViewState 在
       // hold↔在线↔恢复三分支切换间不再销毁重建（滚动位置/展开计数
       // 静默重置的「整页刷新了一下」观感根因）。
-      return Column(
+      return Stack(
         children: [
-          const SizedBox.shrink(),
-          Expanded(
+          Positioned.fill(
             child: _TaskHomeView(
               onOpen: onOpenCross ?? (_) {},
               now: homeNow,
@@ -2933,6 +2992,7 @@ class _TaskList extends StatelessWidget {
               onPaneCollapse: onPaneCollapse,
             ),
           ),
+          const Positioned(top: 0, left: 0, right: 0, child: SizedBox.shrink()),
         ],
       );
     }
@@ -2989,10 +3049,9 @@ class _TaskList extends StatelessWidget {
           app.phase != LinkPhase.invalid &&
           app.phase != LinkPhase.kicked &&
           _hasHomeData(app)) {
-        return Column(
+        return Stack(
           children: [
-            _HomeStaleStrip(app),
-            Expanded(
+            Positioned.fill(
               child: _TaskHomeView(
                 now: homeNow,
                 stale: true,
@@ -3022,6 +3081,12 @@ class _TaskList extends StatelessWidget {
                 },
               ),
             ),
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SizedBox.shrink(),
+            ),
           ],
         );
       }
@@ -3030,10 +3095,9 @@ class _TaskList extends StatelessWidget {
     // B 方案：空查询=全部任务主页；搜索时仍走既有当前/跨工作区结果。
     if (query.trim().isEmpty) {
       // 同构包装（strip 槽=SizedBox.shrink，与 hold/恢复分支同树形）。
-      return Column(
+      return Stack(
         children: [
-          const SizedBox.shrink(),
-          Expanded(
+          Positioned.fill(
             child: _TaskHomeView(
               onOpen: onOpenCross ?? (_) {},
               now: homeNow,
@@ -3054,6 +3118,7 @@ class _TaskList extends StatelessWidget {
               onPaneCollapse: onPaneCollapse,
             ),
           ),
+          const Positioned(top: 0, left: 0, right: 0, child: SizedBox.shrink()),
         ],
       );
     }
