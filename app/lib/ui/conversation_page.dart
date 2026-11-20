@@ -155,13 +155,6 @@ class ConversationPage extends StatefulWidget {
   static void debugResetToolFoldMemory() =>
       ConversationViewStore.resetToolFoldMemory();
 
-  /// 测试缝：清空会话级滚动记忆（游览多轮共用 sessionId，上一轮的
-  /// 记忆还原会在新一轮开场 50/300ms 校正窗口内把视口拽回旧位置，
-  /// 干扰轮内交互（展开后滚动即被拽回=收起条离场）。
-  @visibleForTesting
-  static void debugResetScrollMemory() =>
-      _ConversationPageState._scrollMemory.clear();
-
   /// 视觉走查缝（同 debugImage 先例）：asserts 态默认抑制一次性
   /// 引导（保测试确定性），置 true 可强制渲染引导态供审美审查取证。
   static bool debugFabHintForce = false;
@@ -169,11 +162,6 @@ class ConversationPage extends StatefulWidget {
   /// 深链定位测试缝（#3）：最近一次成功定位采用的顶层条目锚键。
   @visibleForTesting
   static String? debugLastJumpAnchorKey;
-
-  /// 深链定位测试缝（#3）：滚动记忆里该会话的锚键（断言未被写坏）。
-  @visibleForTesting
-  static String? debugScrollMemoryAnchor(String sessionId) =>
-      _ConversationPageState._scrollMemory[sessionId]?.$1;
 
   /// 深链定位测试缝（#15）：深链提示 postFrame 排程次数——修复后每页
   /// 实例只在就绪时排（尝试过即置位，不再逐帧空转）。
@@ -700,11 +688,6 @@ class _ConversationPageState extends State<ConversationPage>
     // 会话健康巡检：页面存活期常驻（dispose 取消）。
     _startConvHealthTimer();
     _sessionId = widget.sessionId;
-    final sid = _sessionId;
-    final memory = (sid == null || sid.isEmpty) ? null : _scrollMemory[sid];
-    if (memory != null && !memory.$3) {
-      _listCenterItemKey = memory.$1;
-    }
     _scroll.addListener(() {
       if (!_scroll.hasClients) return;
       // 粘底真修（③粘底真机复发）：内容增长把 maxScrollExtent 顶开时
@@ -1265,9 +1248,6 @@ class _ConversationPageState extends State<ConversationPage>
 
   @override
   void dispose() {
-    // 滚动记忆兜底（正常路径在每次滚动静止落点已 upsert——dispose 时
-    // 树拆除中 hasClients 常为 false，实证踩坑）。
-    _saveScrollMemory();
     unawaited(_appRef?.draftStore?.flush());
     // 通知查看中抑制解除（仅当仍是本会话——快速切换时新页面已改写）。
     final app = _appRef;
@@ -1509,17 +1489,9 @@ class _ConversationPageState extends State<ConversationPage>
       // 阶段 3 补修（介入点 1 用户实锤"不粘底"）：缓存种子让内容先于任何
       // 状态通知渲染——原靠数据通知触发的 followUntilStable 修正循环（治
       // 懒列表 extent 估算偏差）不再被触发。初始落位必须自带修正循环。
-      // 缓存预渲已还原过非贴底记忆时不翻粘底
-      //（否则温重开的阅读位置必被跳底覆盖）；live 快照比预渲确有新
-      // 输出（离开期间会话推进）时仍贴底。
-      final preview = _cachePreview;
-      final hasNewOutput =
-          preview != null &&
-          (sub.state.seq > preview.seq ||
-              sub.state.rows.length > preview.rows.length);
-      if (hasNewOutput || !_memoryRestored || _stickToBottom) {
-        _stickToBottom = true;
-      }
+      // 进入会话一律贴底（2026-11-20 用户拍板对齐桌面）：不做跨进入
+      // 阅读位置记忆，点开会话=看最新（预渲/live 两来源同语义）。
+      _stickToBottom = true;
       _snapToBottom();
     } catch (e) {
       // 验收 C（子代理下钻）：lineage-invalid=子会话工作目录≠父任务
@@ -1734,30 +1706,6 @@ class _ConversationPageState extends State<ConversationPage>
   /// “新坐标系里恰好距底 ≤48”误读为用户主动回底（官方 layoutScrollGuard）。
   int _followingReconcileGuard = 0;
 
-  /// 会话滚动记忆（官方 chatSessionScrollMemory 内存 Map 同义，上限
-  /// 200 条）：dispose 存 {稳定 center key, 绝对 offset（锚定还原后
-  /// clamp 校正——非相对锚偏移， 勘正注释）, 是否贴底}，
-  /// 重进先恢复锚点再恢复位置——前插过历史后裸像素不再冒充绝对坐标。
-  static const _scrollMemoryMax = 200;
-  static final _scrollMemory =
-      <
-        String,
-        (String? centerKey, double offset, bool pinned, int savedAtMs)
-      >{};
-
-  /// 滚动记忆 5 分钟过期（验收）：隔了一阵再打开旧对话直接跳底看最新
-  /// 消息；仅同一使用会话内的对话切换保留阅读位置。
-  static const _scrollMemoryTtlMs = 5 * 60 * 1000;
-  (String?, double, bool)? _scrollMemoryOf(String? sid) {
-    if (sid == null || sid.isEmpty) return null;
-    final m = _scrollMemory[sid];
-    if (m == null) return null;
-    if (DateTime.now().millisecondsSinceEpoch - m.$4 > _scrollMemoryTtlMs) {
-      return null;
-    }
-    return (m.$1, m.$2, m.$3);
-  }
-
   /// 上次构建的键盘 inset（变化检测）。
 
   // ── 6.2 选分支：顶栏分支标签（工作区级 git 状态，通道放行实证见
@@ -1904,95 +1852,15 @@ class _ConversationPageState extends State<ConversationPage>
     setState(() {});
   }
 
-  /// 滚动记忆 upsert（官方 chatSessionScrollMemory 持续保存语义：每次
-  /// 静止落点更新——不依赖退出时机）。 ：remove+assign
-  /// 重排到插入序尾——高频使用的老会话不再比闲置新会话更易被逐出
-  /// （LinkedHashMap 对既有 key 赋值不改变位次=按插入序逐出）。
-  void _saveScrollMemory() {
-    final sid = _sessionId;
-    if (sid == null || sid.isEmpty || !_scroll.hasClients) return;
-    final existed = _scrollMemory.remove(sid);
-    if (existed == null && _scrollMemory.length >= _scrollMemoryMax) {
-      _scrollMemory.remove(_scrollMemory.keys.first);
-    }
-    _scrollMemory[sid] = (
-      _listCenterItemKey,
-      _scroll.offset,
-      _stickToBottom || _scroll.offset - _scroll.position.minScrollExtent <= 48,
-      DateTime.now().millisecondsSinceEpoch,
-    );
-  }
-
   void _markProgrammatic() => _programmaticScrollEndSkips++;
 
-  /// 初始落位到最底（阶段 3）：jump 一次不够——懒加载长列表的
-  /// maxScrollExtent 是估算值，首跳常落在半路；followUntilStable 的
-  /// 多帧修正循环原来只由数据通知触发，缓存路径没有通知，必须自带。
-  ///
-  /// 滚动记忆优先（2026-10-26 对齐批 C，官方 wasPinnedToBottom 语义）：
-  /// 上次离开时非贴底 → 还原静止位置（clamp 新 max，懒 extent 两次
-  /// 校正）且不粘底；贴底/无记忆 → 默认吸底。
-  bool _memoryRestored = false;
+  /// 初始落位到最底（2026-11-20 对齐桌面：进入会话一律贴底，无跨进入
+  /// 阅读位置还原）。jump 一次不够——懒加载长列表的 maxScrollExtent 是
+  /// 估算值，首跳常落在半路；followUntilStable 的多帧修正循环原来只由
+  /// 数据通知触发，缓存路径没有通知，必须自带。
   void _snapToBottom() {
-    if (!_memoryRestored) {
-      _memoryRestored = true;
-      final sid = _sessionId;
-      final m = _scrollMemoryOf(sid);
-      if (m != null && !m.$3) {
-        _stickToBottom = false;
-        _listCenterItemKey = m.$1 ?? _listCenterItemKey;
-        // 直接赋值发生在缓存 setState 之后——不补一次重建则 FAB 块
-        // （条件含 !_stickToBottom）永不重算（批 C 实证踩坑）。
-        setState(() {});
-        _restoreOffset(m.$2);
-        return;
-      }
-    } else if (!_stickToBottom) {
-      // （温重开还原必被覆盖）：还原过的非贴底
-      // 记忆不被第二个触发源（live ready / 慢预渲）的跳底+1.2s 粘底
-      // 跟随覆盖——阅读位置保持；后续新输出由既有落点回吸语义承接
-      //（用户滚到底 48px 内恢复跟随，_doRender 的 stick 门不变）。
-      // 补充（position 重建）：live ready 使 cache-sync strip 退场，
-      // 消息列表在无 key 的 Column children 中上移一位=Element 重建、
-      // Scrollable position 复位 0——重放一次记忆校正把阅读位置接回。
-      final sid = _sessionId;
-      final m = _scrollMemoryOf(sid);
-      if (m != null && !m.$3) {
-        _listCenterItemKey = m.$1 ?? _listCenterItemKey;
-        setState(() {});
-        _restoreOffset(m.$2);
-      }
-      return;
-    }
     _jumpToBottom();
     _followUntilStable();
-  }
-
-  /// 记忆位置还原：等 Scrollable attach（restore 发生在缓存 setState 同
-  /// 步链内，列表下一帧才挂——定时首试会扑空，批 C 实证踩坑）；随后
-  /// 50ms/300ms 两次 clamp 校正（懒列表 extent 首帧估算偏小；单次失败
-  /// 不终止——下轮再试）。
-  Future<void> _restoreOffset(double target) async {
-    for (var i = 0; i < 20 && mounted && !_scroll.hasClients; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    for (final delay in const [
-      Duration(milliseconds: 50),
-      Duration(milliseconds: 300),
-    ]) {
-      await Future<void>.delayed(delay);
-      // 校正跳前查用户接管——300ms 窗口内点 FAB 回底
-      // （_stickToBottom 已翻真）时不再把视口拽回记忆位置（视觉抖动）。
-      if (!mounted || !_scroll.hasClients || _stickToBottom) continue;
-      final targetPos = target.clamp(
-        _scroll.position.minScrollExtent,
-        _scroll.position.maxScrollExtent,
-      );
-      if (shouldMarkProgrammaticScroll(_scroll.position.pixels, targetPos)) {
-        _markProgrammatic();
-        _scroll.jumpTo(targetPos);
-      }
-    }
   }
 
   // ------------------------------------------------------ 附件上传
@@ -3333,11 +3201,9 @@ class _ConversationPageState extends State<ConversationPage>
             duration: Duration.zero,
           );
         }
-        _saveScrollMemory();
         _followingReconcileGuard--;
       });
     });
-    _saveScrollMemory();
     return true;
   }
 
@@ -3424,7 +3290,6 @@ class _ConversationPageState extends State<ConversationPage>
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _followingReconcileGuard--;
-        _saveScrollMemory();
       });
     }
   }
@@ -3486,7 +3351,6 @@ class _ConversationPageState extends State<ConversationPage>
           duration: Duration.zero,
         );
       }
-      _saveScrollMemory();
     } finally {
       _followingReconcileGuard--;
     }
@@ -6151,7 +6015,6 @@ class _ConversationPageState extends State<ConversationPage>
                 }
 
                 if (_followingReconcileGuard > 0) {
-                  _saveScrollMemory();
                   return false;
                 }
 
@@ -6190,7 +6053,6 @@ class _ConversationPageState extends State<ConversationPage>
                   _pendingReAnchor = true;
                   setState(() => _stickToBottom = false);
                 }
-                _saveScrollMemory();
               }
               return false;
             },

@@ -79,8 +79,10 @@ class _PreviewLiveApp extends AppState {
       );
 
   @override
-  Future<ConversationSubscription> ensureConversation(String id,
-      {Object? seedCacheEntry}) async {
+  Future<ConversationSubscription> ensureConversation(
+    String id, {
+    Object? seedCacheEntry,
+  }) async {
     await gate.future;
     if (!sub.state.ready) {
       sub.state.applySeed(
@@ -120,12 +122,12 @@ class _PreviewSub implements ConversationSubscription {
 }
 
 Widget _host(AppState app, {String sessionId = 's1'}) => AppStateScope(
-      app: app,
-      child: MaterialApp(
-        theme: buildAppTheme(),
-        home: ConversationPage(sessionId: sessionId, title: '滚动状态机'),
-      ),
-    );
+  app: app,
+  child: MaterialApp(
+    theme: buildAppTheme(),
+    home: ConversationPage(sessionId: sessionId, title: '滚动状态机'),
+  ),
+);
 
 Future<void> _pump(WidgetTester tester) async {
   for (var i = 0; i < 15; i++) {
@@ -134,23 +136,19 @@ Future<void> _pump(WidgetTester tester) async {
 }
 
 List<Map<String, dynamic>> _longRows() => [
-      // 轮结构（纯正文行不进投影——buildChatItems 语义，夹具需带
-      // turnHeader+userInput 成轮）。
-      for (var i = 0; i < 15; i++) ...[
-        {
-          'rowId': i * 3 + 1,
-          'kind': 'turnHeader',
-          'state': 'completedSuccess',
-        },
-        {'rowId': i * 3 + 2, 'kind': 'userInput', 'text': '问 $i'},
-        {
-          'rowId': i * 3 + 3,
-          'kind': 'assistantText',
-          'state': 'success',
-          'text': '长会话第 $i 行 ' * 4,
-        },
-      ],
-    ];
+  // 轮结构（纯正文行不进投影——buildChatItems 语义，夹具需带
+  // turnHeader+userInput 成轮）。
+  for (var i = 0; i < 15; i++) ...[
+    {'rowId': i * 3 + 1, 'kind': 'turnHeader', 'state': 'completedSuccess'},
+    {'rowId': i * 3 + 2, 'kind': 'userInput', 'text': '问 $i'},
+    {
+      'rowId': i * 3 + 3,
+      'kind': 'assistantText',
+      'state': 'success',
+      'text': '长会话第 $i 行 ' * 4,
+    },
+  ],
+];
 
 ScrollableState _scrollable(WidgetTester tester) => tester.state(
   // 正文划选化后行内 EditableText 自带 Scrollable——descendant 匹配
@@ -165,8 +163,7 @@ ScrollableState _scrollable(WidgetTester tester) => tester.state(
 );
 
 void main() {
-  testWidgets('落点裁决：滚动序列落点离底>48 → 解除跟随出 FAB（原仅拖拽可解）',
-      (tester) async {
+  testWidgets('落点裁决：滚动序列落点离底>48 → 解除跟随出 FAB（原仅拖拽可解）', (tester) async {
     tester.view.physicalSize = const Size(375, 806);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -179,25 +176,27 @@ void main() {
     // 模拟"用户滚动序列结束落点离底"：直接操作 position（不经生产代码
     // 的 _markProgrammatic 窗口）→ 产生的 ScrollEnd 参与落点裁决。
     final scroll = _scrollable(tester);
-    scroll.position
-        .jumpTo((scroll.position.maxScrollExtent * 0.5).clamp(0.0, double.infinity));
+    scroll.position.jumpTo(
+      (scroll.position.maxScrollExtent * 0.5).clamp(0.0, double.infinity),
+    );
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(
       find.byKey(const ValueKey('jump-bottom')),
       findsOneWidget,
-      reason: '落点距底>48 须解除跟随（对齐批 C 核心；修复前：惯性/外部'
+      reason:
+          '落点距底>48 须解除跟随（对齐批 C 核心；修复前：惯性/外部'
           '滚动落点不解除，被粘底 tick 拉回）',
     );
   });
 
-  testWidgets('滚动记忆：中部离开→重进还原位置且不粘底', (tester) async {
+  testWidgets('进入会话一律贴底：中部离开→重进贴底（2026-11-20 对齐桌面）', (tester) async {
     tester.view.physicalSize = const Size(375, 806);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final app = _RowsApp(_longRows());
 
-    // 第一次进入：滚到中部后退出（pop → dispose 存记忆）。
+    // 第一次进入：滚到中部后退出。
     await tester.pumpWidget(_host(app));
     await _pump(tester);
     await tester.pump(const Duration(milliseconds: 400));
@@ -210,87 +209,61 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: Scaffold())); // 触发 dispose
     await tester.pump(const Duration(milliseconds: 100));
 
-    // 第二次进入同会话：还原中部位置（FAB 在场=非贴底），非回底。
+    // 第二次进入同会话：不做跨进入位置记忆，直接贴底。
     await tester.pumpWidget(_host(_RowsApp(_longRows())));
     await _pump(tester);
-    await tester.pump(const Duration(milliseconds: 400)); // 两次校正到期
-    expect(find.byKey(const ValueKey('jump-bottom')), findsOneWidget,
-        reason: '记忆非贴底 → 重进不粘底（官方 wasPinnedToBottom=false 语义）');
-    final restored = _scrollable(tester).position.pixels;
+    await tester.pump(const Duration(milliseconds: 400));
     expect(
-      restored,
-      inExclusiveRange(50, _scrollable(tester).position.maxScrollExtent - 200),
-      reason: '位置还原在中部而非顶部/底部',
+      find.byKey(const ValueKey('jump-bottom')),
+      findsNothing,
+      reason: '重进贴底、无 FAB（点开会话=看最新）',
+    );
+    expect(
+      _scrollable(tester).position.pixels,
+      _scrollable(tester).position.minScrollExtent,
+      reason: '像素直达贴底位，不还原中部位置',
     );
   });
 
-  // 以下两用例用独立 sessionId 避开 static _scrollMemory 的跨用例残留。
-  Future<void> _primeMemory(WidgetTester tester, String sid) async {
-    final app = _PreviewLiveApp(_longRows(), sessionId: sid);
-    await tester.pumpWidget(_host(app, sessionId: sid));
-    app.gate.complete(); // 第一遍无记忆：预渲+订阅都到 → 默认贴底。
+  testWidgets('温重开：预渲与 live ready 均贴底（无跨进入位置还原）', (tester) async {
+    tester.view.physicalSize = const Size(375, 806);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final app = _PreviewLiveApp(_longRows(), sessionId: 's-warm');
+    await tester.pumpWidget(_host(app, sessionId: 's-warm'));
+    app.gate.complete(); // 首进：预渲+订阅都到（防遗留订阅闸门定时器）
     await _pump(tester);
+    await tester.pump(const Duration(milliseconds: 400));
+    // 首进滚到中部后离开。
     final scroll = _scrollable(tester);
     scroll.position.jumpTo(scroll.position.maxScrollExtent * 0.5);
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(const ValueKey('jump-bottom')), findsOneWidget);
-    await tester.pumpWidget(const MaterialApp(home: Scaffold())); // dispose 存记忆
+    await tester.pumpWidget(const MaterialApp(home: Scaffold()));
     await tester.pump(const Duration(milliseconds: 100));
-  }
 
-  testWidgets('开源审查 A1-P2/A3-P1：缓存预渲先还原，live ready 后跳底不得覆盖阅读位置', (tester) async {
-    tester.view.physicalSize = const Size(375, 806);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-    await _primeMemory(tester, 's-plv');
-
-    // 第二遍（温重开）：订阅闸门关——预渲必先落地并还原记忆。
-    final app2 = _PreviewLiveApp(_longRows(), sessionId: 's-plv');
-    await tester.pumpWidget(_host(app2, sessionId: 's-plv'));
+    // 温重开：预渲先落地即贴底；live ready 后仍贴底。
+    final app2 = _PreviewLiveApp(_longRows(), sessionId: 's-warm');
+    await tester.pumpWidget(_host(app2, sessionId: 's-warm'));
     await _pump(tester);
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.byKey(const ValueKey('jump-bottom')), findsOneWidget,
-        reason: '预渲路径已还原非贴底记忆');
-
-    // live ready（冷会话网络唤醒后到）：无新输出（seq 相同）——还原的
-    // 阅读位置必须保持。修复前：_stickToBottom=true 无条件翻回+第二次
-    // _snapToBottom 跳底+1.2s 粘底跟随覆盖，温重开必回列表底部。
-    //（另一层：strip 退场使消息列表 Element 重建、position 复位 0——
-    // 修复同时重放记忆校正把阅读位置接回。）
+    expect(
+      find.byKey(const ValueKey('jump-bottom')),
+      findsNothing,
+      reason: '预渲落地即贴底，不还原中部位置',
+    );
     app2.gate.complete();
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(find.byKey(const ValueKey('jump-bottom')), findsOneWidget,
-        reason: 'live ready 不得覆盖已还原的非贴底记忆（A1-P2 顺序甲）');
+    expect(
+      find.byKey(const ValueKey('jump-bottom')),
+      findsNothing,
+      reason: 'live ready 后仍贴底（两来源同语义）',
+    );
     expect(
       _scrollable(tester).position.pixels,
-      inExclusiveRange(
-        50,
-        _scrollable(tester).position.maxScrollExtent - 200,
-      ),
-      reason: '阅读位置保持在中部（未被跳底覆盖）',
+      _scrollable(tester).position.minScrollExtent,
+      reason: '像素直达贴底位',
     );
-  });
-
-  testWidgets('开源审查 A1-P2 对照：live 快照确有新输出（seq 前进）时仍贴底', (tester) async {
-    tester.view.physicalSize = const Size(375, 806);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-    await _primeMemory(tester, 's-plv2');
-
-    // 第二遍：live seq 比缓存前进（离开期间会话有新输出）→ 贴底看新。
-    final app2 = _PreviewLiveApp(_longRows(), sessionId: 's-plv2', liveSeqDelta: 5);
-    await tester.pumpWidget(_host(app2, sessionId: 's-plv2'));
-    await _pump(tester);
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.byKey(const ValueKey('jump-bottom')), findsOneWidget,
-        reason: '预渲先还原（尚不知有无新输出）');
-    app2.gate.complete();
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(find.byKey(const ValueKey('jump-bottom')), findsNothing,
-        reason: '确有新输出 → live ready 贴底（回底语义不回归）');
   });
 }

@@ -46,8 +46,10 @@ class _SearchApp extends AppState {
   int loadOlderCalls = 0;
 
   @override
-  Future<ConversationSubscription> ensureConversation(String id,
-      {Object? seedCacheEntry}) async {
+  Future<ConversationSubscription> ensureConversation(
+    String id, {
+    Object? seedCacheEntry,
+  }) async {
     if (!sub.state.ready) {
       final fullHistory = olderPages.isEmpty;
       sub.state.applySeed(
@@ -231,9 +233,6 @@ void main() {
     tester.view.physicalSize = const Size(375, 806);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    // 跨测试静态滚动记忆会在 50/300ms 校正窗口内拽回旧视口（本测试
-    // 的展开交互恰落在窗口内）——先清（同 游览场景先例）。
-    ConversationPage.debugResetScrollMemory();
     final longText = '${'上下文行\n' * 12}tail needle';
     final app = _SearchApp(
       [
@@ -522,10 +521,7 @@ void main() {
     await tester.pumpWidget(_host(app));
     await _pump(tester);
     // 未激活搜索：普通 Text 渲染。
-    expect(
-      find.byKey(const ValueKey('user-search-highlight')),
-      findsNothing,
-    );
+    expect(find.byKey(const ValueKey('user-search-highlight')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('conversation-search-entry')));
     await tester.pump();
     await tester.enterText(
