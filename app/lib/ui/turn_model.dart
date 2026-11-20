@@ -108,8 +108,9 @@ UserSubmitConfig? userSubmitConfigOf(Map<String, dynamic> row) {
   }
   final modeRaw = '${row['mode'] ?? ''}';
   final mode = modeRaw.isEmpty ? null : modeRaw;
-  final planEnabled =
-      row['planEnabled'] is bool ? row['planEnabled'] as bool? : null;
+  final planEnabled = row['planEnabled'] is bool
+      ? row['planEnabled'] as bool?
+      : null;
   if (modelId.isEmpty && mode == null && planEnabled == null) return null;
   // 加速卡 Provider=该轮走的是内部加速模型，配置不算会话事实（官方
   // 冷恢复/编辑态同款忽略——不更新比较基线，防「加速→原模型」假切换）。
@@ -130,19 +131,11 @@ bool userSubmitConfigDiffers(UserSubmitConfig a, UserSubmitConfig b) {
     return true;
   }
   final ta = a.reasoningLevel, tb = b.reasoningLevel;
-  if (ta != null &&
-      ta.isNotEmpty &&
-      tb != null &&
-      tb.isNotEmpty &&
-      ta != tb) {
+  if (ta != null && ta.isNotEmpty && tb != null && tb.isNotEmpty && ta != tb) {
     return true;
   }
   final ma = a.mode, mb = b.mode;
-  if (ma != null &&
-      ma.isNotEmpty &&
-      mb != null &&
-      mb.isNotEmpty &&
-      ma != mb) {
+  if (ma != null && ma.isNotEmpty && mb != null && mb.isNotEmpty && ma != mb) {
     return true;
   }
   if (a.planEnabled != null &&
@@ -563,9 +556,10 @@ int migrateAnchorIndexAfterPrepend(String key, List<ChatItem> items) {
 String chatItemKey(ChatItem item, int index) => switch (item) {
   UserItem(:final row) => _rowKeyOf(row, index),
   TimelineMarkerItem(:final row) => _rowKeyOf(row, index),
-  FileSummaryItem(:final header) => header == null
-      ? 'fcard-null-$index'
-      : _rowKeyOf(header, index).replaceFirst('row-', 'fcard-'),
+  FileSummaryItem(:final header) =>
+    header == null
+        ? 'fcard-null-$index'
+        : _rowKeyOf(header, index).replaceFirst('row-', 'fcard-'),
   TurnBarItem() => () {
     final headerRowId = intOf(item.work.header?['rowId']);
     if (headerRowId != null) {
@@ -642,6 +636,7 @@ String foldCaseStable(String s) {
   }
   return buf.toString();
 }
+
 List<ChatItem> buildChatItems(List<Map<String, dynamic>> rows) {
   final items = <ChatItem>[];
   TurnWork? open;
@@ -1016,9 +1011,7 @@ String workBarLabel(TurnWork work, {int? nowMs}) {
       return '失败';
     default:
       final active = work.activeMs;
-      return active != null
-          ? '已工作 ${tr(formatWorkDuration(active))}'
-          : '已处理';
+      return active != null ? '已工作 ${tr(formatWorkDuration(active))}' : '已处理';
   }
 }
 
@@ -1154,9 +1147,7 @@ Map<String, dynamic>? toolInputArgs(Map<String, dynamic> row) {
   ({String markdown, String planFilePath})? read(Object? source) {
     if (source is String) {
       final t = source.trim();
-      return t.isEmpty
-          ? null
-          : (markdown: t, planFilePath: planFilePath ?? '');
+      return t.isEmpty ? null : (markdown: t, planFilePath: planFilePath ?? '');
     }
     if (source is! Map) return null;
     final p = source['planFilePath'];
@@ -1313,10 +1304,21 @@ String? turnTailTimestampLabel(int? ms, {DateTime? now}) {
 /// 轮开始时刻（轮尾时间标签数据源，优化批 #27）：协议
 /// turnHeader 行基座含 createdAt（与 startedAt 同值，projection-rows.ts:74）；
 /// 旧快照/测试夹具缺年旧行只剩 startedAt 时兑底，都无→ null 不显示。
-int? turnHeaderCreatedAt(Map<String, dynamic>? header) {
+/// 轮开始时刻（回合头行时间标签用；2026-11-20 用户校正：头行=开始，
+/// 轮尾操作行=结束）。createdAt 优先，startedAt 兜底。
+int? turnHeaderStartedAt(Map<String, dynamic>? header) {
   final created = intOf(header?['createdAt']);
   if (created != null && created > 0) return created;
   return intOf(header?['startedAt']);
+}
+
+int? turnHeaderEndedAt(Map<String, dynamic>? header) {
+  final ended = intOf(header?['endedAt']);
+  if (ended != null && ended > 0) return ended;
+  // endedAt 缺失（中断兜底等）用 startedAt+activeMs 推；都缺→null。
+  final active = intOf(header?['activeMs']);
+  final started = intOf(header?['startedAt']);
+  return (active != null && started != null) ? started + active : null;
 }
 
 /// 工作区渲染单元：普通行 / 连续同类工具组。

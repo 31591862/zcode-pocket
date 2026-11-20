@@ -344,15 +344,16 @@ class TurnTailActions extends StatefulWidget {
   /// 协议命令用；null=反馈/分支按钮禁用（复制不受影响）。
   final String? sessionId;
 
-  /// 轮开始时刻（优化批 #27：行最右侧 subtle 时间标签）。null/行数据
-  /// 缺时间戳（旧快照/测试夹具）不显示。
-  final int? createdAtMs;
+  /// 轮结束时刻（优化批 #27：行最右侧 subtle 时间标签；2026-11-20 用户
+  /// 校正：显示本次消息的结束时间而非开始时间）。null/行数据缺时间戳
+  /// （旧快照/测试夹具）不显示。
+  final int? atMs;
   final ConversationSessionOpener openSession;
   const TurnTailActions({
     required this.row,
     this.copyText,
     this.sessionId,
-    this.createdAtMs,
+    this.atMs,
     required this.openSession,
   });
 
@@ -598,9 +599,9 @@ class TurnTailActionsState extends State<TurnTailActions> {
           ),
           // 优化批 #27：行最右侧 subtle 时间标签（今天 HH:mm/今年 M月d日/
           // 往年 yyyy/M/d）——回看长会话时"这轮是什么时候"不再需要猜。
-          // createdAtMs 缺席（旧快照/夹具）不显示；纯日期数字，en 走 tr
+          // atMs 缺席（旧快照/夹具）不显示；纯日期数字，en 走 tr
           // 日期形态自动转「Oct 5」。
-          if (turnTailTimestampLabel(widget.createdAtMs) case final clock?)
+          if (turnTailTimestampLabel(widget.atMs) case final clock?)
             Padding(
               padding: const EdgeInsets.only(left: 6),
               child: Text(

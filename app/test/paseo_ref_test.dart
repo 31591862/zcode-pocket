@@ -29,22 +29,22 @@ class _RowsApp extends AppState {
   @override
   Future<SessionCacheEntry?> readSessionCache(String id) async =>
       readOverride != null
-          ? readOverride!(id)
-          : SessionCacheEntry(
-        deviceSid: 'd1',
-        sessionId: id,
-        rows: rows,
-        logEpoch: 'e1',
-        lastSeq: rows.length,
-        firstRowId: 1,
-        totalCount: rows.length,
-        snapshotControl: {
-          'title': 'Paseo参考',
-          'control': {'phase': 'idle'},
-        },
-        savedAt: DateTime.now().millisecondsSinceEpoch,
-        byteSize: 1024,
-      );
+      ? readOverride!(id)
+      : SessionCacheEntry(
+          deviceSid: 'd1',
+          sessionId: id,
+          rows: rows,
+          logEpoch: 'e1',
+          lastSeq: rows.length,
+          firstRowId: 1,
+          totalCount: rows.length,
+          snapshotControl: {
+            'title': 'Paseo参考',
+            'control': {'phase': 'idle'},
+          },
+          savedAt: DateTime.now().millisecondsSinceEpoch,
+          byteSize: 1024,
+        );
 
   @override
   Future<dynamic> fileChanges(
@@ -66,18 +66,22 @@ Future<void> _pump(WidgetTester tester) async {
 
 void main() {
   testWidgets('会话内联 diff 预览：深色侧整行染色（独立挂树）', (tester) async {
-    await tester.pumpWidget(MaterialApp(
-      theme: buildAppTheme(Brightness.dark),
-      home: Scaffold(
-        body: InlineDiffPreview(
-          display: const {
-            'structuredPatch': [
-              {'lines': ['+d']},
-            ],
-          },
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(Brightness.dark),
+        home: Scaffold(
+          body: InlineDiffPreview(
+            display: const {
+              'structuredPatch': [
+                {
+                  'lines': ['+d'],
+                },
+              ],
+            },
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     // 圈定 +d 行的祖先容器再断言：原先对整棵树的
     // Container 颜色集合做 contains——任何无关容器恰好复用同主题色都会
@@ -86,9 +90,11 @@ void main() {
         .widgetList<Container>(
           find.ancestor(of: find.text('d'), matching: find.byType(Container)),
         )
-        .map((c) => c.decoration is BoxDecoration
-            ? (c.decoration as BoxDecoration).color
-            : c.color)
+        .map(
+          (c) => c.decoration is BoxDecoration
+              ? (c.decoration as BoxDecoration).color
+              : c.color,
+        )
         .toSet();
     expect(
       addedRowColors.contains(
@@ -101,11 +107,7 @@ void main() {
 
   testWidgets('回合尾部：子代理计数胶囊', (tester) async {
     final app = _RowsApp([
-      {
-        'rowId': 1,
-        'kind': 'userInput',
-        'text': '改一下',
-      },
+      {'rowId': 1, 'kind': 'userInput', 'text': '改一下'},
       {
         'rowId': 2,
         'kind': 'turnHeader',
@@ -115,30 +117,31 @@ void main() {
       },
       {'rowId': 3, 'kind': 'subagent', 'status': 'success', 'text': '探路'},
       {'rowId': 4, 'kind': 'subagent', 'status': 'success', 'text': '审查'},
-      {
-        'rowId': 5,
-        'kind': 'assistantText',
-        'text': '改完了',
-      },
+      {'rowId': 5, 'kind': 'assistantText', 'text': '改完了'},
     ]);
     await tester.pumpWidget(
-        _host(app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')));
+      _host(app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')),
+    );
     await _pump(tester);
     expect(find.textContaining('2 个文件已更改'), findsOneWidget);
-    expect(find.textContaining('2 个子代理'), findsOneWidget,
-        reason: 'Paseo 参考：轮尾汇总含子代理计数胶囊');
+    expect(
+      find.textContaining('2 个子代理'),
+      findsOneWidget,
+      reason: 'Paseo 参考：轮尾汇总含子代理计数胶囊',
+    );
   });
 
-  testWidgets('工作条完成态附回合结束时刻', (tester) async {
-    final endedAt = DateTime(2026, 1, 1, 10, 17).millisecondsSinceEpoch;
+  testWidgets('工作条显示回合开始时刻（2026-11-20 用户校正：头行=开始）', (tester) async {
+    final startedAt = DateTime(2026, 1, 1, 10, 17).millisecondsSinceEpoch;
     final app = _RowsApp([
       {'rowId': 1, 'kind': 'userInput', 'text': '跑'},
       {
         'rowId': 2,
         'kind': 'turnHeader',
         'state': 'completedSuccess',
+        'createdAt': startedAt,
         'activeMs': 253000,
-        'endedAt': endedAt,
+        'endedAt': startedAt + 253000,
       },
       {
         'rowId': 3,
@@ -149,10 +152,14 @@ void main() {
       },
     ]);
     await tester.pumpWidget(
-        _host(app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')));
+      _host(app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')),
+    );
     await _pump(tester);
-    expect(find.textContaining('10:17'), findsOneWidget,
-        reason: 'Paseo 参考：完成回合显示结束绝对时刻');
+    expect(
+      find.textContaining('10:17'),
+      findsOneWidget,
+      reason: '头行紧跟「已工作 X」显示开始时刻',
+    );
   });
 
   testWidgets('顶栏副行显示当前电脑备注名', (tester) async {
@@ -166,7 +173,8 @@ void main() {
       addedAt: DateTime(2026, 1, 1),
     );
     await tester.pumpWidget(
-        _host(app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')));
+      _host(app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')),
+    );
     await _pump(tester);
     // 设备名退役（批④ 2026-11-17 用户拍板）：副行只留分支+运行状态，
     // 设备维度归抽屉电脑卡。
@@ -188,8 +196,11 @@ void main() {
     await tester.pumpWidget(_host(app, const DiffViewerPage(sessionId: 's1')));
     await _pump(tester);
     expect(find.text('src'), findsOneWidget);
-    expect(find.text('+9/-3'), findsOneWidget,
-        reason: 'Paseo 参考：目录行右侧带该目录增删合计');
+    expect(
+      find.text('+9/-3'),
+      findsOneWidget,
+      reason: 'Paseo 参考：目录行右侧带该目录增删合计',
+    );
   });
 
   testWidgets('会话内联 diff 预览：增删行整行底色染色+行首竖条', (tester) async {
@@ -224,36 +235,43 @@ void main() {
         .widgetList<Container>(
           find.ancestor(of: find.text(text), matching: find.byType(Container)),
         )
-        .map((c) => c.decoration is BoxDecoration ? (c.decoration as BoxDecoration).color : c.color)
+        .map(
+          (c) => c.decoration is BoxDecoration
+              ? (c.decoration as BoxDecoration).color
+              : c.color,
+        )
         .toSet();
-    expect(rowColors('新行').contains(addedBg), isTrue,
-        reason: 'Paseo 参考：新增行整行绿底');
-    expect(rowColors('旧行').contains(removedBg), isTrue,
-        reason: '删除行整行红底');
+    expect(
+      rowColors('新行').contains(addedBg),
+      isTrue,
+      reason: 'Paseo 参考：新增行整行绿底',
+    );
+    expect(rowColors('旧行').contains(removedBg), isTrue, reason: '删除行整行红底');
     final borders = tester
         .widgetList<Container>(
           find.ancestor(of: find.text('新行'), matching: find.byType(Container)),
         )
-        .map((c) => c.decoration is BoxDecoration ? (c.decoration as BoxDecoration).border : null)
+        .map(
+          (c) => c.decoration is BoxDecoration
+              ? (c.decoration as BoxDecoration).border
+              : null,
+        )
         .whereType<Border>()
         .toList();
     expect(
-      borders.any((b) =>
-          b.left.width == 3 &&
-          b.left.color == spec.colors.diffAdded),
+      borders.any(
+        (b) => b.left.width == 3 && b.left.color == spec.colors.diffAdded,
+      ),
       isTrue,
       reason: '新增行行首 3px 竖条（官方 inset 竖条对位）',
     );
-
   });
 
   testWidgets('模型药丸：品牌 logo + 两级文字（GLM 高档）', (tester) async {
-    final app = _RowsApp(
-      [
-        {'rowId': 1, 'kind': 'userInput', 'text': 'hi'},
-        {'rowId': 2, 'kind': 'turnHeader', 'state': 'completedSuccess'},
-      ],
-    );
+    final app = _RowsApp([
+      {'rowId': 1, 'kind': 'userInput', 'text': 'hi'},
+      {'rowId': 2, 'kind': 'turnHeader', 'state': 'completedSuccess'},
+    ]);
     // 快照 config：模型=glm-5.3-flash、思考档=high。
     app.readOverride = (id) => SessionCacheEntry(
       deviceSid: 'd1',
@@ -271,22 +289,28 @@ void main() {
       savedAt: DateTime.now().millisecondsSinceEpoch,
       byteSize: 1024,
     );
-    await tester.pumpWidget(_host(
-        app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')));
+    await tester.pumpWidget(
+      _host(app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')),
+    );
     await _pump(tester);
-    expect(find.byType(BrandLogoChip), findsOneWidget,
-        reason: 'Paseo 参考：GLM 模型应显示官方 Z 字标（单色矢量）');
-    expect(find.text('glm-5.3F'), findsOneWidget, reason: '模型名主文字（亮，保留 id 大小写）');
+    expect(
+      find.byType(BrandLogoChip),
+      findsOneWidget,
+      reason: 'Paseo 参考：GLM 模型应显示官方 Z 字标（单色矢量）',
+    );
+    expect(
+      find.text('glm-5.3F'),
+      findsOneWidget,
+      reason: '模型名主文字（亮，保留 id 大小写）',
+    );
     expect(find.text('高'), findsOneWidget, reason: '思考档次级文字（暗一档）');
   });
 
   testWidgets('模型药丸：无品牌资产回退纯文字（不留空位）', (tester) async {
-    final app = _RowsApp(
-      [
-        {'rowId': 1, 'kind': 'userInput', 'text': 'hi'},
-        {'rowId': 2, 'kind': 'turnHeader', 'state': 'completedSuccess'},
-      ],
-    );
+    final app = _RowsApp([
+      {'rowId': 1, 'kind': 'userInput', 'text': 'hi'},
+      {'rowId': 2, 'kind': 'turnHeader', 'state': 'completedSuccess'},
+    ]);
     app.readOverride = (id) => SessionCacheEntry(
       deviceSid: 'd1',
       sessionId: id,
@@ -305,10 +329,14 @@ void main() {
       savedAt: DateTime.now().millisecondsSinceEpoch,
       byteSize: 1024,
     );
-    await tester.pumpWidget(_host(
-        app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')));
+    await tester.pumpWidget(
+      _host(app, const ConversationPage(sessionId: 's1', title: 'Paseo参考')),
+    );
     await _pump(tester);
-    expect(find.byType(BrandLogoChip), findsOneWidget,
-        reason: '未知品牌回落中性圆+首字母（2026-11-18 圆底徽标批）');
+    expect(
+      find.byType(BrandLogoChip),
+      findsOneWidget,
+      reason: '未知品牌回落中性圆+首字母（2026-11-18 圆底徽标批）',
+    );
   });
 }

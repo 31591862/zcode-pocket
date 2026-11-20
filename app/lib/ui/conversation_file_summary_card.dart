@@ -15,7 +15,18 @@ import 'turn_model.dart';
 IconData fileTypeIcon(String path) {
   final ext = path.split('.').last.toLowerCase();
   if (ext == 'html' || ext == 'htm') return Icons.public;
-  if (const {'dart', 'js', 'ts', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'kt'}.contains(ext)) {
+  if (const {
+    'dart',
+    'js',
+    'ts',
+    'py',
+    'java',
+    'go',
+    'rs',
+    'c',
+    'cpp',
+    'kt',
+  }.contains(ext)) {
     return Icons.code;
   }
   if (const {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}.contains(ext)) {
@@ -73,8 +84,7 @@ class FileSummaryCardState extends State<FileSummaryCard> {
   bool _loading = false;
   String? _error;
 
-  int get _key =>
-      intOf(widget.header?['rowId']) ?? widget.header.hashCode;
+  int get _key => intOf(widget.header?['rowId']) ?? widget.header.hashCode;
 
   bool get _open => widget.openByCard[_key] ?? false;
   set _open(bool v) => widget.openByCard[_key] = v;
@@ -464,9 +474,7 @@ class FileSummaryCardState extends State<FileSummaryCard> {
                                           fileTypeIcon('${item['path']}'),
                                           size: 16,
                                           color:
-                                              context
-                                                  .colors
-                                                  .foregroundSubtle,
+                                              context.colors.foregroundSubtle,
                                         ),
                                       ),
                                       Expanded(
@@ -542,7 +550,7 @@ class FileSummaryCardState extends State<FileSummaryCard> {
               row: widget.tailRow!,
               copyText: widget.tailCopyText,
               sessionId: widget.sessionId,
-              createdAtMs: turnHeaderCreatedAt(widget.header),
+              atMs: turnHeaderEndedAt(widget.header),
               openSession: widget.openSession,
             ),
           ),

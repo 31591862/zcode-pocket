@@ -107,7 +107,10 @@ class _StringRowApp extends AppState {
 
 Widget _host(Widget body, {AppState? app}) => AppStateScope(
   app: app ?? AppState(),
-  child: MaterialApp(theme: buildAppTheme(), home: Scaffold(body: body)),
+  child: MaterialApp(
+    theme: buildAppTheme(),
+    home: Scaffold(body: body),
+  ),
 );
 
 Future<void> _pump(WidgetTester tester) async {
@@ -154,12 +157,7 @@ void main() {
   group('turn_model（B1 P2-2/B2-5/B3 P3）', () {
     test('String 数字时间戳/工时不打断投影且容忍解析', () {
       final items = buildChatItems([
-        {
-          'rowId': '1',
-          'kind': 'userInput',
-          'text': 'hi',
-          'createdAt': '100',
-        },
+        {'rowId': '1', 'kind': 'userInput', 'text': 'hi', 'createdAt': '100'},
         {
           'rowId': '2',
           'kind': 'turnHeader',
@@ -185,7 +183,11 @@ void main() {
       expect(bar.work.activeMs, 61000);
       expect(bar.work.fileChanges, isNull, reason: '非 Map fileChanges 兜底 null');
       expect(workBarLabel(bar.work), contains('已工作'));
-      expect(turnHeaderCreatedAt(bar.work.header), 1000);
+      expect(
+        turnHeaderEndedAt(bar.work.header),
+        62000,
+        reason: 'String 数字容忍：endedAt 优先（轮尾时间=结束时刻）',
+      );
       // 旧实现 `('61000' as num?)` 直接 TypeError（红）——此处不抛即绿。
     });
 
@@ -230,8 +232,8 @@ void main() {
     });
   });
 
-  group('conversation_turn_view（_endedClock/_turnId，B2-5）', () {
-    testWidgets('endedAt/rowId 形态漂移不崩且时刻仍显示', (tester) async {
+  group('conversation_turn_view（_startedClock/_turnId，B2-5）', () {
+    testWidgets('createdAt/rowId 形态漂移不崩且开始时刻仍显示', (tester) async {
       final endedAt = DateTime(2026, 1, 1, 10, 17).millisecondsSinceEpoch;
       final work = buildChatItems([
         {'rowId': '1', 'kind': 'userInput', 'text': '跑'},
@@ -240,6 +242,7 @@ void main() {
           'kind': 'turnHeader',
           'state': 'completedSuccess',
           'activeMs': '253000',
+          'createdAt': '$endedAt',
           'endedAt': '$endedAt',
         },
         {
@@ -264,31 +267,37 @@ void main() {
       );
       await _pump(tester);
       expect(tester.takeException(), isNull);
-      expect(find.textContaining('10:17'), findsOneWidget,
-          reason: 'String 数字 endedAt 容忍解析，结束时刻不退档');
+      expect(
+        find.textContaining('10:17'),
+        findsOneWidget,
+        reason: 'String 数字 createdAt 容忍解析，头行开始时刻不退档',
+      );
     });
   });
 
   group('conversation_composer_meta（D1 P2/D2-06/D3 P2-1 P2-2）', () {
-    testWidgets('InfoRow：usedTokens 缺失而 maxTokens>0 不再 used! 崩溃',
-        (tester) async {
+    testWidgets('InfoRow：usedTokens 缺失而 maxTokens>0 不再 used! 崩溃', (
+      tester,
+    ) async {
       final state = ConversationState()
         ..snapshot = {
           'usage': {
             'contextWindow': {'maxTokens': 200000},
           },
         };
-      await tester.pumpWidget(
-        _host(InfoRow(state: state, modeLabel: '默认')),
-      );
+      await tester.pumpWidget(_host(InfoRow(state: state, modeLabel: '默认')));
       await _pump(tester);
       expect(tester.takeException(), isNull);
-      expect(find.text('0/200k'), findsOneWidget,
-          reason: 'used 缺失按 0 兜底（与 ContextDetailsCard 同款防御）');
+      expect(
+        find.text('0/200k'),
+        findsOneWidget,
+        reason: 'used 缺失按 0 兜底（与 ContextDetailsCard 同款防御）',
+      );
     });
 
-    testWidgets('ContextDetailsCard：usedTokens String 数字与 limits 非 List 不崩',
-        (tester) async {
+    testWidgets('ContextDetailsCard：usedTokens String 数字与 limits 非 List 不崩', (
+      tester,
+    ) async {
       final state = ConversationState()
         ..snapshot = {
           'usage': {
@@ -308,8 +317,11 @@ void main() {
         ),
       );
       await _pump(tester);
-      expect(tester.takeException(), isNull,
-          reason: 'quota 卡按无 limits 兜底跳过，不灰屏');
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'quota 卡按无 limits 兜底跳过，不灰屏',
+      );
     });
   });
 
@@ -340,11 +352,7 @@ void main() {
         _host(
           FileSummaryCard(
             sessionId: 's1',
-            header: const {
-              'rowId': 9,
-              'entityId': 'e1',
-              'state': 'active',
-            },
+            header: const {'rowId': 9, 'entityId': 'e1', 'state': 'active'},
             fileChanges: {'files': '3', 'additions': '10', 'deletions': '2'},
             openByCard: {},
             itemsByCard: const {},
@@ -359,8 +367,7 @@ void main() {
   });
 
   group('diff_viewer_page（C1 P2-1）', () {
-    testWidgets('汇总与条目增删字段 String 化不崩且目录合计正确',
-        (tester) async {
+    testWidgets('汇总与条目增删字段 String 化不崩且目录合计正确', (tester) async {
       final app = _ChangesApp({
         'files': '2',
         'additions': '9',
@@ -375,8 +382,11 @@ void main() {
       );
       await _pump(tester);
       expect(tester.takeException(), isNull);
-      expect(find.text('+9/-3'), findsOneWidget,
-          reason: '目录级增删合计容忍解析 String 数字');
+      expect(
+        find.text('+9/-3'),
+        findsOneWidget,
+        reason: '目录级增删合计容忍解析 String 数字',
+      );
     });
   });
 
@@ -410,8 +420,9 @@ void main() {
       expect(find.textContaining('-2'), findsOneWidget);
     });
 
-    testWidgets('progress.fraction 为 String 数字不崩（按 null 走 indeterminate）',
-        (tester) async {
+    testWidgets('progress.fraction 为 String 数字不崩（按 null 走 indeterminate）', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _host(
           ToolCallTile(
@@ -479,8 +490,7 @@ void main() {
             'pendingInteractions': [interaction],
           };
 
-    testWidgets('payload 非 Map：整卡跳过不抛（旧裸 as Map? 崩溃）',
-        (tester) async {
+    testWidgets('payload 非 Map：整卡跳过不抛（旧裸 as Map? 崩溃）', (tester) async {
       await tester.pumpWidget(
         _host(
           Scaffold(
@@ -495,8 +505,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('autoResolution.deadlineAt String 数字：倒计时照常显示',
-        (tester) async {
+    testWidgets('autoResolution.deadlineAt String 数字：倒计时照常显示', (tester) async {
       final deadline = DateTime.now().millisecondsSinceEpoch + 120000;
       await tester.pumpWidget(
         _host(
@@ -530,8 +539,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('hook 审核 summary.pendingCount String 数字：计数正确',
-        (tester) async {
+    testWidgets('hook 审核 summary.pendingCount String 数字：计数正确', (tester) async {
       await tester.pumpWidget(
         _host(
           Scaffold(

@@ -155,13 +155,10 @@ class TurnBarState extends State<TurnBar> {
 
   /// 回合结束时刻（HH:mm；Paseo 参考 2026-10-23）。endedAt 缺失时用
   /// startedAt+activeMs 推（协议权威字段优先）。
-  String? get _endedClock {
-    final header = widget.work.header;
-    final ended = intOf(header?['endedAt']);
-    final active = intOf(header?['activeMs']);
-    final started = intOf(header?['startedAt']);
-    final ms =
-        ended ?? (active != null && started != null ? started + active : null);
+  /// 回合开始时刻（HH:mm）：头行时间标签（2026-11-20 用户校正：输出流
+  /// 开始那行显示开始时刻；结束时刻归轮尾操作行）。
+  String? get _startedClock {
+    final ms = turnHeaderStartedAt(widget.work.header);
     if (ms == null) return null;
     final t = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int v) => v.toString().padLeft(2, '0');
@@ -235,14 +232,13 @@ class TurnBarState extends State<TurnBar> {
                     ),
                   ),
           ),
-          // Paseo 参考（2026-10-23）：完成态附回合结束绝对时刻（HH:mm）
-          // ——运行中已有实时时长，完成后"何时结束"比"干了多久"更常被
-          // 回看；endedAt 缺失（中断兜底等）不显示。
-          if (!running && _endedClock != null)
+          // 2026-11-20 用户校正：输出流开始那行（本行）行尾显示回合
+          // **开始时刻**；结束时刻归轮尾操作行。
+          if (_startedClock != null)
             Padding(
               padding: const EdgeInsets.only(left: 8),
               child: Text(
-                _endedClock!,
+                _startedClock!,
                 style: TextStyle(
                   fontSize: AppType.uiXs,
                   color: context.colors.foregroundSubtlest,
@@ -330,7 +326,7 @@ class TurnBarState extends State<TurnBar> {
                 row: vt,
                 copyText: work.allTextJoined,
                 sessionId: widget.sessionId,
-                createdAtMs: turnHeaderCreatedAt(work.header),
+                atMs: turnHeaderEndedAt(work.header),
                 openSession: widget.openSession,
               ),
           ],
@@ -477,7 +473,7 @@ class TurnBarState extends State<TurnBar> {
                                 row: row,
                                 copyText: work.allTextJoined,
                                 sessionId: widget.sessionId,
-                                createdAtMs: turnHeaderCreatedAt(work.header),
+                                atMs: turnHeaderEndedAt(work.header),
                                 openSession: widget.openSession,
                               ),
                             ],

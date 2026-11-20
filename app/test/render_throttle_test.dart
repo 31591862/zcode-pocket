@@ -47,8 +47,10 @@ class _ThrottleApp extends AppState {
   late final sub = _ThrottleSub('s-throttle');
 
   @override
-  Future<ConversationSubscription> ensureConversation(String id,
-      {Object? seedCacheEntry}) async {
+  Future<ConversationSubscription> ensureConversation(
+    String id, {
+    Object? seedCacheEntry,
+  }) async {
     if (!sub.state.ready) {
       final header = <String, dynamic>{
         'rowId': 1,
@@ -116,7 +118,12 @@ void main() {
     addTearDown(tester.view.reset);
     final app = _ThrottleApp([
       {'rowId': 2, 'kind': 'userInput', 'text': '问一个问题'},
-      {'rowId': 3, 'kind': 'assistantText', 'state': 'complete', 'text': '初始正文'},
+      {
+        'rowId': 3,
+        'kind': 'assistantText',
+        'state': 'complete',
+        'text': '初始正文',
+      },
     ]);
     await tester.pumpWidget(_host(app));
     await _settle(tester);
@@ -125,28 +132,35 @@ void main() {
     // 第一次通知：立即渲染（窗口首帧不等待）。
     _upsertAssistant(app.sub.state, 3, '第一版正文');
     await tester.pump();
-    expect(find.textContaining('第一版正文'), findsWidgets,
-        reason: '窗口首次通知必须立即渲染');
+    expect(find.textContaining('第一版正文'), findsWidgets, reason: '窗口首次通知必须立即渲染');
 
     // 第二次通知（同一 40ms 窗口内）：合并，零时长 pump 后不得上屏。
     _upsertAssistant(app.sub.state, 4, '第二版正文');
     await tester.pump();
-    expect(find.textContaining('第二版正文'), findsNothing,
-        reason: '窗口内后续通知应合并（未到尾沿不上屏）');
-    expect(find.textContaining('第一版正文'), findsWidgets,
-        reason: '合并期间保持上一次已渲染内容');
+    expect(
+      find.textContaining('第二版正文'),
+      findsNothing,
+      reason: '窗口内后续通知应合并（未到尾沿不上屏）',
+    );
+    expect(
+      find.textContaining('第一版正文'),
+      findsWidgets,
+      reason: '合并期间保持上一次已渲染内容',
+    );
 
     // 尾沿 flush：越过 40ms 窗口后最新内容上屏。
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.textContaining('第二版正文'), findsWidgets,
-        reason: '窗口尾沿必须补渲染最新状态');
+    expect(find.textContaining('第二版正文'), findsWidgets, reason: '窗口尾沿必须补渲染最新状态');
     expect(find.textContaining('第一版正文'), findsNothing);
 
     // 窗口过期后的下一次通知又回到“立即渲染”档。
     _upsertAssistant(app.sub.state, 5, '第三版正文');
     await tester.pump();
-    expect(find.textContaining('第三版正文'), findsWidgets,
-        reason: '上一窗口关闭后，新窗口首次通知立即渲染');
+    expect(
+      find.textContaining('第三版正文'),
+      findsWidgets,
+      reason: '上一窗口关闭后，新窗口首次通知立即渲染',
+    );
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 1));
@@ -158,7 +172,12 @@ void main() {
     addTearDown(tester.view.reset);
     final app = _ThrottleApp([
       {'rowId': 2, 'kind': 'userInput', 'text': '继续'},
-      {'rowId': 3, 'kind': 'assistantText', 'state': 'streaming', 'text': '流式前半'},
+      {
+        'rowId': 3,
+        'kind': 'assistantText',
+        'state': 'streaming',
+        'text': '流式前半',
+      },
     ]);
     await tester.pumpWidget(_host(app));
     await _settle(tester);
@@ -167,8 +186,11 @@ void main() {
     _upsertAssistant(app.sub.state, 3, '流式完整结论');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.textContaining('流式完整结论'), findsWidgets,
-        reason: '缓存键含文本，变化必须重建');
+    expect(
+      find.textContaining('流式完整结论'),
+      findsWidgets,
+      reason: '缓存键含文本，变化必须重建',
+    );
     expect(find.textContaining('流式前半'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
@@ -192,7 +214,10 @@ void main() {
     await _settle(tester);
     // 非搜索态：markdown 渲染，无预览节点。
     expect(find.byType(MarkdownView), findsWidgets);
-    expect(find.byKey(const ValueKey('search-highlight-preview')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('search-highlight-preview')),
+      findsNothing,
+    );
 
     await tester.tap(find.byKey(const ValueKey('conversation-search-entry')));
     await tester.pump();
@@ -203,10 +228,15 @@ void main() {
     await _settle(tester);
 
     // 搜索态：助手正文切换为纯文本预览（markdown 让位）。
-    final previewFinder = find.byKey(const ValueKey('search-highlight-preview'));
+    final previewFinder = find.byKey(
+      const ValueKey('search-highlight-preview'),
+    );
     expect(previewFinder, findsWidgets, reason: '搜索激活时正文进预览渲染');
-    expect(find.byType(MarkdownView), findsNothing,
-        reason: '搜索态助手正文不再走 markdown 渲染');
+    expect(
+      find.byType(MarkdownView),
+      findsNothing,
+      reason: '搜索态助手正文不再走 markdown 渲染',
+    );
     final rich = tester.widget<Text>(previewFinder.first);
     final span = rich.textSpan;
     expect(span, isA<TextSpan>());
@@ -214,17 +244,22 @@ void main() {
     // '这里有 ' + [needle] + ' 一词，再 ' + [needle] + ' 一次' = 5 段。
     expect(children.length, 5, reason: '两处命中切成 5 段');
     expect(children[1].text, 'needle');
-    expect(children[1].style?.backgroundColor, isNotNull,
-        reason: '命中段有底色');
+    expect(children[1].style?.backgroundColor, isNotNull, reason: '命中段有底色');
     expect(children[3].text, 'needle');
     expect(children[0].text, '这里有 ');
 
     // 关闭搜索：恢复 markdown 渲染，预览节点退场。
     await tester.tap(find.byKey(const ValueKey('conversation-search-close')));
     await _settle(tester);
-    expect(find.byKey(const ValueKey('search-highlight-preview')), findsNothing);
-    expect(find.byType(MarkdownView), findsWidgets,
-        reason: '关闭搜索恢复 markdown 渲染');
+    expect(
+      find.byKey(const ValueKey('search-highlight-preview')),
+      findsNothing,
+    );
+    expect(
+      find.byType(MarkdownView),
+      findsWidgets,
+      reason: '关闭搜索恢复 markdown 渲染',
+    );
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 1));
@@ -259,8 +294,11 @@ void main() {
       findsNothing,
       reason: '空关键词不得激活纯文本预览（修复前每次打开搜索全部正文降级）',
     );
-    expect(find.byType(MarkdownView), findsWidgets,
-        reason: '空关键词保持 markdown 渲染');
+    expect(
+      find.byType(MarkdownView),
+      findsWidgets,
+      reason: '空关键词保持 markdown 渲染',
+    );
 
     // 输入真实关键词后正常切换预览（命中高亮路径不受影响）。
     await tester.enterText(
@@ -268,7 +306,10 @@ void main() {
       'needle',
     );
     await _settle(tester);
-    expect(find.byKey(const ValueKey('search-highlight-preview')), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('search-highlight-preview')),
+      findsWidgets,
+    );
 
     // 清空关键词恢复 markdown（守卫的另一半语义）。
     await tester.enterText(
@@ -276,7 +317,10 @@ void main() {
       '',
     );
     await _settle(tester);
-    expect(find.byKey(const ValueKey('search-highlight-preview')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('search-highlight-preview')),
+      findsNothing,
+    );
     expect(find.byType(MarkdownView), findsWidgets);
 
     await tester.pumpWidget(const SizedBox());
@@ -298,23 +342,21 @@ void main() {
         'lane': 'assistantWork',
         'marker': {'type': 'compact', 'origin': 'auto', 'status': 'success'},
       },
-      {
-        'rowId': 5,
-        'kind': 'toolCall',
-        'toolName': 'Read',
-        'status': 'success',
-      },
+      {'rowId': 5, 'kind': 'toolCall', 'toolName': 'Read', 'status': 'success'},
     ], headerState: 'running'); // mid-turn=运行中轮（默认展开，工作区渲染）
     await tester.pumpWidget(_host(app));
     await _settle(tester);
-    expect(find.text('上下文已自动压缩'), findsOneWidget,
-        reason: 'mid-turn compact 标记行按官方 lane 落回合内部渲染');
+    expect(
+      find.text('上下文已自动压缩'),
+      findsOneWidget,
+      reason: 'mid-turn compact 标记行按官方 lane 落回合内部渲染',
+    );
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('轮尾时间标签：createdAt 驱动三档格式，缺时间戳不显示', (tester) async {
+  testWidgets('轮尾时间标签：endedAt 驱动三档格式，缺时间戳不显示', (tester) async {
     tester.view.physicalSize = const Size(375, 806);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -322,11 +364,16 @@ void main() {
     final app = _ThrottleApp(
       [
         {'rowId': 2, 'kind': 'userInput', 'text': '什么时候'},
-        {'rowId': 3, 'kind': 'assistantText', 'state': 'complete', 'text': '结论在此'},
+        {
+          'rowId': 3,
+          'kind': 'assistantText',
+          'state': 'complete',
+          'text': '结论在此',
+        },
       ],
-      // createdAt=今年 3 天前 → 「M月d日」档。
+      // endedAt=今年 3 天前 → 「M月d日」档（2026-11-20：轮尾时间=结束时刻）。
       headerExtra: {
-        'createdAt': threeDaysAgo.millisecondsSinceEpoch,
+        'endedAt': threeDaysAgo.millisecondsSinceEpoch,
         'entityId': 'ent-1',
       },
     );
@@ -349,13 +396,20 @@ void main() {
     addTearDown(tester.view.reset);
     final app = _ThrottleApp([
       {'rowId': 2, 'kind': 'userInput', 'text': '普通轮'},
-      {'rowId': 3, 'kind': 'assistantText', 'state': 'complete', 'text': '无时间戳轮尾'},
+      {
+        'rowId': 3,
+        'kind': 'assistantText',
+        'state': 'complete',
+        'text': '无时间戳轮尾',
+      },
     ]);
     await tester.pumpWidget(_host(app));
     await _settle(tester);
     // 轮尾操作行仍渲染（复制钮在场），但不得有时间格式文本。
     expect(find.byTooltip('复制这条回复'), findsOneWidget);
-    final dateLike = RegExp(r'^\d{1,2}月\d{1,2}日$|^\d{4}/\d+/\d+$|^\d{2}:\d{2}$');
+    final dateLike = RegExp(
+      r'^\d{1,2}月\d{1,2}日$|^\d{4}/\d+/\d+$|^\d{2}:\d{2}$',
+    );
     final labeled = tester
         .widgetList<Text>(find.byType(Text))
         .where((t) => t.data != null && dateLike.hasMatch(t.data!))
@@ -398,12 +452,21 @@ void main() {
       expect(turnTailTimestampLabel(-5, now: now), isNull);
     });
 
-    test('turnHeaderCreatedAt：createdAt 优先，startedAt 兜底，双缺 null', () {
-      expect(turnHeaderCreatedAt({'createdAt': 100}), 100);
-      expect(turnHeaderCreatedAt({'startedAt': 200}), 200);
-      expect(turnHeaderCreatedAt({'createdAt': 0, 'startedAt': 300}), 300);
-      expect(turnHeaderCreatedAt(const {}), isNull);
-      expect(turnHeaderCreatedAt(null), isNull);
+    test('turnHeaderEndedAt：endedAt 优先，startedAt+activeMs 兜底，双缺 null', () {
+      expect(turnHeaderEndedAt({'endedAt': 100}), 100);
+      expect(turnHeaderEndedAt({'startedAt': 200, 'activeMs': 50}), 250);
+      expect(
+        turnHeaderEndedAt({'endedAt': 0, 'startedAt': 300, 'activeMs': 10}),
+        310,
+        reason: 'endedAt=0 视为缺失',
+      );
+      expect(
+        turnHeaderEndedAt(const {'startedAt': 1}),
+        isNull,
+        reason: '仅 startedAt 无 activeMs 推不出结束时刻',
+      );
+      expect(turnHeaderEndedAt(const {}), isNull);
+      expect(turnHeaderEndedAt(null), isNull);
     });
 
     test('buildSearchHighlightSpans：大小写不敏感分段+非重叠', () {
@@ -438,12 +501,7 @@ void main() {
     test('buildSearchHighlightSpans：İ（U+0130）折叠扩长不崩溃且命中下标在原串坐标系', () {
       const base = TextStyle(fontSize: 14);
       const hit = TextStyle(fontSize: 14, backgroundColor: Color(0x00000000));
-      final spans = buildSearchHighlightSpans(
-        'İab',
-        'b',
-        base: base,
-        hit: hit,
-      );
+      final spans = buildSearchHighlightSpans('İab', 'b', base: base, hit: hit);
       final ts = spans.cast<TextSpan>();
       expect(ts.length, 2);
       expect(ts[0].text, 'İa');
