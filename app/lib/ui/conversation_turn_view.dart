@@ -158,6 +158,31 @@ class TurnBarState extends State<TurnBar> {
     (row) => intOf(row['rowId']) == widget.searchTargetRowId,
   );
 
+  /// 轮尾操作行时间（2026-11-20）：正常轮=header.endedAt；窗口截断的
+  /// 无头末段没有 header——回退取段内末行的 createdAt（近似结束时刻，
+  /// 真机：无头段操作行缺结束时间）。
+  int? get _tailAtMs {
+    final ended = turnHeaderEndedAt(widget.work.header);
+    if (ended != null) return ended;
+    for (final r in widget.work.work.reversed) {
+      final t = intOf(r['createdAt']);
+      if (t != null && t > 0) return t;
+    }
+    return null;
+  }
+
+  /// 轮尾操作行资格（2026-11-20 放宽，方案 A）：正常轮=completedOk；
+  /// **窗口截断的末尾无头段**（缓存窗口只覆盖最后一轮内部、turnHeader
+  /// 不在窗口里）——会话非运行中、末轮且该段有可见正文时，按"已完成"
+  /// 渲染操作行（真机：>200 行的末轮缓存预渲无操作行，等 live 8-90s
+  /// 才出现）。live 到达后真实回合（带文件卡）自然接管。
+  bool get _tailActionsAllowed =>
+      widget.work.completedOk ||
+      (widget.work.header == null &&
+          !_effectiveRunning &&
+          widget.isLastTurn &&
+          widget.work.visibleTextRow != null);
+
   /// 当前**渲染态**是否展开（渲染与头行点击共用单源，2026-11-20）：
   /// 重挂（懒列表回收后重建）会让本地 _liveCollapsed/_open 回到初值，
   /// 而权威折叠态在页面级 liveCollapsedByRow——点击若直接翻转本地值
@@ -348,12 +373,14 @@ class TurnBarState extends State<TurnBar> {
             // 复制内容=整轮正文合并（官方 join("\n\n")）。
             // 2026-10-24 验收：发了文件卡的轮操作行改挂卡后（官方
             // deferAssistantActions 顺序——hasSummaryCard 由 closeTurn 标记）。
-            if (work.completedOk && work.isLastSegment && !work.hasSummaryCard)
+            if (_tailActionsAllowed &&
+                work.isLastSegment &&
+                !work.hasSummaryCard)
               TurnTailActions(
                 row: vt,
                 copyText: work.allTextJoined,
                 sessionId: widget.sessionId,
-                atMs: turnHeaderEndedAt(work.header),
+                atMs: _tailAtMs,
                 openSession: widget.openSession,
               ),
           ],
@@ -461,8 +488,9 @@ class TurnBarState extends State<TurnBar> {
                             unitIdx != lastTextUnitIdx ||
                             '${row['state']}' == 'streaming' ||
                             // 对抗审查 ：中断/失败轮不出操作行（官方
-                            // 只认 complete）；：guided 只挂末段。
-                            !work.completedOk ||
+                            // 只认 complete；窗口截断的无头末段放宽，
+                            // 见 _tailActionsAllowed）；guided 只挂末段。
+                            !_tailActionsAllowed ||
                             !work.isLastSegment ||
                             // 发了文件卡的轮操作行改挂卡尾
                             //（收起态 316 行同款守卫）——展开态漏守卫会
@@ -500,7 +528,7 @@ class TurnBarState extends State<TurnBar> {
                                 row: row,
                                 copyText: work.allTextJoined,
                                 sessionId: widget.sessionId,
-                                atMs: turnHeaderEndedAt(work.header),
+                                atMs: _tailAtMs,
                                 openSession: widget.openSession,
                               ),
                             ],

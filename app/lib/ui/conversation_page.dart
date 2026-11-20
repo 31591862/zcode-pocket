@@ -402,6 +402,12 @@ class _ConversationPageState extends State<ConversationPage>
   /// 双向懒列表的稳定锚点：值为 itemBuilder 的 row/turn key。
   /// 前插历史时保持该 key，center index 随数据自动后移，阅读坐标不变。
   String? _listCenterItemKey;
+
+  /// 入场动画水位（2026-11-20 真机实证）：懒列表首次构建的历史条目也会
+  /// 命中 EntryFadeSlide（200ms 淡入+下滑），滚动翻历史时逐条"闪"。
+  /// 首次非空构建时的最大行号视为存量——仅其后新增的尾部条目播入场
+  /// 动画，历史回填/懒构建不再动画。
+  int? _fadeWatermarkRowId;
   ConversationSubscription? _sub;
 
   /// 当前已挂 _onStateChanged 的 ConversationState（
@@ -1557,6 +1563,19 @@ class _ConversationPageState extends State<ConversationPage>
     preview.totalCount = entry.totalCount;
     preview.ready = true;
     preview.historyExhausted = true; // 缓存视图无传输层，不给"加载更早"
+    // [cache] 诊断：缓存末轮状态（判断是否缓存于运行中）。
+    {
+      String? lastHeader;
+      for (final r in entry.rows.reversed) {
+        if (r['kind'] == 'turnHeader') {
+          lastHeader = '${r['state']}';
+          break;
+        }
+      }
+      debugPrint(
+        '[cache] preview rows=${entry.rows.length} lastHeader=$lastHeader',
+      );
+    }
     setState(() => _cachePreview = preview);
     if (!_perfContentLoaded) {
       _perfContentLoaded = true;
@@ -1676,7 +1695,13 @@ class _ConversationPageState extends State<ConversationPage>
 
   /// 粘底跟随窗口：连续 12 帧（约 1.2s）内反复贴底，抗布局抖动。
   void _followUntilStable() {
-    _followFrames = 12;
+    // 收敛判定（2026-11-20 真机实证）：固定 12 帧在内容巨大的会话里
+    // 会在懒列表估算修正收敛前耗尽，视口停在离真底几十像素处——末尾
+    // 的轮尾操作行被留在折叠线以下。改为"在底 + maxScrollExtent 连续
+    // 3 tick 不变"才收尾，帧上限 40（4s）兜底。
+    _followFrames = 40;
+    var stableTicks = 0;
+    double? lastMax;
     _followTick?.cancel();
     _followTick = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (!mounted || !_stickToBottom || _followFrames <= 0) {
@@ -1684,13 +1709,23 @@ class _ConversationPageState extends State<ConversationPage>
         return;
       }
       _followFrames--;
-      if (_scroll.hasClients) {
-        final bottom = _scroll.position.minScrollExtent;
-        if ((_scroll.offset - bottom).abs() > 1) {
-          _markProgrammatic();
-          _scroll.jumpTo(bottom);
-        }
+      if (!_scroll.hasClients) return;
+      final pos = _scroll.position;
+      final bottom = pos.minScrollExtent;
+      final atBottom = (pos.pixels - bottom).abs() <= 1;
+      if (!atBottom) {
+        _markProgrammatic();
+        _scroll.jumpTo(bottom);
       }
+      final maxStable =
+          lastMax != null && (pos.maxScrollExtent - lastMax!).abs() < 0.5;
+      lastMax = pos.maxScrollExtent;
+      if (atBottom && maxStable) {
+        stableTicks++;
+      } else {
+        stableTicks = 0;
+      }
+      if (stableTicks >= 3) _followTick?.cancel();
     });
   }
 
@@ -5967,6 +6002,28 @@ class _ConversationPageState extends State<ConversationPage>
     return _cachedChatItems = buildChatItems(rows);
   }
 
+  /// 条目最大行号（水位计算用；回合取段内末行，其余取自身行）。
+  int _rowIdOfItem(ChatItem item) => switch (item) {
+    UserItem(:final row) => intOf(row['rowId']) ?? -1,
+    TimelineMarkerItem(:final row) => intOf(row['rowId']) ?? -1,
+    FileSummaryItem(:final header) => intOf(header?['rowId']) ?? -1,
+    TurnBarItem(:final work) =>
+      work.work.isNotEmpty
+          ? (intOf(work.work.last['rowId']) ??
+                intOf(work.header?['rowId']) ??
+                -1)
+          : (intOf(work.header?['rowId']) ?? -1),
+  };
+
+  int _maxItemRowId(List<ChatItem> items) {
+    var maxId = -1;
+    for (final item in items) {
+      final id = _rowIdOfItem(item);
+      if (id > maxId) maxId = id;
+    }
+    return maxId;
+  }
+
   Widget _buildMessageList(ConversationState state) {
     final app = AppStateScope.of(context);
     // 同时监听会话状态与工具显示开关（开关即时生效）
@@ -5987,6 +6044,10 @@ class _ConversationPageState extends State<ConversationPage>
         final items = cachedHit
             ? _cachedChatItems
             : _rebuildChatItems(state.rows, state);
+        // 入场动画水位：首次非空构建固化（见 _fadeWatermarkRowId）。
+        if (items.isNotEmpty && _fadeWatermarkRowId == null) {
+          _fadeWatermarkRowId = _maxItemRowId(items);
+        }
         // 行数回退（编辑重发/回滚的 row.removed）时
         // 裁剪 ViewStore 页面级 Map（只增不减=长会话单调驻留）；行数
         // 增长不裁（流式常态）。
@@ -6210,7 +6271,9 @@ class _ConversationPageState extends State<ConversationPage>
                   // 锚点条目：供帧末高度测量（视口钉住）。
                   child = KeyedSubtree(key: _liveAnchorBoxKey, child: child);
                 }
-                final fresh = _seenRowKeys.add(itemKey);
+                final fresh =
+                    _seenRowKeys.add(itemKey) &&
+                    _rowIdOfItem(item) > (_fadeWatermarkRowId ?? -1);
                 // 原 Builder 只为收集 itemContext
                 // 进只写不读的 map（持有已 dispose 的 Element=内存泄漏）——
                 // 整层删除，直接返回。
