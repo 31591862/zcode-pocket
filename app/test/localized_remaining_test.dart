@@ -15,6 +15,8 @@ import 'package:zcode_pocket/ui/interaction_banner.dart';
 import 'package:zcode_pocket/ui/login_page.dart';
 import 'package:zcode_pocket/ui/notify_guide_page.dart';
 import 'package:zcode_pocket/ui/profiles_sheet.dart';
+import 'package:zcode_pocket/ui/rewards_page.dart';
+import 'package:zcode_pocket/ui/web_fallback_page.dart';
 import 'package:zcode_pocket/ui/conversation_page.dart';
 import 'package:zcode_pocket/ui/subagent_list_sheet.dart';
 import 'package:zcode_pocket/ui/voice_input_sheet.dart';
@@ -300,5 +302,26 @@ void main() {
       ),
     );
     _expectNoMissing('InlineDiffPreview');
+  });
+
+  // marketing-claim-1：奖励中心页（WebView 通道缺席降级态）。
+  testWidgets('英文·RewardsPage 降级态无未翻译项', (tester) async {
+    WebFallbackPage.debugDisableWebView = true;
+    addTearDown(() => WebFallbackPage.debugDisableWebView = false);
+    L10n.resetForTest();
+    L10n.setTestLocale('en-US');
+    L10n.collectMissing = true;
+    final app = AppState()..loaded = true;
+    await tester.pumpWidget(
+      AppStateScope(
+        app: app,
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: const RewardsPage(),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    _expectNoMissing('RewardsPage');
   });
 }

@@ -26,11 +26,15 @@ import 'package:zcode_pocket/core/theme.dart';
 import 'package:zcode_pocket/core/l10n.dart';
 import 'package:zcode_pocket/state/app_state.dart';
 import 'package:zcode_pocket/state/app_state_scope.dart';
+import 'package:zcode_pocket/state/marketing_controller.dart';
 import 'package:zcode_pocket/transport/conversation.dart';
+import 'package:zcode_pocket/transport/marketing_client.dart'
+    show MarketingDelivery;
 import 'package:zcode_pocket/transport/project_tree.dart';
 import 'package:zcode_pocket/ui/archived_tasks_page.dart';
 import 'package:zcode_pocket/ui/automation_page.dart';
 import 'package:zcode_pocket/ui/composer_panels.dart';
+import 'package:zcode_pocket/ui/marketing_claim_card.dart';
 import 'package:zcode_pocket/ui/markdown_view.dart';
 import 'package:zcode_pocket/ui/notify_ledger_page.dart';
 import 'package:zcode_pocket/ui/quota_banner.dart';
@@ -111,6 +115,20 @@ void main() {
 
   testWidgets('守卫·子代理页', (tester) async {
     await _guard(tester, 'SubagentsPage', const SubagentsPage());
+  });
+
+  // marketing-claim-1：首页领取卡（文字兜底形态——图片态属数据内容，
+  // 触控/溢出守卫只看结构）。假控制器在 _GuardMarketingApp。
+  testWidgets('守卫·领取卡', (tester) async {
+    await _guardSheetLike(
+      tester,
+      'MarketingClaimCard',
+      null,
+      page: const Scaffold(
+        body: Column(children: [MarketingClaimCard()]),
+      ),
+      app: _GuardMarketingApp(),
+    );
   });
 
   testWidgets('守卫·MarkdownView（含宽表格/代码块/长段落）', (tester) async {
@@ -267,6 +285,97 @@ void main() {
     );
     _expectNoMissing('TaskCenterUnclassified');
   });
+
+  // review-1（审查④中10）：英文枚举扩面——兜底文案（无 title/desc/
+  // buttonText 的投放）+错误三档也须零未命中。
+  testWidgets('英文·MarketingClaimCard 兜底与错误档无未翻译项', (tester) async {
+    L10n.resetForTest();
+    L10n.setTestLocale('en-US');
+    L10n.collectMissing = true;
+    final app = _GuardMarketingApp(bare: true);
+    (app.marketing as _GuardMarketingController).errorKind =
+        MarketingClaimError.uncertain;
+    await _guardSheetLike(
+      tester,
+      'MarketingClaimCardFallback',
+      null,
+      page: const Scaffold(
+        body: Column(children: [MarketingClaimCard()]),
+      ),
+      app: app,
+    );
+    _expectNoMissing('MarketingClaimCardFallback');
+  });
+
+  // collapse-1：收起条（整条可点展开+X dismiss）触控/溢出守卫——存在性
+  // 断言防空转假绿（审查③）+夹具走真实 collapse 路径。
+  testWidgets('守卫·领取卡收起条', (tester) async {
+    // 存在性预检（审查③：_guardSheetLike 尾部卸载树，断言须在其前
+    // 自行泵一次——防「量了个空树」的空转假绿）。
+    final preApp = _GuardMarketingApp(collapsed: true);
+    addTearDown(preApp.dispose);
+    await tester.pumpWidget(
+      AppStateScope(
+        app: preApp,
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: const Scaffold(
+            body: Column(children: [MarketingClaimCard()]),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('marketing-claim-collapsed')),
+      findsOneWidget,
+      reason: '守卫必须量到真实渲染的收起条，而非空转通过',
+    );
+    // 夹具带服务端 title——薄栏按 规则优先展示 title（非窄档）。
+    expect(find.text('限时福利'), findsOneWidget);
+    await _guardSheetLike(
+      tester,
+      'MarketingClaimCardCollapsed',
+      null,
+      page: const Scaffold(
+        body: Column(children: [MarketingClaimCard()]),
+      ),
+      app: _GuardMarketingApp(collapsed: true),
+    );
+  });
+
+  // collapse-1（审查③）：收起条英文枚举（collectMissing 走薄栏文案）。
+  testWidgets('英文·MarketingClaimCardCollapsed 无未翻译项', (tester) async {
+    L10n.resetForTest();
+    L10n.setTestLocale('en-US');
+    L10n.collectMissing = true;
+    await _guardSheetLike(
+      tester,
+      'MarketingClaimCardCollapsedEn',
+      null,
+      page: const Scaffold(
+        body: Column(children: [MarketingClaimCard()]),
+      ),
+      app: _GuardMarketingApp(collapsed: true),
+    );
+    _expectNoMissing('MarketingClaimCardCollapsedEn');
+  });
+
+  testWidgets('英文·MarketingClaimCard 无未翻译项', (tester) async {
+    L10n.resetForTest();
+    L10n.setTestLocale('en-US');
+    L10n.collectMissing = true;
+    await _guardSheetLike(
+      tester,
+      'MarketingClaimCard',
+      null,
+      page: const Scaffold(
+        body: Column(children: [MarketingClaimCard()]),
+      ),
+      app: _GuardMarketingApp(),
+    );
+    _expectNoMissing('MarketingClaimCard');
+  });
 }
 
 void _expectNoMissing(String label) {
@@ -372,8 +481,7 @@ class _GuardCatalogApp extends AppState {
 }
 
 /// 「任务」内联分支夹具（扩面）：伪项目选中+两卡数据。
-class _GuardTasksApp extends AppState {
-  @override
+class _GuardTasksApp extends AppState {  @override
   LinkPhase get phase => LinkPhase.online;
 
   @override
@@ -564,3 +672,61 @@ final answer = 42; // 代码块守卫样本
 
 > 引用块样本文字。
 ''';
+
+/// 领取卡守卫夹具（marketing-claim-1）：假控制器播种在展卡——拉取/领取
+/// 全 no-op（守卫只看渲染结构），真状态机见 marketing_controller_test。
+class _GuardMarketingApp extends AppState {
+  _GuardMarketingApp({bool bare = false, bool collapsed = false}) {
+    marketing = _GuardMarketingController(bare: bare, collapsed: collapsed);
+  }
+
+  @override
+  bool get loaded => true;
+}
+
+class _GuardMarketingController extends MarketingController {
+  _GuardMarketingController({bool bare = false, bool collapsed = false})
+      : super(
+          accountIdProvider: () async => 'acc-guard',
+          jwtProvider: (id) async => 'jwt',
+          deviceMidProvider: () async => 'mid',
+          localeProvider: () => 'zh-CN',
+          appVersionProvider: () async => '0',
+          platformProvider: () => 'android',
+          originProvider: () => Uri.parse('https://zcode.z.ai'),
+        ) {
+    card = MarketingCard(
+      accountId: 'acc-guard',
+      // bare=true：无服务端文案——走本地兜底（官方福利/领取您的专属
+      // 福利/领取）——英文枚举必须覆盖这些可翻译回退。
+      delivery: bare
+          ? const MarketingDelivery(
+              campaignId: 'cmp-guard-bare',
+              priority: 80,
+              position: 'banner',
+              claimPlanId: 'plan-guard',
+            )
+          : const MarketingDelivery(
+              campaignId: 'cmp-guard',
+              priority: 80,
+              position: 'banner',
+              title: '限时福利',
+              description: '领取您的专属福利',
+              buttonText: '领取',
+              claimPlanId: 'plan-guard',
+            ),
+    );
+    // 真实路径（审查③）：播种卡后走 collapse（claiming=false 可收）。
+    if (collapsed) collapse(card!);
+  }
+
+  @override
+  Future<void> ensurePulled() async {}
+
+  @override
+  Future<void> claim() async {}
+
+  @override
+  Future<void> dismiss(MarketingCard expected) async {}
+
+}

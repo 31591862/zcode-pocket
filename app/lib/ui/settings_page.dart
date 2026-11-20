@@ -8,6 +8,7 @@ import '../platform/capabilities.dart';
 import '../state/app_state_scope.dart';
 import 'app_widgets.dart';
 import 'about_page.dart';
+import 'rewards_page.dart';
 import 'settings_accounts_page.dart';
 import 'settings_security_page.dart';
 import 'update_flow.dart';
@@ -200,6 +201,25 @@ class SettingsPage extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right, size: 18),
               onTap: () => Navigator.of(context)
                   .push(MaterialPageRoute(builder: (_) => const UsagePage())),
+            ),
+            // 奖励中心（marketing-claim-1）：官方领取面的全集入口
+            // （campaign/额度重置/历史）；首页领取卡是 banner 类投放的
+            // 快路，此处常驻收纳。
+            ListTile(
+              key: const ValueKey('settings-rewards-entry'),
+              leading: const Icon(Icons.card_giftcard_outlined, size: 20),
+              title: const Text(
+                '奖励中心',
+                style: TextStyle(fontSize: AppType.uiBase),
+              ),
+              subtitle: const Text(
+                '官方福利/额度/活动',
+                style: TextStyle(fontSize: AppType.uiCaption),
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const RewardsPage()),
+              ),
             ),
             // 应用内更新（in-app-update-1）：入口行（检查更新+开关收在
             // 二级动作——开关单独一行，避免一级页过长）。iOS 无侧装更新
