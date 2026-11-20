@@ -555,18 +555,19 @@ class _MarketingClaimCardState extends State<MarketingClaimCard> {
           padding: const EdgeInsets.fromLTRB(16, 6, 4, 6),
           child: Row(
             children: [
-              // Flexible+220 封顶（审查③建议③）：≥280dp 档弹性收缩、
-              // 长文案省略号不顶死关闭钮。
-              Flexible(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 220),
-                  child: claim,
+              // release-108 走查：Expanded 的弹性区必须整体占满，
+              // 内部 Align 左对齐领取钮，尾部收起/关闭才自然贴右；
+              // 窄档溢出仍由弹性区承担，长文案不顶死关闭钮。
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 220),
+                    child: claim,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              // release-108 走查：单行档次要动作必须靠右；窄档溢出由
-              // 上方 Flexible 承担，Spacer 在无空区时归零。
-              const Spacer(),
               trailing,
             ],
           ),

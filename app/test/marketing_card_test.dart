@@ -195,7 +195,7 @@ void main() {
     expect(
       tester.getRect(collapse).left - tester.getRect(claim).right,
       greaterThan(100),
-      reason: 'Spacer 必须消化单行档空区；修复前两图标紧跟领取按钮',
+      reason: 'Expanded+Align 必须占满弹性区并让尾部靠右；修复前图标紧跟领取按钮',
     );
   });
 
