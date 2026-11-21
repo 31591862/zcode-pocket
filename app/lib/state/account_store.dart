@@ -1,4 +1,3 @@
-import 'dart:async' show unawaited;
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -97,7 +96,8 @@ String deriveAccountId(String jwt, {String? identity}) {
   // 拼接后边界丢失（不同 (h1,h2) 可拼出同一 id）。注：拼接形态变化对
   // 存量兜底账号会在下次重登时落新条目（"宁可并存重复也不毁库"拍板，
   // 旧条目可手动删）。
-  return h1.toRadixString(16).padLeft(8, '0') + h2.toRadixString(16).padLeft(8, '0');
+  return h1.toRadixString(16).padLeft(8, '0') +
+      h2.toRadixString(16).padLeft(8, '0');
 }
 
 class AccountStore {
@@ -106,12 +106,13 @@ class AccountStore {
     // 首次解锁后即可读（前台通知等场景不因锁屏读挂）+ 条目不随
     // iCloud/迁移备份恢复到其他设备——对齐 Android allowBackup=false
     // 隐私口径。aOptions 缺省=Android 行为零变化。
-    : _storage = storage ??
-        const FlutterSecureStorage(
-          iOptions: IOSOptions(
-            accessibility: KeychainAccessibility.first_unlock_this_device,
-          ),
-        );
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            iOptions: IOSOptions(
+              accessibility: KeychainAccessibility.first_unlock_this_device,
+            ),
+          );
 
   final FlutterSecureStorage _storage;
   static const _legacyJwtKey = 'account.jwt';
@@ -123,8 +124,7 @@ class AccountStore {
   static const _providerSuffix = '.provider';
 
   Future<String?> _read(String k) => _storage.read(key: k);
-  Future<void> _write(String k, String v) =>
-      _storage.write(key: k, value: v);
+  Future<void> _write(String k, String v) => _storage.write(key: k, value: v);
   Future<void> _delete(String k) => _storage.delete(key: k);
 
   Future<void> _migrate() async {
@@ -179,17 +179,17 @@ class AccountStore {
   }
 
   Future<void> _writeListRaw(List<StoredAccount> list) => _write(
-        _listKey,
-        jsonEncode([
-          for (final a in list)
-            {
-              'id': a.id,
-              'provider': a.provider,
-              if (a.label.isNotEmpty) 'label': a.label,
-              if (a.officialName.isNotEmpty) 'displayName': a.officialName,
-            },
-        ]),
-      );
+    _listKey,
+    jsonEncode([
+      for (final a in list)
+        {
+          'id': a.id,
+          'provider': a.provider,
+          if (a.label.isNotEmpty) 'label': a.label,
+          if (a.officialName.isNotEmpty) 'displayName': a.officialName,
+        },
+    ]),
+  );
 
   // ------------------------------------------------------ 串行队列
   // 本 store 的读-改-写此前不经任何
@@ -289,16 +289,15 @@ class AccountStore {
     String? identity,
     String? displayName,
     bool? setActive,
-  }) => _serialized(() => _saveRaw(
-        jwt: jwt,
-        provider: provider,
-        identity: identity,
-        displayName: displayName,
-        setActive: setActive,
-      )).then((id) {
-        _notifyChanged();
-        return id;
-      });
+  }) => _serialized(
+    () => _saveRaw(
+      jwt: jwt,
+      provider: provider,
+      identity: identity,
+      displayName: displayName,
+      setActive: setActive,
+    ),
+  );
 
   Future<String> _saveRaw({
     required String jwt,
@@ -318,8 +317,7 @@ class AccountStore {
     final existingLabel = existing?.label ?? '';
     // 官方昵称：登录收割的 displayName 非空则刷新；空且已有旧值时保留
     //（官方页偶发缺 user_info 不清已有昵称）。
-    final officialName =
-        (displayName?.trim().isNotEmpty ?? false)
+    final officialName = (displayName?.trim().isNotEmpty ?? false)
         ? displayName!.trim()
         : existing?.officialName ?? '';
     list.removeWhere((a) => a.id == id);
@@ -338,15 +336,15 @@ class AccountStore {
     // 批2：默认不再无脑写 lastUsed——首账号（lastUsed 尚空）才自动设为
     // 当前；setActive=true 强制、false 不切。
     final existingLast = await _read(_lastKey);
-    final shouldActivate = setActive ?? (existingLast == null || existingLast.isEmpty);
+    final shouldActivate =
+        setActive ?? (existingLast == null || existingLast.isEmpty);
     if (shouldActivate) await _write(_lastKey, id);
     return id;
   }
 
   /// 删除一个账号（其凭据键一并清；不动电脑档案——绑定处置归调用方）。
   Future<void> removeAccount(String accountId) =>
-      _serialized(() => _removeAccountRaw(accountId))
-          .then((_) => _notifyChanged());
+      _serialized(() => _removeAccountRaw(accountId));
 
   Future<void> _removeAccountRaw(String accountId) async {
     await _ensureMigrated();
@@ -364,18 +362,7 @@ class AccountStore {
 
   /// 设为最近使用账号（账号管理「设为当前」；配对/设备列表跟随）。
   Future<void> setLastUsed(String accountId) =>
-      _serialized(() => _setLastUsedRaw(accountId)).then((_) => _notifyChanged());
-
-  /// 账号集合/当前账号变更回调（marketing-claim-review-1：AppState 接线
-  /// →营销控制器失效缓存立即重拉；设为 null 移除）。save/removeAccount
-  /// 同样触发。调用方不得在回调里同步做重活。
-  void Function(String? currentAccountId)? onChanged;
-
-  void _notifyChanged() {
-    final cb = onChanged;
-    if (cb == null) return;
-    unawaited(lastUsedAccountId.then(cb, onError: (_) => cb(null)));
-  }
+      _serialized(() => _setLastUsedRaw(accountId));
 
   Future<void> _setLastUsedRaw(String accountId) async {
     await _ensureMigrated();
@@ -422,7 +409,9 @@ class AccountStore {
     final last = await _read(_lastKey);
     return {
       'accounts': accounts,
-      if (last != null && last.isNotEmpty && accounts.any((e) => e['id'] == last))
+      if (last != null &&
+          last.isNotEmpty &&
+          accounts.any((e) => e['id'] == last))
         'lastUsed': last,
     };
   });

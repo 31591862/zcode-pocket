@@ -3,9 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcode_pocket/state/app_state.dart';
-import 'package:zcode_pocket/state/marketing_controller.dart';
-import 'package:zcode_pocket/transport/marketing_client.dart'
-    show MarketingDelivery;
 import 'package:zcode_pocket/transport/companion_client.dart';
 import 'package:zcode_pocket/state/app_state_scope.dart';
 import 'package:zcode_pocket/transport/conversation.dart';
@@ -195,28 +192,6 @@ Future<void> _openDrawer(WidgetTester tester) async {
 
 Finder inDrawer(Finder f) =>
     find.descendant(of: find.byType(Drawer), matching: f);
-
-/// marketing-claim-1：主页领取卡插槽假控制器（真状态机见
-/// marketing_controller_test；此处只验插槽渲染与零卡零占位）。
-class _SlotMarketing extends MarketingController {
-  _SlotMarketing(MarketingDelivery? seed)
-    : super(
-        accountIdProvider: () async => 'acc-slot',
-        jwtProvider: (id) async => 'jwt',
-        deviceMidProvider: () async => 'mid',
-        localeProvider: () => 'zh-CN',
-        appVersionProvider: () async => '0',
-        platformProvider: () => 'android',
-        originProvider: () => Uri.parse('https://zcode.z.ai'),
-      ) {
-    if (seed != null) {
-      card = MarketingCard(accountId: 'acc-slot', delivery: seed);
-    }
-  }
-
-  @override
-  Future<void> ensurePulled() async {}
-}
 
 void main() {
   final now = DateTime.now().millisecondsSinceEpoch;
@@ -804,37 +779,5 @@ void main() {
       findsNothing,
     );
     expect(tester.takeException(), isNull);
-  });
-
-  // marketing-claim-1：领取卡插槽在主页 header 下方（_TaskHomeView 内）。
-  testWidgets('领取卡：主页在线态出卡（header 下方）；无卡零占位', (tester) async {
-    await _narrow(tester);
-    final app = _HomeApp();
-    app.tasks = rows();
-    app.marketing = _SlotMarketing(
-      const MarketingDelivery(
-        campaignId: 'cmp-slot',
-        priority: 80,
-        position: 'banner',
-        buttonText: '领取',
-        claimPlanId: 'plan-slot',
-      ),
-    );
-    await tester.pumpWidget(_host(app));
-    for (var i = 0; i < 12; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(find.text('官方福利'), findsOneWidget, reason: '文字兜底卡出现');
-    expect(find.text('领取您的专属福利'), findsOneWidget);
-
-    // 无卡：同页零渲染（插槽零高度）。
-    final app2 = _HomeApp();
-    app2.tasks = rows();
-    app2.marketing = _SlotMarketing(null);
-    await tester.pumpWidget(_host(app2));
-    for (var i = 0; i < 12; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(find.text('官方福利'), findsNothing);
   });
 }

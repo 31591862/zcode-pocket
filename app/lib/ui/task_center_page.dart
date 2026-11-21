@@ -22,7 +22,6 @@ import '../transport/project_tree.dart';
 import '../transport/z_transport.dart';
 import 'app_widgets.dart';
 import 'login_page.dart';
-import 'marketing_claim_card.dart';
 import 'status_badge.dart';
 import 'archived_tasks_page.dart';
 import 'automation_page.dart';
@@ -38,17 +37,6 @@ import 'top_notice.dart';
 
 /// 任务中心（home）：全部任务 + 最近｜项目分组（项目栏优化 B 方案）。
 /// 折叠/展开共用同一主页；项目成为分组与新建上下文，不再是常驻导航轨。
-
-/// 首页刷新统一联动福利卡拉取（marketing-claim-review-1）：任务刷新与
-/// 营销 force 拉取并行，一起 await（顶栏刷新与下拉刷新同款；搜索路径
-/// 仍纯任务刷新）。
-Future<void> refreshWorkspacesWithMarketing(AppState app) async {
-  final marketing = app.marketing;
-  await Future.wait([
-    app.refreshWorkspaces(),
-    if (marketing != null) marketing.pull(force: true),
-  ]);
-}
 
 /// 卡片摘要剥 Markdown 记号（**强调**/`代码`/标题# 等）——纯文本场景
 /// 裸符号观感糙（视觉走查-10-18）。
@@ -1060,9 +1048,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: _appBarLinkStatus(app, context),
-              // 上游 1.0.8：顶栏刷新联动福利卡（仅下拉联动时顶栏刷新
-              // 漏营销）；搜索路径仍纯任务。
-              onRefresh: () => refreshWorkspacesWithMarketing(app),
+              onRefresh: app.refreshWorkspaces,
               onSearchToggle: () {
                 // 关闭复用 _closeSearch——原实现只清
                 // query，在飞防抖 300ms 后照常发一次全文 RPC（结果被守卫
@@ -2412,18 +2398,12 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
     return Column(
       children: [
         _buildHeader(context),
-        // 官方福利领取卡（marketing-claim-1）：header 下方常驻槽位——
-        // 无投放时零高度；搜索期本视图整体不出现，卡天然隐藏。
-        const MarketingClaimCard(),
         Expanded(child: _buildBody(context, app, rows)),
       ],
     );
   }
 
-  /// 下拉刷新联动福利卡拉取（marketing-claim-1）：统一走
-  /// [refreshWorkspacesWithMarketing]（顶栏刷新同款）。
-  Future<void> _refreshHome(AppState app) =>
-      refreshWorkspacesWithMarketing(app);
+  Future<void> _refreshHome(AppState app) => app.refreshWorkspaces();
 
   Widget _buildHeader(BuildContext context) {
     // 抽屉化（2026-11-17 用户拍板）：最近/项目 segmented 与 ⋮（项目
