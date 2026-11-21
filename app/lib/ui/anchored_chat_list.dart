@@ -65,9 +65,17 @@ class AnchoredChatList extends StatelessWidget {
     // 比锚点新的条目数（挂在锚点下方=负向区=屏幕底部之外）。
     final afterCenter = math.max(0, itemCount - centerIndex - 1);
     // center sliver 自底向上的子项：[底距] [trailing] [锚点]。
+    // 底距挂在**哪一侧**取决于负向区是否有内容（2026-11-21 闪帧修复）：
+    // 锚点=末条（贴底态，afterCenter=0）→ 底距在 center 区（origin 上方，
+    // 末条与底边之间）；锚点已让位（重锚态，afterCenter>0）→ 底距随
+    // 让位内容一起挂负向区**尾部**——否则两个坐标系的"贴底"视觉相差
+    // 一个 pad 高（重锚态 pad 落在回合上方=错误一侧），≤48 回吸清锚
+    // 切坐标系时产生可见跳变（真机"用力甩到底闪一下"）。
     final bottomPadCount = padding.bottom > 0 ? 1 : 0;
+    final padInNegative = bottomPadCount == 1 && afterCenter > 0;
+    final centerPadCount = bottomPadCount - (padInNegative ? 1 : 0);
     final centerCount =
-        bottomPadCount + (trailing == null ? 0 : 1) + (itemCount > 0 ? 1 : 0);
+        centerPadCount + (trailing == null ? 0 : 1) + (itemCount > 0 ? 1 : 0);
     // 锚点上方：ci-1..0 + leading + 顶距。
     final aboveCount = centerIndex + (leading == null ? 0 : 1) + 1;
 
@@ -79,14 +87,16 @@ class AnchoredChatList extends StatelessWidget {
       physics: const ClampingScrollPhysics(),
       keyboardDismissBehavior: keyboardDismissBehavior,
       slivers: [
-        // ① 负向区（屏幕底部之外）：比锚点新的条目。
+        // ① 负向区（屏幕底部之外）：比锚点新的条目 +（重锚态）底距尾垫。
         SliverPadding(
           padding: horizontal,
           sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => itemBuilder(context, centerIndex + index + 1),
-              childCount: afterCenter,
-            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              if (padInNegative && index == afterCenter) {
+                return SizedBox(height: padding.bottom);
+              }
+              return itemBuilder(context, centerIndex + index + 1);
+            }, childCount: afterCenter + (padInNegative ? 1 : 0)),
           ),
         ),
         // ② center 锚点区（offset 0 起向上）：底距 → trailing → 锚点。
@@ -96,10 +106,10 @@ class AnchoredChatList extends StatelessWidget {
           sliver: SliverList(
             delegate: SliverChildBuilderDelegate((context, index) {
               var i = index;
-              if (bottomPadCount == 1 && i == 0) {
+              if (centerPadCount == 1 && i == 0) {
                 return SizedBox(height: padding.bottom);
               }
-              i -= bottomPadCount;
+              i -= centerPadCount;
               if (trailing != null && i == 0) return trailing!;
               i -= trailing == null ? 0 : 1;
               if (i == 0 && itemCount > 0) {

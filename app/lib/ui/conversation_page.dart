@@ -1945,22 +1945,44 @@ class _ConversationPageState extends State<ConversationPage>
         if (!_stickToBottom &&
             n is ScrollEndNotification &&
             !_lastDragTowardOlder) {
-          _listCenterItemKey = null;
+          if (const bool.fromEnvironment('SCROLL_TRACE')) {
+            debugPrint(
+              '[snap] dist=${dist.toStringAsFixed(1)} '
+              'px=${_scroll.position.pixels.toStringAsFixed(1)} '
+              'min=${_scroll.position.minScrollExtent.toStringAsFixed(1)} '
+              'anchor=$_listCenterItemKey',
+            );
+          }
           _pendingReAnchor = false;
           _lastDragTowardOlder = false;
           setState(() => _stickToBottom = true);
-          // 锚点 X→末条切换的同帧校正：旧坐标贴底邻域（dist≤48，
-          // 像素可为大负数）在新坐标系（末条锚，min=0）外。
-          // 2026-11-21 冻结修复：改走**有通知**的 jumpTo——correctPixels
-          // 免通知免 relayout，锚点本就是末条时（已完成会话）rebuild 不
-          // 改 viewport 任何属性 → paint 停在松手前位置（尾行刚露头）而
-          // pixels 已=0=贴底，再向下拖恒在 min 无通知 → 视觉永久冻结
-          // （真机"尾行刚露头松手后再拖划不动"）。重锚路径无此问题
-          // （centerIndex 变化必然 relayout）。自产 ScrollEnd 由程序化
-          // 窗口豁免消费。
+          // ≤48px 贴底差走**短动画**（120ms easeOutCubic）——瞬跳（布局期
+          // clamp / jumpTo）在流式贴底场景被感知为"闪一下/强制拽下来"
+          // （真机 2026-11-21）。重锚坐标系先做**视觉等价的像素换算**
+          // （px_new = dist：两系布局对同一视差严格一致——旧系窗口底在
+          // min_old+dist，新系在 dist，pad/回合裁切量相同），换算后
+          // d∈[0,48] 在新坐标系界内，rebuild relayout 不触发钳制瞬跳；
+          // 再 animateTo(0) 平滑贴底，动画结束（流式增长由 follow tick
+          // 接管）。（2026-11-21 早前"吸回头部行"根因：jumpTo(0) 按
+          // 新坐标系取目标值却在旧坐标系布局上执行——px=0 在重锚系=
+          // 负向区顶部=头部行在窗口底边。）
           _markProgrammatic();
-          _scroll.jumpTo(0);
-          _followUntilStable();
+          final glueDist = dist;
+          if (_listCenterItemKey != null) {
+            _listCenterItemKey = null;
+            _scroll.position.correctPixels(glueDist);
+          }
+          unawaited(
+            _scroll
+                .animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 120),
+                  curve: Curves.easeOutCubic,
+                )
+                .then((_) {
+                  if (mounted) _followUntilStable();
+                }),
+          );
         }
       } else if (n is ScrollEndNotification) {
         // 静止落点离底=结构重锚（贴底态直接重锚；惯性中途中止
@@ -1995,24 +2017,49 @@ class _ConversationPageState extends State<ConversationPage>
   /// 实测高度）。P' 可为负（新 min 覆盖负向区，几何上必在范围内）。
   void _reAnchorAboveRunningTurn() {
     if (!mounted || !_scroll.hasClients || _listCenterItemKey != null) {
+      if (const bool.fromEnvironment('SCROLL_TRACE')) {
+        debugPrint(
+          '[reanchor-skip] mounted=$mounted clients=${_scroll.hasClients} '
+          'anchor=$_listCenterItemKey',
+        );
+      }
       return;
     }
     // 仅末回合生长中（phase=running）才需要让位：完成会话的 ensureVisible
     // /吸底动画同样会以"离底落点"收尾，重锚会打断其定位（expand_follow
     // 首展用例实证）。完成态内容不再生长，贴底/离底均零位移。
     final st = _sub?.state;
-    if (st == null || st.phase != 'running') return;
+    if (st == null || st.phase != 'running') {
+      if (const bool.fromEnvironment('SCROLL_TRACE')) {
+        debugPrint('[reanchor-skip] phase=${st?.phase}');
+      }
+      return;
+    }
     final items = _cachedChatItems;
-    if (items.isEmpty || items.length < 2) return;
+    if (items.isEmpty || items.length < 2) {
+      if (const bool.fromEnvironment('SCROLL_TRACE')) {
+        debugPrint('[reanchor-skip] items=${items.length}');
+      }
+      return;
+    }
     final oldIdx = items.length - 1;
     final box = _liveAnchorBoxKey.currentContext?.findRenderObject();
     final h = box is RenderBox && box.hasSize ? box.size.height : null;
-    if (h == null || h <= 0) return;
+    if (h == null || h <= 0) {
+      if (const bool.fromEnvironment('SCROLL_TRACE')) {
+        debugPrint('[reanchor-skip] h=$h box=${box != null}');
+      }
+      return;
+    }
     final xKey = chatItemKey(items[oldIdx - 1], oldIdx - 1);
-    // P' = P − H 可为负（负向区即原锚点回合一身）：新坐标系 min 覆盖
-    // 负向区，几何上必在范围内——**不得用旧 dims clamp**（旧 min=0 会
-    // 把它钳回 0 = 视口直接跳到上一条目，真机实证）。
-    final target = _scroll.offset - h;
+    // P' = P − H − 底距：让位后（afterCenter>0）列表底距随内容一起挂到
+    // 负向区**尾部**（AnchoredChatList padInNegative，8=列表 padding.bottom
+    // fromLTRB(16,8,16,8)）——两坐标系贴底视觉归一（pad 都在末条下方），
+    // 重锚/回吸坐标系切换零视觉跳变（真机"用力甩到底闪一下"）。
+    // P' 可为负（负向区即原锚点回合一身）：新坐标系 min 覆盖负向区，
+    // 几何上必在范围内——**不得用旧 dims clamp**（旧 min=0 会把它钳回
+    // 0 = 视口直接跳到上一条目，真机实证）。
+    final target = _scroll.offset - h - 8.0;
     debugPrint(
       '[reanchor] key=$xKey H=${h.toStringAsFixed(1)} '
       '${_scroll.offset.toStringAsFixed(1)}->${target.toStringAsFixed(1)}',
