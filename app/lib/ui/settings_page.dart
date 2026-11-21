@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
@@ -15,6 +16,7 @@ import 'settings_conversation_page.dart';
 import 'settings_notifications_page.dart';
 import 'settings_voice_page.dart';
 import 'subagents_page.dart';
+import 'anchored_menu.dart';
 import 'settings_style.dart';
 import 'usage_page.dart';
 
@@ -23,9 +25,14 @@ import 'usage_page.dart';
 /// 用量维持原直达跳转）+ 关于组（版本信息内联底部）。各设置项的显示
 /// 文案/存储 key/控件行为原样迁入对应二级页，不新增语义。分组头统一用
 /// 共享 AppSectionHeader（原私有 _SectionHeader 已删，收敛重复）。
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
   // ── Eta 风格分组卡（2026-11-16 视觉试点）：样式常量与分组卡/组标签
   // 构建器已抽到 settings_style.dart 共享（下级页同铺，消除"一级新版
   // 二级旧版"割裂）。此处沿用共享实现。
@@ -38,6 +45,10 @@ class SettingsPage extends StatelessWidget {
 
   Widget _groupCard(BuildContext context, bool isDark, List<Widget> rows) =>
       settingsGroupCard(context, isDark, rows);
+
+  /// 外观（主题/语言）锚定下拉的链接（各一）。
+  final _themeMenuLink = LayerLink();
+  final _localeMenuLink = LayerLink();
 
   @override
   Widget build(BuildContext context) {
@@ -56,65 +67,157 @@ class SettingsPage extends StatelessWidget {
           children: [
             _groupLabel(context, '外观'),
             _groupCard(context, isDark, [
-              ListTile(
-                leading: const Icon(
-                    Icons.dark_mode_outlined,
-                    size: 24,
-                    color: _iconBlue),
-                title: const Text(
-                  '主题',
-                  style: TextStyle(fontSize: AppType.uiBase),
-                ),
-                subtitle: const Text(
-                  '跟随系统或固定浅色/深色',
-                  style: TextStyle(fontSize: AppType.uiCaption),
+              CompositedTransformTarget(
+                link: _themeMenuLink,
+                child: Builder(
+                  builder: (rowCtx) => ListTile(
+                    key: const ValueKey('theme-row'),
+                    leading: const Icon(
+                      Icons.dark_mode_outlined,
+                      size: 24,
+                      color: _iconBlue,
+                    ),
+                    title: const Text(
+                      '主题',
+                      style: TextStyle(fontSize: AppType.uiBase),
+                    ),
+                    subtitle: const Text(
+                      '跟随系统或固定浅色/深色',
+                      style: TextStyle(fontSize: AppType.uiCaption),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          switch (app.uiPrefs.themeMode) {
+                            'light' => '浅色',
+                            'dark' => '深色',
+                            _ => '跟随系统',
+                          },
+                          style: TextStyle(
+                            fontSize: AppType.uiCaption,
+                            color: context.colors.foregroundSubtle,
+                          ),
+                        ),
+                        Icon(
+                          Icons.arrow_drop_down,
+                          size: 18,
+                          color: context.colors.foregroundSubtle,
+                        ),
+                      ],
+                    ),
+                    onTap: () async {
+                      final box = rowCtx.findRenderObject()! as RenderBox;
+                      final anchorRect =
+                          box.localToGlobal(Offset.zero) & box.size;
+                      final v = await showAnchoredMenu(
+                        context,
+                        anchorRect: anchorRect,
+                        link: _themeMenuLink,
+                        items: [
+                          for (final (id, label) in const [
+                            ('system', '跟随系统'),
+                            ('light', '浅色'),
+                            ('dark', '深色'),
+                          ])
+                            AnchoredMenuItem(
+                              value: id,
+                              label: label,
+                              selected: app.uiPrefs.themeMode == id,
+                              key: ValueKey('appearance-theme-$id'),
+                            ),
+                        ],
+                        selectedTextColor: context.colors.brandAccent,
+                        highlight: context.colors.brandAccent.withValues(
+                          alpha: 0.14,
+                        ),
+                        maxWidth: 280,
+                      );
+                      if (v != null) app.uiPrefs.setThemeMode(v);
+                    },
+                  ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                child: _SegmentSelector(
-                  keyValue: 'theme',
-                  options: const [
-                    ('system', '跟随系统'),
-                    ('light', '浅色'),
-                    ('dark', '深色'),
-                  ],
-                  value: app.uiPrefs.themeMode,
-                  onChanged: (v) => app.uiPrefs.setThemeMode(v),
-                ),
-              ),
-              ListTile(
-                leading:
-                    const Icon(Icons.language, size: 24, color: _iconGreen),
-                title: const Text(
-                  '语言',
-                  style: TextStyle(fontSize: AppType.uiBase),
-                ),
-                subtitle: const Text(
-                  '跟随系统或选择简体中文/English',
-                  style: TextStyle(fontSize: AppType.uiCaption),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-                child: _SegmentSelector(
-                  keyValue: 'locale',
-                  options: const [
-                    ('system', '跟随系统'),
-                    ('zh-CN', '中文'),
-                    ('en-US', 'English'),
-                  ],
-                  value: app.uiPrefs.localePreference,
-                  onChanged: (v) => app.uiPrefs.setLocalePreference(v),
+              CompositedTransformTarget(
+                link: _localeMenuLink,
+                child: Builder(
+                  builder: (rowCtx) => ListTile(
+                    key: const ValueKey('locale-row'),
+                    leading: const Icon(
+                      Icons.language,
+                      size: 24,
+                      color: _iconGreen,
+                    ),
+                    title: const Text(
+                      '语言',
+                      style: TextStyle(fontSize: AppType.uiBase),
+                    ),
+                    subtitle: const Text(
+                      '跟随系统或选择简体中文/English',
+                      style: TextStyle(fontSize: AppType.uiCaption),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          switch (app.uiPrefs.localePreference) {
+                            'zh-CN' => '中文',
+                            'en-US' => 'English',
+                            _ => '跟随系统',
+                          },
+                          style: TextStyle(
+                            fontSize: AppType.uiCaption,
+                            color: context.colors.foregroundSubtle,
+                          ),
+                        ),
+                        Icon(
+                          Icons.arrow_drop_down,
+                          size: 18,
+                          color: context.colors.foregroundSubtle,
+                        ),
+                      ],
+                    ),
+                    onTap: () async {
+                      final box = rowCtx.findRenderObject()! as RenderBox;
+                      final anchorRect =
+                          box.localToGlobal(Offset.zero) & box.size;
+                      final v = await showAnchoredMenu(
+                        context,
+                        anchorRect: anchorRect,
+                        link: _localeMenuLink,
+                        items: [
+                          for (final (id, label) in const [
+                            ('system', '跟随系统'),
+                            ('zh-CN', '中文'),
+                            ('en-US', 'English'),
+                          ])
+                            AnchoredMenuItem(
+                              value: id,
+                              label: label,
+                              selected: app.uiPrefs.localePreference == id,
+                              key: ValueKey('appearance-locale-$id'),
+                            ),
+                        ],
+                        selectedTextColor: context.colors.brandAccent,
+                        highlight: context.colors.brandAccent.withValues(
+                          alpha: 0.14,
+                        ),
+                        maxWidth: 280,
+                      );
+                      if (v != null) app.uiPrefs.setLocalePreference(v);
+                    },
+                  ),
                 ),
               ),
             ]),
             _groupLabel(context, '偏好'),
             _groupCard(context, isDark, [
               ListTile(
-                leading: const Icon(Icons.forum_outlined,
-                    size: 24,
-                    color: _iconBlue),
+                leading: const Icon(
+                  Icons.forum_outlined,
+                  size: 24,
+                  color: _iconBlue,
+                ),
                 title: const Text(
                   '对话',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -131,9 +234,11 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.notifications_outlined,
-                    size: 24,
-                    color: _iconOrange),
+                leading: const Icon(
+                  Icons.notifications_outlined,
+                  size: 24,
+                  color: _iconOrange,
+                ),
                 title: const Text(
                   '通知',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -150,8 +255,11 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
               ListTile(
-                leading:
-                    const Icon(Icons.mic_outlined, size: 24, color: _iconGreen),
+                leading: const Icon(
+                  Icons.mic_outlined,
+                  size: 24,
+                  color: _iconGreen,
+                ),
                 title: const Text(
                   '语音输入',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -172,9 +280,11 @@ class SettingsPage extends StatelessWidget {
               // 开关（默认关）——纯读本地缓存快照，不建连接不订阅。
               SwitchListTile(
                 key: const ValueKey('settings-show-other-computers'),
-                secondary: const Icon(Icons.devices_other_outlined,
-                    size: 24,
-                    color: _iconOrange),
+                secondary: const Icon(
+                  Icons.devices_other_outlined,
+                  size: 24,
+                  color: _iconOrange,
+                ),
                 title: const Text(
                   '首页显示其他电脑任务',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -187,9 +297,11 @@ class SettingsPage extends StatelessWidget {
                 onChanged: (v) => app.uiPrefs.setShowOtherComputers(v),
               ),
               ListTile(
-                leading: const Icon(Icons.manage_accounts_outlined,
-                    size: 24,
-                    color: _iconBlue),
+                leading: const Icon(
+                  Icons.manage_accounts_outlined,
+                  size: 24,
+                  color: _iconBlue,
+                ),
                 title: const Text(
                   '账号管理',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -200,13 +312,17 @@ class SettingsPage extends StatelessWidget {
                 ),
                 trailing: const Icon(Icons.chevron_right, size: 18),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsAccountsPage()),
+                  MaterialPageRoute(
+                    builder: (_) => const SettingsAccountsPage(),
+                  ),
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.smart_toy_outlined,
-                    size: 24,
-                    color: _iconGreen),
+                leading: const Icon(
+                  Icons.smart_toy_outlined,
+                  size: 24,
+                  color: _iconGreen,
+                ),
                 title: const Text(
                   '子智能体',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -216,14 +332,16 @@ class SettingsPage extends StatelessWidget {
                   style: TextStyle(fontSize: AppType.uiCaption),
                 ),
                 trailing: const Icon(Icons.chevron_right, size: 18),
-                onTap: () => Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const SubagentsPage())),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SubagentsPage()),
+                ),
               ),
               ListTile(
-                leading: const Icon(Icons.data_usage_outlined,
-                    size: 24,
-                    color: _iconBlue),
+                leading: const Icon(
+                  Icons.data_usage_outlined,
+                  size: 24,
+                  color: _iconBlue,
+                ),
                 title: const Text(
                   '订阅用量',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -241,9 +359,11 @@ class SettingsPage extends StatelessWidget {
               // （结构性，supportsSelfUpdate）两行整体隐藏（早前批次）。
               if (ZpCapabilities.supportsSelfUpdate) ...[
                 ListTile(
-                  leading: const Icon(Icons.system_update_outlined,
-                      size: 24,
-                      color: _iconBlue),
+                  leading: const Icon(
+                    Icons.system_update_outlined,
+                    size: 24,
+                    color: _iconBlue,
+                  ),
                   title: const Text(
                     '软件更新',
                     style: TextStyle(fontSize: AppType.uiBase),
@@ -257,9 +377,11 @@ class SettingsPage extends StatelessWidget {
                 ),
                 SwitchListTile(
                   key: const ValueKey('settings-update-in-app'),
-                  secondary: const Icon(Icons.download_outlined,
-                      size: 24,
-                      color: _iconGreen),
+                  secondary: const Icon(
+                    Icons.download_outlined,
+                    size: 24,
+                    color: _iconGreen,
+                  ),
                   title: const Text(
                     '应用内更新',
                     style: TextStyle(fontSize: AppType.uiBase),
@@ -277,8 +399,11 @@ class SettingsPage extends StatelessWidget {
             _groupCard(context, isDark, [
               // 应用锁（app-lock-1）：安全组（方式三态/自动锁定/防泄露）。
               ListTile(
-                leading:
-                    const Icon(Icons.lock_outline, size: 24, color: _iconOrange),
+                leading: const Icon(
+                  Icons.lock_outline,
+                  size: 24,
+                  color: _iconOrange,
+                ),
                 title: const Text(
                   '应用锁',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -289,12 +414,17 @@ class SettingsPage extends StatelessWidget {
                 ),
                 trailing: const Icon(Icons.chevron_right, size: 18),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsSecurityPage()),
+                  MaterialPageRoute(
+                    builder: (_) => const SettingsSecurityPage(),
+                  ),
                 ),
               ),
               ListTile(
-                leading:
-                    const Icon(Icons.phone_android, size: 24, color: _iconGreen),
+                leading: const Icon(
+                  Icons.phone_android,
+                  size: 24,
+                  color: _iconGreen,
+                ),
                 title: const Text(
                   '换机助手',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -306,8 +436,9 @@ class SettingsPage extends StatelessWidget {
                 trailing: const Icon(Icons.chevron_right, size: 18),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) =>
-                        const DeviceMigrationPage(mode: DeviceMigrationMode.export),
+                    builder: (_) => const DeviceMigrationPage(
+                      mode: DeviceMigrationMode.export,
+                    ),
                   ),
                 ),
               ),
@@ -318,8 +449,11 @@ class SettingsPage extends StatelessWidget {
               // 第三方来源/依赖许可集中到二级页，一级页只留一个入口。
               ListTile(
                 key: const ValueKey('settings-about'),
-                leading:
-                    const Icon(Icons.info_outline, size: 24, color: _iconBlue),
+                leading: const Icon(
+                  Icons.info_outline,
+                  size: 24,
+                  color: _iconBlue,
+                ),
                 title: const Text(
                   '关于 ZCode Pocket',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -338,9 +472,7 @@ class SettingsPage extends StatelessWidget {
       ),
     );
   }
-
 }
-
 
 //三档段选器（/ 收敛单源：语言/主题两份逐行
 /// 同构实现——触控规格/视觉调整需双改，历史上触控高 46→48 修正两处各
@@ -348,77 +480,6 @@ class SettingsPage extends StatelessWidget {
 /// foreground 字，未选=transparent 底+foregroundSubtle 字；48dp 触控高；
 /// 胶囊外形）。交互范式参考 zemote 三段式（ 纪律：只参考设计
 /// 不移植代码）。
-class _SegmentSelector extends StatelessWidget {
-  const _SegmentSelector({
-    required this.keyValue,
-    required this.options,
-    required this.value,
-    required this.onChanged,
-  });
-
-  /// 键前缀（'locale'/'theme'）：容器键 `<keyValue>-selector`、
-  /// 分段键 `<keyValue>-<id>`（测试断言依赖既有键名）。
-  final String keyValue;
-
-  final List<(String, String)> options;
-  final String value;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: ValueKey('$keyValue-selector'),
-      // 触控高按内容区算：48 目标 + 上下边框 1×2（design_guard 实测 46
-      // 被拦后修正——Container 高度含 border，内容区才是命中层）。
-      height: 50,
-      decoration: BoxDecoration(
-        color: context.colors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: context.colors.borderFaint),
-      ),
-      child: Row(
-        children: [
-          for (final (id, label) in options)
-            Expanded(
-              // 触控目标=整格 48 高（design_guard 实测 46<48 被拦后修正）：
-              // GestureDetector 撑满外格，药丸视觉缩进仅是内边距。
-              child: GestureDetector(
-                key: ValueKey('$keyValue-$id'),
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onChanged(id),
-                child: Container(
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.all(3),
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: value == id
-                          ? context.colors.selected
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                    ),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontSize: AppType.uiCaption,
-                        color: value == id
-                            ? context.colors.foreground
-                            : context.colors.foregroundSubtle,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 关于行副标题：本机版本（release 含 HEAD 指纹）+ 桌面端版本。
-/// 官方快照 channel 读包管理器，测试环境回落静态文案。
 class _AppVersionText extends StatefulWidget {
   const _AppVersionText();
 

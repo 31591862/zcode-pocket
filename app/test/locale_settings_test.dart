@@ -100,18 +100,24 @@ void main() {
     );
     expect(find.text('设置'), findsOneWidget);
     final theme = prefs.themeMode;
-    await tester.tap(find.byKey(const ValueKey('locale-en-US')));
-    await tester.pump();
+    // 外观行改锚定下拉：点行开菜单 → 点菜单项。
+    await tester.tap(find.byKey(const ValueKey('locale-row')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const ValueKey('appearance-locale-en-US')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100));
     expect(prefs.localePreference, 'en-US');
     expect(L10n.resolvedLocale, 'en-US');
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Language'), findsOneWidget);
-    expect(find.text('System'), findsNWidgets(2));
+    // 外观两行改锚定下拉：行尾当前值文案（主题/语言均为跟随系统）。
+    expect(find.text('System'), findsWidgets);
     expect(prefs.localePreference, 'en-US');
     expect(prefs.themeMode, theme);
 
-    await tester.tap(find.byKey(const ValueKey('locale-zh-CN')));
-    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('locale-row')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const ValueKey('appearance-locale-zh-CN')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100));
     expect(find.text('设置'), findsOneWidget);
     expect(find.text('语言'), findsOneWidget);
     expect(prefs.themeMode, theme);

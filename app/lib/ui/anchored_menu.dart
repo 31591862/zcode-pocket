@@ -7,8 +7,9 @@
 // 红文字；点菜单外任意处关闭。
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
 
+import '../core/localized_text.dart';
 import '../core/theme.dart';
 
 class AnchoredMenuItem {
@@ -87,9 +88,6 @@ Future<String?> showAnchoredMenu(
     entry = null;
   }
 
-  debugPrint(
-    '[menu] open items=${items.length} first=${items.firstOrNull?.label}',
-  );
   entry = OverlayEntry(
     builder: (overlayContext) => Stack(
       children: [
