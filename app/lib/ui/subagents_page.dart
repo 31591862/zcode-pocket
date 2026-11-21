@@ -8,6 +8,7 @@ import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/channel_client.dart';
 import 'app_widgets.dart';
+import 'anchored_menu.dart';
 import 'settings_style.dart';
 import 'top_notice.dart';
 
@@ -633,6 +634,8 @@ class _AgentTile extends StatefulWidget {
 }
 
 class _AgentTileState extends State<_AgentTile> {
+  /// 行尾 ⋮ 与展开区模型/思考档下拉的锚定链接（按 key 缓存）。
+  final _menuLinks = <String, LayerLink>{};
   bool _expanded = false;
 
   /// agent.color（服务端调色板名）→ 色点；未知名/缺失返回 null（不画）。
@@ -840,14 +843,39 @@ class _AgentTileState extends State<_AgentTile> {
                       SizedBox(
                         width: 32,
                         height: 40,
-                        child: PopupMenuButton<String>(
-                          padding: EdgeInsets.zero,
-                          onSelected: (v) =>
-                              v == 'edit' ? widget.onEdit() : widget.onDelete(),
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'edit', child: Text('编辑')),
-                            PopupMenuItem(value: 'delete', child: Text('删除')),
-                          ],
+                        child: CompositedTransformTarget(
+                          link: _menuLinks.putIfAbsent(
+                            'row-${widget.agent['id']}',
+                            LayerLink.new,
+                          ),
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(
+                              Icons.more_vert,
+                              size: 20,
+                              color: null,
+                            ),
+                            onPressed: () async {
+                              final box =
+                                  context.findRenderObject()! as RenderBox;
+                              final anchorRect =
+                                  box.localToGlobal(Offset.zero) & box.size;
+                              final v = await showAnchoredMenu(
+                                context,
+                                anchorRect: anchorRect,
+                                link: _menuLinks['row-${widget.agent['id']}']!,
+                                items: const [
+                                  AnchoredMenuItem(value: 'edit', label: '编辑'),
+                                  AnchoredMenuItem(
+                                    value: 'delete',
+                                    label: '删除',
+                                  ),
+                                ],
+                              );
+                              if (v == 'edit') widget.onEdit();
+                              if (v == 'delete') widget.onDelete();
+                            },
+                          ),
                         ),
                       ),
                   ],
@@ -903,57 +931,74 @@ class _AgentTileState extends State<_AgentTile> {
     final dim = enabled ? 1.0 : 0.45;
     return Opacity(
       opacity: dim,
-      child: PopupMenuButton<String>(
+      child: CompositedTransformTarget(
         key: ValueKey('$chipKey-${widget.agent['id']}'),
-        initialValue: initialValue,
-        enabled: enabled,
-        constraints: const BoxConstraints(maxWidth: 280),
-        onSelected: (v) => onSelected(v.isEmpty ? null : v),
-        itemBuilder: (_) => [
-          for (final (value, name) in items)
-            PopupMenuItem(
-              value: value,
-              height: 40,
-              child: Text(
-                name,
-                translate: false,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: AppType.uiCaption),
-              ),
+        link: _menuLinks.putIfAbsent(
+          '$chipKey-${widget.agent['id']}',
+          LayerLink.new,
+        ),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled
+              ? () async {
+                  final box = context.findRenderObject()! as RenderBox;
+                  final anchorRect = box.localToGlobal(Offset.zero) & box.size;
+                  // 收起≠选择：点外关闭不触发 onSelected（null=清除语义，
+                  // 只应来自明确选中的「继承默认」条目）。
+                  var dismissed = false;
+                  final v = await showAnchoredMenu(
+                    context,
+                    onDismissed: () => dismissed = true,
+                    anchorRect: anchorRect,
+                    link: _menuLinks['$chipKey-${widget.agent['id']}']!,
+                    items: [
+                      for (final (value, name) in items)
+                        AnchoredMenuItem(
+                          value: value,
+                          label: name,
+                          selected: value == initialValue,
+                        ),
+                    ],
+                    selectedTextColor: context.colors.brandAccent,
+                    maxWidth: 280,
+                  );
+                  if (dismissed) return;
+                  onSelected((v ?? '').isEmpty ? null : v);
+                }
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 56,
+                  child: Text(
+                    rowLabel,
+                    style: TextStyle(
+                      fontSize: AppType.uiCaption,
+                      color: context.colors.foregroundSubtle,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    label,
+                    translate: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppType.uiCaption,
+                      fontWeight: FontWeight.w500,
+                      color: context.colors.foreground,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_drop_down,
+                  size: 18,
+                  color: context.colors.foregroundSubtle,
+                ),
+              ],
             ),
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 56,
-                child: Text(
-                  rowLabel,
-                  style: TextStyle(
-                    fontSize: AppType.uiCaption,
-                    color: context.colors.foregroundSubtle,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  label,
-                  translate: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: AppType.uiCaption,
-                    fontWeight: FontWeight.w500,
-                    color: context.colors.foreground,
-                  ),
-                ),
-              ),
-              Icon(
-                Icons.arrow_drop_down,
-                size: 18,
-                color: context.colors.foregroundSubtle,
-              ),
-            ],
           ),
         ),
       ),

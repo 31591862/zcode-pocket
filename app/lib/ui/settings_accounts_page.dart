@@ -8,6 +8,7 @@ import '../state/account_store.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../transport/z_transport.dart';
+import 'anchored_menu.dart';
 import 'login_page.dart';
 import 'pairing_page.dart';
 import 'settings_style.dart';
@@ -27,6 +28,10 @@ class SettingsAccountsPage extends StatefulWidget {
 }
 
 class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
+  /// 账号卡下拉的锚定链接（每账号一个——多卡同帧建多个 Leader 会
+  /// 争抢同一链接触发框架断言）。
+  final _accountMenuLinks = <String, LayerLink>{};
+
   /// 重命名对话框 controller 归 State 托管（此前取消路径
   /// 在退场动画中立即 dispose、保存路径永不 dispose——同 branch_sheet
   /// 批D 教训，统一列表+dispose 清理）。
@@ -250,39 +255,53 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
               ),
             ),
           ],
-          PopupMenuButton<String>(
-            key: ValueKey('account-menu-${account.id}'),
-            icon: Icon(
-              Icons.more_vert,
-              size: 20,
-              color: context.colors.foregroundSubtle,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            onSelected: (v) {
-              if (v == 'connect') {
-                // 多账号配对（2026-11-08 对抗审查）：给指定账号配电脑
-                // ——进配对页时把目标账号显式带下去，扫码/V2 直连/设备
-                // 列表都按该账号建档案（此前只能落 lastUsed）。
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => PairingPage(accountId: account.id),
-                  ),
-                );
-              } else if (v == 'rename') {
-                _renameAccount(account, app);
-              } else if (v == 'remove') {
-                _removeAccount(account, app);
-              }
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'connect',
-                key: ValueKey('account-connect-${account.id}'),
-                child: Text(tr('连接该账号的电脑')),
+          CompositedTransformTarget(
+            link: _accountMenuLinks.putIfAbsent(account.id, LayerLink.new),
+            child: IconButton(
+              key: ValueKey('account-menu-${account.id}'),
+              icon: Icon(
+                Icons.more_vert,
+                size: 20,
+                color: context.colors.foregroundSubtle,
               ),
-              PopupMenuItem(value: 'rename', child: Text(tr('重命名账号'))),
-              PopupMenuItem(value: 'remove', child: Text(tr('删除账号'))),
-            ],
+              onPressed: () async {
+                final box = context.findRenderObject()! as RenderBox;
+                final anchorRect = box.localToGlobal(Offset.zero) & box.size;
+                final v = await showAnchoredMenu(
+                  context,
+                  anchorRect: anchorRect,
+                  link: _accountMenuLinks[account.id]!,
+                  items: [
+                    AnchoredMenuItem(
+                      value: 'connect',
+                      label: tr('连接该账号的电脑'),
+                      key: ValueKey('account-connect-${account.id}'),
+                    ),
+                    AnchoredMenuItem(value: 'rename', label: tr('重命名账号')),
+                    AnchoredMenuItem(
+                      value: 'remove',
+                      label: tr('删除账号'),
+                      color: context.colors.destructive,
+                    ),
+                  ],
+                );
+                if (!mounted || v == null) return;
+                if (v == 'connect') {
+                  // 多账号配对（2026-11-08 对抗审查）：给指定账号配电脑
+                  // ——进配对页时把目标账号显式带下去，扫码/V2 直连/设备
+                  // 列表都按该账号建档案（此前只能落 lastUsed）。
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => PairingPage(accountId: account.id),
+                    ),
+                  );
+                } else if (v == 'rename') {
+                  _renameAccount(account, app);
+                } else if (v == 'remove') {
+                  _removeAccount(account, app);
+                }
+              },
+            ),
           ),
         ],
       ),

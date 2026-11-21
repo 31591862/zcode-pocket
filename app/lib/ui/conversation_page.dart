@@ -35,6 +35,7 @@ import 'attachments_compose.dart';
 import 'attachment_annotate_page.dart';
 import 'quota_banner.dart';
 import 'settings_style.dart';
+import 'anchored_menu.dart';
 import 'top_notice.dart';
 import 'voice_input_sheet.dart';
 import '../state/cache_policy.dart';
@@ -372,6 +373,9 @@ class _ConversationPageState extends State<ConversationPage>
   int _attLastValidationVersion = -1;
   final _inputFocusNode = FocusNode();
   final _scroll = ScrollController();
+
+  /// 顶栏任务菜单（TaskActionMenu 对位）的锚定链接。
+  final _taskMenuLink = LayerLink();
   late final ConversationSearchController _search =
       ConversationSearchController(
         stateProvider: () => _sub?.state,
@@ -4968,35 +4972,46 @@ class _ConversationPageState extends State<ConversationPage>
             ),
           // （WR 对齐）：窗口内任务操作菜单（桌面 TaskActionMenu 对位）。
           if (state != null && _sessionId != null)
-            PopupMenuButton<String>(
-              key: const ValueKey('task-menu'),
-              icon: const Icon(Icons.more_vert, size: 18),
-              // 紧凑档（真机反馈 2026-11-13）：仅 padding 11 不够——内部
-              // IconButton 仍走 M3 默认 tapTargetSize=padded 撑回 48dp
-              // （视觉复核实测 168/40/40/44 不均），必须同挂 compact style。
-              padding: const EdgeInsets.all(11),
-              style: _topBarActionStyle(),
-              onSelected: (v) => _onTaskMenu(v),
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'rename', child: Text('重命名')),
-                PopupMenuItem(
-                  value: 'pin',
-                  child: Text(_currentTaskPinned(app2) ? '取消置顶' : '置顶'),
-                ),
-                const PopupMenuItem(value: 'unread', child: Text('标为未读')),
-                const PopupMenuItem(value: 'archive', child: Text('归档')),
-                // 工作流运行入口已提升到顶栏一级（早前批次），
-                // 菜单槽位撤销。
-                // 后台工作二级页入口（compactness-feedback-1109 反馈②）：
-                // 完全撤出输入区一级空间——有后台工作才出现在菜单，带
-                // 计数；一级感知=任务卡后台小点（既有）。
-                if ((_sub?.state.backgroundWorks ?? const []).isNotEmpty)
-                  PopupMenuItem(
-                    value: 'bgWorks',
-                    child: Text('后台工作 · ${_sub!.state.backgroundWorks.length}'),
-                  ),
-                const PopupMenuItem(value: 'copyId', child: Text('复制会话 ID')),
-              ],
+            CompositedTransformTarget(
+              link: _taskMenuLink,
+              child: IconButton(
+                key: const ValueKey('task-menu'),
+                icon: const Icon(Icons.more_vert, size: 18),
+                // 紧凑档（真机反馈 2026-11-13）：仅 padding 11 不够——内部
+                // IconButton 仍走 M3 默认 tapTargetSize=padded 撑回 48dp
+                // （视觉复核实测 168/40/40/44 不均），必须同挂 compact style。
+                padding: const EdgeInsets.all(11),
+                style: _topBarActionStyle(),
+                onPressed: () async {
+                  final box = context.findRenderObject()! as RenderBox;
+                  final anchorRect = box.localToGlobal(Offset.zero) & box.size;
+                  final bgWorks = _sub?.state.backgroundWorks ?? const [];
+                  final v = await showAnchoredMenu(
+                    context,
+                    anchorRect: anchorRect,
+                    link: _taskMenuLink,
+                    items: [
+                      const AnchoredMenuItem(value: 'rename', label: '重命名'),
+                      AnchoredMenuItem(
+                        value: 'pin',
+                        label: _currentTaskPinned(app2) ? '取消置顶' : '置顶',
+                      ),
+                      const AnchoredMenuItem(value: 'unread', label: '标为未读'),
+                      const AnchoredMenuItem(value: 'archive', label: '归档'),
+                      // 后台工作二级页入口（compactness-feedback-1109 反馈②）：
+                      // 有后台工作才出现在菜单，带计数；一级感知=任务卡
+                      // 后台小点（既有）。
+                      if (bgWorks.isNotEmpty)
+                        AnchoredMenuItem(
+                          value: 'bgWorks',
+                          label: '后台工作 · ${bgWorks.length}',
+                        ),
+                      const AnchoredMenuItem(value: 'copyId', label: '复制会话 ID'),
+                    ],
+                  );
+                  if (v != null) _onTaskMenu(v);
+                },
+              ),
             ),
         ],
         bottom: PreferredSize(

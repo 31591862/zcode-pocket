@@ -8,6 +8,7 @@ import '../state/app_state_scope.dart';
 import '../transport/z_transport.dart';
 import 'app_widgets.dart';
 import 'pairing_page.dart';
+import 'anchored_menu.dart';
 import 'top_notice.dart';
 
 /// 电脑档案管理面板（裁决：档案切换为一级入口）。
@@ -30,6 +31,8 @@ class _ProfilesSheet extends StatefulWidget {
 }
 
 class _ProfilesSheetState extends State<_ProfilesSheet> {
+  /// 电脑档案卡菜单的锚定链接（每档案一个）。
+  final _profileMenuLinks = <String, LayerLink>{};
   bool _switching = false;
 
   /// 多账号批（2026-10-25）：账号 id→短标签；>1 账号时电脑卡显示所属
@@ -240,6 +243,10 @@ class _ProfilesSheetState extends State<_ProfilesSheet> {
               onTap: () => _activate(app, profile),
               onRename: () => _rename(app, profile),
               onRemove: () => _remove(app, profile),
+              menuLink: _profileMenuLinks.putIfAbsent(
+                profile.deviceSid,
+                LayerLink.new,
+              ),
             ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
@@ -272,6 +279,9 @@ class _ProfileTile extends StatelessWidget {
   final VoidCallback onRename;
   final VoidCallback onRemove;
 
+  /// ⋮ 下拉锚定链接（State 层按档案 id 缓存，稳定跨重建）。
+  final LayerLink menuLink;
+
   const _ProfileTile({
     required this.profile,
     this.accountBadge,
@@ -281,6 +291,7 @@ class _ProfileTile extends StatelessWidget {
     required this.onTap,
     required this.onRename,
     required this.onRemove,
+    required this.menuLink,
   });
 
   @override
@@ -373,20 +384,34 @@ class _ProfileTile extends StatelessWidget {
                     color: context.colors.foregroundSubtlest,
                   ),
                 ),
-          trailing: PopupMenuButton<String>(
-            // 激活等待期禁用重命名/删除——删除正在
-            // 激活的档案会与 _createStack/start 竞态（registry 层有兜底
-            // 但不该放行）。
-            enabled: !switching,
-            onSelected: (v) => v == 'rename'
-                ? onRename()
-                : v == 'remove'
-                ? onRemove()
-                : null,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'rename', child: Text('重命名')),
-              PopupMenuItem(value: 'remove', child: Text('删除')),
-            ],
+          trailing: CompositedTransformTarget(
+            link: menuLink,
+            child: IconButton(
+              icon: const Icon(Icons.more_vert, size: 20),
+              // 激活等待期禁用重命名/删除——删除正在激活的档案会与
+              // _createStack/start 竞态（registry 层有兜底但不该放行）。
+              onPressed: switching
+                  ? null
+                  : () async {
+                      final box = context.findRenderObject()! as RenderBox;
+                      final anchorRect =
+                          box.localToGlobal(Offset.zero) & box.size;
+                      final v = await showAnchoredMenu(
+                        context,
+                        anchorRect: anchorRect,
+                        link: menuLink,
+                        items: const [
+                          AnchoredMenuItem(value: 'rename', label: '重命名'),
+                          AnchoredMenuItem(value: 'remove', label: '删除'),
+                        ],
+                      );
+                      if (v == 'rename') {
+                        onRename();
+                      } else if (v == 'remove') {
+                        onRemove();
+                      }
+                    },
+            ),
           ),
         ),
       ),

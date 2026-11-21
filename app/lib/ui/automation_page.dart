@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' hide Text;
 
+import 'anchored_menu.dart';
 import '../core/localized_text.dart';
 
 import '../core/theme.dart';
@@ -345,6 +346,9 @@ class _AutomationPageState extends State<AutomationPage> {
 }
 
 class _AutomationCard extends StatelessWidget {
+  /// ⋮ 菜单锚定链接（卡片实例自持——卡片随任务身份稳定重建）。
+  final LayerLink _menuLink = LayerLink();
+
   final AutomationEntry entry;
   final VoidCallback onEdit;
   final VoidCallback onRunNow;
@@ -352,7 +356,7 @@ class _AutomationCard extends StatelessWidget {
   final VoidCallback onRestart;
   final VoidCallback onDelete;
 
-  const _AutomationCard({
+  _AutomationCard({
     required this.entry,
     required this.onEdit,
     required this.onRunNow,
@@ -415,52 +419,69 @@ class _AutomationCard extends StatelessWidget {
                       label,
                       style: TextStyle(fontSize: AppType.uiXs, color: color),
                     ),
-                    PopupMenuButton<String>(
-                      key: ValueKey('automation-menu-${e.automationId}'),
-                      icon: Icon(
-                        Icons.more_vert,
-                        size: 18,
-                        color: context.colors.foregroundSubtlest,
-                      ),
-                      onSelected: (v) {
-                        switch (v) {
-                          case 'edit':
-                            onEdit();
-                          case 'run':
-                            onRunNow();
-                          case 'toggle':
-                            onToggle();
-                          case 'restart':
-                            onRestart();
-                          case 'delete':
-                            onDelete();
-                        }
-                      },
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(value: 'edit', child: Text('编辑')),
-                        const PopupMenuItem(value: 'run', child: Text('立即运行')),
-                        // 官方：启停仅 active|paused 展示（AutomationsSection
-                        // .tsx:320-322 canToggleAutomation）。
-                        if (e.lifecycleStatus == 'active' ||
-                            e.lifecycleStatus == 'paused')
-                          PopupMenuItem(
-                            value: 'toggle',
-                            child: Text(e.enabled ? '暂停' : '恢复'),
-                          ),
-                        // 官方：重启仅 failed（其余状态服务端静默 no-op）。
-                        if (e.lifecycleStatus == 'failed')
-                          const PopupMenuItem(
-                            value: 'restart',
-                            child: Text('重启'),
-                          ),
-                        PopupMenuItem(
-                          value: 'delete',
-                          child: Text(
-                            '删除',
-                            style: TextStyle(color: context.colors.destructive),
-                          ),
+                    CompositedTransformTarget(
+                      link: _menuLink,
+                      child: IconButton(
+                        key: ValueKey('automation-menu-${e.automationId}'),
+                        icon: Icon(
+                          Icons.more_vert,
+                          size: 18,
+                          color: context.colors.foregroundSubtlest,
                         ),
-                      ],
+                        onPressed: () async {
+                          final box = context.findRenderObject()! as RenderBox;
+                          final anchorRect =
+                              box.localToGlobal(Offset.zero) & box.size;
+                          final v = await showAnchoredMenu(
+                            context,
+                            anchorRect: anchorRect,
+                            link: _menuLink,
+                            items: [
+                              const AnchoredMenuItem(
+                                value: 'edit',
+                                label: '编辑',
+                              ),
+                              const AnchoredMenuItem(
+                                value: 'run',
+                                label: '立即运行',
+                              ),
+                              // 官方：启停仅 active|paused 展示
+                              //（AutomationsSection .tsx:320-322
+                              // canToggleAutomation）。
+                              if (e.lifecycleStatus == 'active' ||
+                                  e.lifecycleStatus == 'paused')
+                                AnchoredMenuItem(
+                                  value: 'toggle',
+                                  label: e.enabled ? '暂停' : '恢复',
+                                ),
+                              // 官方：重启仅 failed（其余状态服务端静默
+                              // no-op）。
+                              if (e.lifecycleStatus == 'failed')
+                                const AnchoredMenuItem(
+                                  value: 'restart',
+                                  label: '重启',
+                                ),
+                              AnchoredMenuItem(
+                                value: 'delete',
+                                label: '删除',
+                                color: context.colors.destructive,
+                              ),
+                            ],
+                          );
+                          switch (v) {
+                            case 'edit':
+                              onEdit();
+                            case 'run':
+                              onRunNow();
+                            case 'toggle':
+                              onToggle();
+                            case 'restart':
+                              onRestart();
+                            case 'delete':
+                              onDelete();
+                          }
+                        },
+                      ),
                     ),
                   ],
                 ),
