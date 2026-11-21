@@ -11,6 +11,7 @@ import 'conversation_session_opener.dart';
 import 'diff_viewer_page.dart';
 import 'file_preview.dart';
 import 'turn_model.dart';
+import 'top_notice.dart';
 
 IconData fileTypeIcon(String path) {
   final ext = path.split('.').last.toLowerCase();
@@ -196,8 +197,7 @@ class FileSummaryCardState extends State<FileSummaryCard> {
       preview = res is Map ? res.cast<String, dynamic>() : null;
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('回滚预检失败：$e')));
+        TopNotice.show(message: '回滚预检失败：$e');
       }
       return;
     }
@@ -207,8 +207,7 @@ class FileSummaryCardState extends State<FileSummaryCard> {
     final ignoredCount = listOf(preview?['ignoredFiles'])?.length ?? 0;
     if (!canApply) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('当前不支持回滚（文件已越过安全边界）')));
+        TopNotice.show(message: '当前不支持回滚（文件已越过安全边界）');
       }
       return;
     }
@@ -240,18 +239,12 @@ class FileSummaryCardState extends State<FileSummaryCard> {
     try {
       await app.applyFileRewind(sessionId, target: target);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('已回滚本轮安全文件'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        TopNotice.show(message: '已回滚本轮安全文件', duration: Duration(seconds: 2));
         await _loadDetail();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('回滚失败：$e')));
+        TopNotice.show(message: '回滚失败：$e');
       }
     }
   }

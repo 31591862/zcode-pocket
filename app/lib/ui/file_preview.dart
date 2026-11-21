@@ -7,6 +7,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
+import 'top_notice.dart';
 import 'share_flow.dart' show shareBytesAsFile;
 
 /// 生成文件预览·网页档（file-preview-1，2026-10-29 用户拍板「只做 html
@@ -28,13 +29,59 @@ bool isRenderableHtmlPath(String path) => _htmlExtRe.hasMatch(path.trim());
 /// 扩展名（含二进制与无扩展名）不进文本预览——fileChanges 只送文本
 /// 行，二进制本来也到不了这里，白名单是双保险。
 const _textPreviewExts = <String>{
-  'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'jsonl', 'ndjson',
-  'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'properties',
-  'env', 'log', 'svg',
-  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'rb', 'go', 'rs',
-  'java', 'kt', 'kts', 'swift', 'c', 'h', 'cpp', 'hpp', 'cc', 'hh',
-  'cs', 'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd', 'dart', 'vue',
-  'svelte', 'sql', 'graphql', 'proto', 'lock',
+  'txt',
+  'md',
+  'markdown',
+  'csv',
+  'tsv',
+  'json',
+  'jsonl',
+  'ndjson',
+  'xml',
+  'yaml',
+  'yml',
+  'toml',
+  'ini',
+  'cfg',
+  'conf',
+  'properties',
+  'env',
+  'log',
+  'svg',
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'py',
+  'rb',
+  'go',
+  'rs',
+  'java',
+  'kt',
+  'kts',
+  'swift',
+  'c',
+  'h',
+  'cpp',
+  'hpp',
+  'cc',
+  'hh',
+  'cs',
+  'sh',
+  'bash',
+  'zsh',
+  'ps1',
+  'bat',
+  'cmd',
+  'dart',
+  'vue',
+  'svelte',
+  'sql',
+  'graphql',
+  'proto',
+  'lock',
 };
 
 bool isPreviewableTextPath(String path) {
@@ -122,7 +169,8 @@ List<VisualizeSegment> parseVisualizeSegments(String text) {
     start = m.end;
   }
   if (out.isEmpty) return [VisualizeSegment.text(text)];
-  if (start < text.length) out.add(VisualizeSegment.text(text.substring(start)));
+  if (start < text.length)
+    out.add(VisualizeSegment.text(text.substring(start)));
   return out;
 }
 
@@ -175,10 +223,10 @@ class _VisualizeCardState extends State<VisualizeCard> {
     setState(() => _busy = true);
     try {
       final app = AppStateScope.of(context);
-      final res = await app.fileChanges(sessionId, target: {
-        'rowId': header['rowId'],
-        'entityId': entityId,
-      });
+      final res = await app.fileChanges(
+        sessionId,
+        target: {'rowId': header['rowId'], 'entityId': entityId},
+      );
       final items = (res is Map ? res['items'] as List? : null) ?? const [];
       Map<String, dynamic>? hit;
       for (final e in items) {
@@ -187,7 +235,8 @@ class _VisualizeCardState extends State<VisualizeCard> {
           break;
         }
       }
-      final patches = (hit?['patches'] as List?)
+      final patches =
+          (hit?['patches'] as List?)
               ?.whereType<Map>()
               .map((e) => e.cast<String, dynamic>())
               .toList() ??
@@ -218,9 +267,7 @@ class _VisualizeCardState extends State<VisualizeCard> {
   }
 
   void _snack(String text) =>
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr(text)), duration: const Duration(seconds: 3)),
-      );
+      TopNotice.show(message: tr(text), duration: const Duration(seconds: 3));
 
   @override
   Widget build(BuildContext context) {
@@ -307,11 +354,13 @@ String injectPreviewCsp(String html) {
   // 清单，官方 visualize 产物能加载的资源这里同样能加载。
   // base-uri/form-action/object-src 一并关死：防 <base> 劫持相对 URL、
   // 表单外发与插件对象通道。
-  const cdn = 'https://cdnjs.cloudflare.com https://esm.sh '
+  const cdn =
+      'https://cdnjs.cloudflare.com https://esm.sh '
       'https://cdn.jsdelivr.net https://unpkg.com '
       'https://fonts.googleapis.com https://fonts.gstatic.com '
       'https://fonts.bunny.net https://zcode.z.ai';
-  const csp = "default-src 'none'; "
+  const csp =
+      "default-src 'none'; "
       "script-src 'unsafe-inline' $cdn; "
       "style-src 'unsafe-inline' $cdn; "
       "img-src data: blob: $cdn; "
@@ -409,8 +458,8 @@ class _HtmlPreviewPageState extends State<HtmlPreviewPage> {
       controller
           .loadHtmlString(injectPreviewCsp(widget.htmlContent))
           .catchError((Object e) {
-        if (mounted) setState(() => _loadError = '$e');
-      }),
+            if (mounted) setState(() => _loadError = '$e');
+          }),
     );
   }
 
@@ -422,7 +471,12 @@ class _HtmlPreviewPageState extends State<HtmlPreviewPage> {
       appBar: AppBar(
         backgroundColor: context.colors.background,
         surfaceTintColor: Colors.transparent,
-        title: Text(widget.title, translate: false, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(
+          widget.title,
+          translate: false,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         // 分享（早前批次）：html 全文已在内存（新建文件 diff=全量
         // 行才进本页），直落盘走系统分享面板。截断不给（A-M3/B-）。
         actions: [

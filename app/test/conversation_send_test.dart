@@ -287,7 +287,8 @@ void main() {
       await tester.tap(find.text('允许一次'));
       await tester.pump();
       await tester.pump();
-      expect(find.byType(SnackBar), findsNothing);
+      // 提示已收敛 TopNotice（顶部自绘卡）——按文案断言。
+      expect(find.textContaining('应答发送失败'), findsNothing);
     });
 
     testWidgets('恰好含 already 的其它错误：必须提示（原被吞）', (tester) async {
@@ -300,7 +301,6 @@ void main() {
       await tester.tap(find.text('允许一次'));
       await tester.pump();
       await tester.pump();
-      expect(find.byType(SnackBar), findsOneWidget);
       expect(find.textContaining('应答发送失败'), findsOneWidget);
     });
 
@@ -312,7 +312,7 @@ void main() {
       await tester.tap(find.text('允许一次'));
       await tester.pump();
       await tester.pump();
-      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.textContaining('应答发送失败'), findsOneWidget);
     });
   });
 

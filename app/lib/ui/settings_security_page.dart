@@ -5,6 +5,7 @@
 // 回弹模式先例）。
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
+
 import '../core/app_lock.dart';
 import '../core/localized_text.dart';
 import '../core/theme.dart';
@@ -12,6 +13,7 @@ import '../platform/capabilities.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import 'settings_style.dart';
+import 'top_notice.dart';
 
 class SettingsSecurityPage extends StatefulWidget {
   const SettingsSecurityPage({super.key});
@@ -48,10 +50,7 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
         return true;
       }
       // 验旧不校验形态（validateFormat:false）——只做哈希比对。
-      final pin = await _askPin(
-        tr('输入当前 PIN 码以继续'),
-        validateFormat: false,
-      );
+      final pin = await _askPin(tr('输入当前 PIN 码以继续'), validateFormat: false);
       if (pin == null) return false;
       try {
         return hashPin(pin, app.uiPrefs.appLockPinSalt ?? '') ==
@@ -82,10 +81,17 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
           autofocus: true,
           obscureText: true,
           keyboardType: TextInputType.number,
-          decoration: InputDecoration(hintText: tr('4-6 位数字'))),
+          decoration: InputDecoration(hintText: tr('4-6 位数字')),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dctx, false), child: Text(tr('取消'))),
-          FilledButton(onPressed: () => Navigator.pop(dctx, true), child: Text(tr('确定'))),
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: Text(tr('取消')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: Text(tr('确定')),
+          ),
         ],
       ),
     );
@@ -109,7 +115,7 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
   void _showError(String msg) {
     if (!mounted) return;
     setState(() => _error = msg);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    TopNotice.show(message: msg);
   }
 
   Future<void> _selectMode(AppState app, AppLockMode target) async {
@@ -202,8 +208,7 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
       pinHash: app.uiPrefs.appLockPinHash,
     );
     if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(tr('PIN 码已更新'))));
+      TopNotice.show(message: tr('PIN 码已更新'));
     }
   }
 
@@ -216,8 +221,7 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
     return Scaffold(
       backgroundColor: settingsPageBg(Theme.of(context).brightness),
       appBar: AppBar(
-        title:
-            Text(tr('应用锁'), style: const TextStyle(fontSize: AppType.uiLg)),
+        title: Text(tr('应用锁'), style: const TextStyle(fontSize: AppType.uiLg)),
         backgroundColor: settingsPageBg(Theme.of(context).brightness),
       ),
       body: ListenableBuilder(
@@ -228,10 +232,7 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
             // 损坏态横幅：mode=pin 但材料缺失/垃圾——旧验证路径
             // 必然死路；横幅明示可直接重设（切换/重设流程已跳过验旧 PIN）。
             if (mode == AppLockMode.pin &&
-                !pinMaterialHealthy(
-                  ui.appLockPinSalt,
-                  ui.appLockPinHash,
-                ))
+                !pinMaterialHealthy(ui.appLockPinSalt, ui.appLockPinHash))
               Container(
                 margin: const EdgeInsets.only(top: 12),
                 padding: const EdgeInsets.all(12),
@@ -245,13 +246,18 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.warning_amber_outlined,
-                        size: 16, color: context.colors.warning),
+                    Icon(
+                      Icons.warning_amber_outlined,
+                      size: 16,
+                      color: context.colors.warning,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        tr('应用锁数据已损坏（PIN 材料缺失或无效），验证已被'
-                            '跳过。请重新设置 PIN 码，或切换到其他解锁方式。'),
+                        tr(
+                          '应用锁数据已损坏（PIN 材料缺失或无效），验证已被'
+                          '跳过。请重新设置 PIN 码，或切换到其他解锁方式。',
+                        ),
                         style: TextStyle(
                           fontSize: AppType.uiCaption,
                           height: 1.5,
@@ -266,7 +272,11 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
             settingsGroupCard(context, isDark, [
               _modeTile(app, AppLockMode.none, tr('关闭'), tr('不使用应用锁')),
               _modeTile(
-                  app, AppLockMode.system, tr('系统锁屏'), tr('指纹 / 面容 / 图案 / PIN（跟随系统锁设置）')),
+                app,
+                AppLockMode.system,
+                tr('系统锁屏'),
+                tr('指纹 / 面容 / 图案 / PIN（跟随系统锁设置）'),
+              ),
               _modeTile(app, AppLockMode.pin, tr('PIN 码'), tr('应用内独立 PIN 码')),
             ]),
             Padding(
@@ -333,8 +343,11 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
                         pinHash: ui.appLockPinHash,
                       );
                     },
-                    secondary: const Icon(Icons.phonelink_lock_outlined,
-                        size: 24, color: kSettingsIconBlue),
+                    secondary: const Icon(
+                      Icons.phonelink_lock_outlined,
+                      size: 24,
+                      color: kSettingsIconBlue,
+                    ),
                     title: Text(tr('锁定时防截屏与缩略图')),
                     subtitle: Text(
                       tr('仅锁定界面期间生效；解锁后可正常截屏'),
@@ -351,8 +364,11 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
               settingsGroupCard(context, isDark, [
                 ListTile(
                   key: const ValueKey('settings-change-pin'),
-                  leading: const Icon(Icons.pin_outlined,
-                      size: 24, color: kSettingsIconOrange),
+                  leading: const Icon(
+                    Icons.pin_outlined,
+                    size: 24,
+                    color: kSettingsIconOrange,
+                  ),
                   title: Text(tr('修改 PIN 码')),
                   onTap: () => _changePin(app),
                 ),
@@ -364,8 +380,9 @@ class _SettingsSecurityPageState extends State<SettingsSecurityPage> {
                 child: Text(
                   _error!,
                   style: TextStyle(
-                      fontSize: AppType.uiCaption,
-                      color: context.colors.destructive),
+                    fontSize: AppType.uiCaption,
+                    color: context.colors.destructive,
+                  ),
                 ),
               ),
           ],

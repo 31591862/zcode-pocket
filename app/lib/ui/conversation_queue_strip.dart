@@ -6,6 +6,7 @@ import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/conversation.dart';
+import 'top_notice.dart';
 
 class QueueStrip extends StatelessWidget {
   final ConversationState state;
@@ -21,11 +22,9 @@ class QueueStrip extends StatelessWidget {
       await run();
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('排队操作失败：$e'),
-            duration: const Duration(seconds: 3),
-          ),
+        TopNotice.show(
+          message: '排队操作失败：$e',
+          duration: const Duration(seconds: 3),
         );
       }
     }

@@ -21,6 +21,7 @@ import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../state/device_backup_service.dart';
 import 'settings_style.dart';
+import 'top_notice.dart';
 
 /// 入口语义决定页面形态（2026-11-16 用户拍板）：
 /// - export：设置入口（已登录=本机有数据，只导出）；
@@ -76,7 +77,6 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
 
   Future<void> _doExport() async {
     final app = AppStateScope.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     _setBusy(true);
     try {
       final service = DeviceBackupService(
@@ -103,14 +103,9 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
       );
       if (!mounted) return;
       if (saveUri == null) return; // 用户取消
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('已保存到所选位置'),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      TopNotice.show(message: '已保存到所选位置', duration: const Duration(seconds: 4));
     } on Object catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('导出失败：$e')));
+      TopNotice.show(message: '导出失败：$e');
     } finally {
       _setBusy(false);
     }
@@ -119,29 +114,28 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
   // ───────────────────────────────────────────────────────── 导入
 
   Future<void> _pickFile() async {
-    final messenger = ScaffoldMessenger.of(context);
     try {
-      final files = await (DeviceMigrationPage.debugPickFiles?.call() ??
-          FilePicker.pickFiles());
+      final files =
+          await (DeviceMigrationPage.debugPickFiles?.call() ??
+              FilePicker.pickFiles());
       if (!mounted) return;
       final path = files.isNotEmpty ? files.first.path : null;
       if (path == null || path.isEmpty) return;
       setState(() => _pickedPath = path);
     } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('文件选择器不可用')));
+      TopNotice.show(message: '文件选择器不可用');
     }
   }
 
   Future<void> _doImport() async {
     final app = AppStateScope.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final raw = _pickedPath;
     if (raw == null) return;
     String content;
     try {
       content = await File(raw).readAsString();
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('读取文件失败：$e')));
+      TopNotice.show(message: '读取文件失败：$e');
       return;
     }
     if (!mounted) return;
@@ -186,13 +180,11 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
       unawaited(app.refreshAfterBackupImport());
       await _showImportReport(report);
     } on BackupPassphraseError {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('口令错误或文件已损坏')),
-      );
+      TopNotice.show(message: '口令错误或文件已损坏');
     } on BackupFormatException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('文件无效：$e')));
+      TopNotice.show(message: '文件无效：$e');
     } on Object catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('导入失败：$e')));
+      TopNotice.show(message: '导入失败：$e');
     } finally {
       _setBusy(false);
     }
@@ -335,15 +327,15 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
     String? hint,
     onChanged,
   }) => TextField(
-        controller: controller,
-        obscureText: true,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          border: const OutlineInputBorder(),
-        ),
-        onChanged: onChanged != null ? (_) => onChanged() : null,
-      );
+    controller: controller,
+    obscureText: true,
+    decoration: InputDecoration(
+      labelText: label,
+      hintText: hint,
+      border: const OutlineInputBorder(),
+    ),
+    onChanged: onChanged != null ? (_) => onChanged() : null,
+  );
 
   Widget _exportCard() {
     return Container(
@@ -434,9 +426,7 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
             child: OutlinedButton.icon(
               onPressed: _busy ? null : _pickFile,
               icon: const Icon(Icons.folder_open, size: 16),
-              label: Text(
-                _pickedPath == null ? '选择备份文件' : '已选择：备份文件',
-              ),
+              label: Text(_pickedPath == null ? '选择备份文件' : '已选择：备份文件'),
             ),
           ),
           if (_pickedPath != null) ...[
@@ -452,9 +442,7 @@ class _DeviceMigrationPageState extends State<DeviceMigrationPage> {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: _importPass.text.isEmpty || _busy
-                    ? null
-                    : _doImport,
+                onPressed: _importPass.text.isEmpty || _busy ? null : _doImport,
                 icon: const Icon(Icons.download, size: 16),
                 label: const Text('开始导入'),
               ),

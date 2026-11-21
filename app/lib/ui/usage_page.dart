@@ -17,6 +17,7 @@ import '../transport/companion_client.dart';
 import 'coding_plan_reset.dart';
 import 'settings_style.dart';
 import 'usage_charts.dart';
+import 'top_notice.dart';
 
 /// 用量数据短缓存（2026-10-26 真机验收④）：此前 cp/app 缓存按档**永久**
 /// 命中（进页拉一次后不再更新，除非手动下拉）——用户体感"统计不是实时的"。
@@ -580,7 +581,7 @@ class _UsagePageState extends State<UsagePage>
     final app = AppStateScope.of(context);
     final bridge = app.bridge;
     if (bridge == null || _resetBusy.value) return;
-    final messenger = ScaffoldMessenger.of(context);
+
     _resetBusy.value = true;
     try {
       final res = await bridge.channels.call(
@@ -603,14 +604,12 @@ class _UsagePageState extends State<UsagePage>
       _popRouteIfCurrent(dialogContext); // 关确认框
       _popRouteIfCurrent(sheetContext); // 关弹层
       _resetLoadedAt = null; // 状态与额度都强制重拉
-      messenger.showSnackBar(
-        SnackBar(content: Text(used ? '重置成功' : '重置失败，请重试')),
-      );
+      TopNotice.show(message: used ? '重置成功' : '重置失败，请重试');
       unawaited(_loadPlan(force: true));
     } catch (_) {
       if (!mounted) return;
       _popRouteIfCurrent(dialogContext); // 关确认框
-      messenger.showSnackBar(const SnackBar(content: Text('重置失败，请重试')));
+      TopNotice.show(message: '重置失败，请重试');
     } finally {
       // （批5）：页面可能已 dispose（返回键关弹层再退出）——
       // 已 dispose 的 ValueNotifier 写值在 debug 会 assert。

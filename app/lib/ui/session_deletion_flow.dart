@@ -22,7 +22,8 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
-import '../core/app_lock.dart' show PinAttemptLimiter, hashPin, pinMaterialHealthy;
+import '../core/app_lock.dart'
+    show PinAttemptLimiter, hashPin, pinMaterialHealthy;
 import '../core/localized_text.dart';
 import '../core/l10n.dart';
 import '../core/payload_guard.dart';
@@ -31,18 +32,19 @@ import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../transport/id.dart' show generateUuid;
 import 'settings_security_page.dart';
+import 'top_notice.dart';
 
 /// blockedReason → 人话（官方词表语义：running/in-use/not-found/
 /// not-archived 由 Host 适配层追加；changed/unavailable 是 execute 侧）。
 String deletionBlockedReasonText(String reason) => switch (reason) {
-      'running' => '该任务仍有工作在运行（或有待处理输入），先停止后再删',
-      'in-use' => '会话正被其他程序占用（例如桌面端另一窗口打开着它）',
-      'not-found' => '没有找到该任务的会话数据（可能已被删除）',
-      'not-archived' => '任务已不在归档状态，请先归档后再永久删除',
-      'changed' => '删除范围已发生变化（预览后有新内容），请重新预览',
-      'unavailable' => '暂时无法完成删除，稍后重试',
-      _ => '本次无法删除：$reason',
-    };
+  'running' => '该任务仍有工作在运行（或有待处理输入），先停止后再删',
+  'in-use' => '会话正被其他程序占用（例如桌面端另一窗口打开着它）',
+  'not-found' => '没有找到该任务的会话数据（可能已被删除）',
+  'not-archived' => '任务已不在归档状态，请先归档后再永久删除',
+  'changed' => '删除范围已发生变化（预览后有新内容），请重新预览',
+  'unavailable' => '暂时无法完成删除，稍后重试',
+  _ => '本次无法删除：$reason',
+};
 
 /// 防误触限流（模块级：跨对话框实例存活——取消重开不清零；进程重启
 /// 复位。定位=防随手乱点的速度缓冲，**非安全控制**：PIN 是本地盐+
@@ -54,7 +56,6 @@ PinAttemptLimiter _pinAttemptLimiter = PinAttemptLimiter();
 void resetDeletionPinLimiter() {
   _pinAttemptLimiter = PinAttemptLimiter();
 }
-
 
 /// 入口：从归档任务页点「永久删除」。
 Future<void> showPermanentDeletionFlow(
@@ -135,7 +136,6 @@ Future<void> showPermanentDeletionFlow(
 
   // ── 第三段：执行（revision 回传；operationId 单次生成保幂等；
   // future 在 dialog 外创建；PopScope 挡返回键防结果静默丢失）──
-  final messenger = ScaffoldMessenger.of(context);
   final executeFuture = app.permanentlyDeleteArchivedTask(
     taskId,
     revision: revision,
@@ -170,54 +170,35 @@ Future<void> showPermanentDeletionFlow(
     if (context.mounted && !dialogOpen.isCompleted) {
       Navigator.of(context).pop();
     }
-    _reportExecuteResult(messenger, res, title);
+    _reportExecuteResult(res, title);
   } catch (e) {
     if (context.mounted && !dialogOpen.isCompleted) {
       Navigator.of(context).pop();
     }
-    messenger.showSnackBar(
-      SnackBar(content: Text('${tr('删除失败：')}$e')),
-    );
+    TopNotice.show(message: '${tr('删除失败：')}$e');
   }
 }
 
 /// 执行结果四态人话（早前批次：null/未知 →「结果未知」，不谎报
 /// incomplete——bridge 断开等场景一个字节都没删时绝不能说「部分已清理」）。
-void _reportExecuteResult(
-  ScaffoldMessengerState messenger,
-  dynamic res,
-  String title,
-) {
+void _reportExecuteResult(dynamic res, String title) {
   if (res is! Map) {
-    messenger.showSnackBar(
-      SnackBar(content: Text(tr('删除结果未知，请刷新任务列表核对'))),
-    );
+    TopNotice.show(message: tr('删除结果未知，请刷新任务列表核对'));
     return;
   }
   switch ('${res['status'] ?? ''}') {
     case 'deleted':
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr('已永久删除「') + title + tr('」'))),
-      );
+      TopNotice.show(message: tr('已永久删除「') + title + tr('」'));
     case 'blocked':
       final reason = '${res['reason'] ?? ''}';
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
+      TopNotice.show(
+        message:
             '${tr('未删除：')}${tr(deletionBlockedReasonText(reason.isEmpty ? 'unavailable' : reason))}',
-          ),
-        ),
       );
     case 'incomplete':
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(tr('删除未完成（部分数据已清理），可稍后重试继续')),
-        ),
-      );
+      TopNotice.show(message: tr('删除未完成（部分数据已清理），可稍后重试继续'));
     default:
-      messenger.showSnackBar(
-        SnackBar(content: Text(tr('删除结果未知，请刷新任务列表核对'))),
-      );
+      TopNotice.show(message: tr('删除结果未知，请刷新任务列表核对'));
   }
 }
 
@@ -254,12 +235,14 @@ class _PreviewDialog extends StatelessWidget {
     final completed = preview['completed'] == true;
     // 官方语义：树为空（sessionIds 空）且无 blockedReason=not-found 同义
     // 展示；revision 缺失=宿主形态异常，不可进执行。
-    final emptyTree =
-        blockedReason.isEmpty && !completed && sessionIds.isEmpty;
+    final emptyTree = blockedReason.isEmpty && !completed && sessionIds.isEmpty;
     final revisionOk = '${preview['revision'] ?? ''}'.isNotEmpty;
     final deletable =
-        blockedReason.isEmpty && !completed && !emptyTree &&
-        sessionIds.isNotEmpty && revisionOk;
+        blockedReason.isEmpty &&
+        !completed &&
+        !emptyTree &&
+        sessionIds.isNotEmpty &&
+        revisionOk;
 
     return AlertDialog(
       key: const ValueKey('perm-del-preview'),
@@ -318,8 +301,10 @@ class _PreviewDialog extends StatelessWidget {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        tr('将永久删除：任务本体'
-                            '（含子智能体 / 工作流子会话共 ') +
+                        tr(
+                              '将永久删除：任务本体'
+                              '（含子智能体 / 工作流子会话共 ',
+                            ) +
                             '${sessionIds.length}' +
                             tr(' 个会话）与 ') +
                             '$deletedFiles' +
@@ -412,8 +397,7 @@ Future<bool?> _gate(BuildContext context, AppState app) async {
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) =>
-          _PinVerifyDialog(saltHex: salt!, pinHash: hash!),
+      builder: (_) => _PinVerifyDialog(saltHex: salt!, pinHash: hash!),
     );
   }
   if (prefs.appLockModeRaw == 'system') {
@@ -437,23 +421,20 @@ Future<void> _showSetupGuidance(BuildContext context) async {
       key: const ValueKey('perm-del-pin-missing'),
       title: Text(tr('需要先设置 PIN')),
       content: Text(
-        tr('永久删除不可恢复。为防误删，请先在「设置 → 安全」开启应用锁'
-            '（PIN 或系统锁屏均可），再回来执行永久删除。'),
+        tr(
+          '永久删除不可恢复。为防误删，请先在「设置 → 安全」开启应用锁'
+          '（PIN 或系统锁屏均可），再回来执行永久删除。',
+        ),
         style: TextStyle(fontSize: AppType.uiCaption, height: 1.5),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dctx),
-          child: Text(tr('取消')),
-        ),
+        TextButton(onPressed: () => Navigator.pop(dctx), child: Text(tr('取消'))),
         FilledButton(
           key: const ValueKey('perm-del-goto-settings'),
           onPressed: () {
             Navigator.pop(dctx);
             Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const SettingsSecurityPage(),
-              ),
+              MaterialPageRoute(builder: (_) => const SettingsSecurityPage()),
             );
           },
           child: Text(tr('去设置')),
@@ -489,9 +470,7 @@ class _PinVerifyDialogState extends State<_PinVerifyDialog> {
     if (pin.isEmpty) return;
     final cooldown = _pinAttemptLimiter.cooldownRemaining(DateTime.now());
     if (cooldown > 0) {
-      setState(
-        () => _error = '${tr('尝试过多，请')} $cooldown ${tr('秒后再试')}',
-      );
+      setState(() => _error = '${tr('尝试过多，请')} $cooldown ${tr('秒后再试')}');
       return;
     }
     // 闸门已用 pinMaterialHealthy 过滤非法盐——此处 try/catch 为纵深
@@ -543,10 +522,7 @@ class _PinVerifyDialogState extends State<_PinVerifyDialog> {
             // ^\d{4,6}$，消除 int.tryParse 接受 0x1f/+123 的两端口径差）。
             maxLength: 6,
             onSubmitted: (_) => _verify(),
-            decoration: InputDecoration(
-              counterText: '',
-              errorText: _error,
-            ),
+            decoration: InputDecoration(counterText: '', errorText: _error),
           ),
         ],
       ),

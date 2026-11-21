@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Text;
+
 import '../core/localized_text.dart';
 
 import '../core/theme.dart';
@@ -6,6 +7,7 @@ import '../state/app_state_scope.dart';
 import '../transport/automation_client.dart';
 import 'app_widgets.dart';
 import 'automation_edit_page.dart';
+import 'top_notice.dart';
 
 // 优化批 #3：异常→人话映射（原始异常仍在调用方 debugPrint 留痕）。
 String friendlyError(Object e) {
@@ -83,10 +85,14 @@ class _AutomationPageState extends State<AutomationPage> {
   AutomationClient? _actionClient(AutomationEntry e) {
     final bridge = AppStateScope.of(context).bridge;
     if (bridge == null) return null;
-    return AutomationClient(bridge: bridge, scope: {
-      'workspacePath': e.workspacePath,
-      if (e.workspaceIdentity.isNotEmpty) 'workspaceIdentity': e.workspaceIdentity,
-    });
+    return AutomationClient(
+      bridge: bridge,
+      scope: {
+        'workspacePath': e.workspacePath,
+        if (e.workspaceIdentity.isNotEmpty)
+          'workspaceIdentity': e.workspaceIdentity,
+      },
+    );
   }
 
   Future<void> _runActions(Future<dynamic> Function() action) async {
@@ -94,9 +100,7 @@ class _AutomationPageState extends State<AutomationPage> {
       await action();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作失败：$e')));
+        TopNotice.show(message: '操作失败：$e');
       }
       return;
     }
@@ -116,23 +120,17 @@ class _AutomationPageState extends State<AutomationPage> {
     } catch (err) {
       debugPrint('[automation] 立即运行失败: $err');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('操作失败：${friendlyError(err)}')));
+        TopNotice.show(message: '操作失败：${friendlyError(err)}');
       }
       return;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          switch (status) {
-            'queued' => '正在运行「${e.title.isEmpty ? '未命名任务' : e.title}」',
-            'duplicate' => '该任务已在运行',
-            _ => '已触发（$status）',
-          },
-        ),
-      ),
+    TopNotice.show(
+      message: switch (status) {
+        'queued' => '正在运行「${e.title.isEmpty ? '未命名任务' : e.title}」',
+        'duplicate' => '该任务已在运行',
+        _ => '已触发（$status）',
+      },
     );
     await _load();
   }
@@ -289,13 +287,12 @@ class _AutomationPageState extends State<AutomationPage> {
         return entries
             .where(
               (e) =>
-                  e.lifecycleStatus == 'active' || e.lifecycleStatus == 'paused',
+                  e.lifecycleStatus == 'active' ||
+                  e.lifecycleStatus == 'paused',
             )
             .toList();
       case _AutomationFilter.completed:
-        return entries
-            .where((e) => e.lifecycleStatus == 'completed')
-            .toList();
+        return entries.where((e) => e.lifecycleStatus == 'completed').toList();
       case _AutomationFilter.failed:
         // 官方 failed 组包含"最近一次运行失败"的循环任务（automationStatus
         // Filter.ts:41-46）。
@@ -380,7 +377,9 @@ class _AutomationCard extends StatelessWidget {
       // 官方：completed 卡整体降透明度。
       foregroundDecoration: completedDim
           ? BoxDecoration(
-              color: context.colors.background.withValues(alpha: AppAlpha.strong),
+              color: context.colors.background.withValues(
+                alpha: AppAlpha.strong,
+              ),
               borderRadius: BorderRadius.circular(AppRadius.sm),
             )
           : null,
@@ -392,148 +391,144 @@ class _AutomationCard extends StatelessWidget {
           key: ValueKey('automation-card-tap-${e.automationId}'),
           onTap: onEdit,
           child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon, size: 14, color: color),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    e.title.isEmpty ? '(未命名任务)' : e.title,
-                    translate: e.title.isEmpty,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: AppType.uiBase,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(fontSize: AppType.uiXs, color: color),
-                ),
-                PopupMenuButton<String>(
-                  key: ValueKey('automation-menu-${e.automationId}'),
-                  icon: Icon(
-                    Icons.more_vert,
-                    size: 18,
-                    color: context.colors.foregroundSubtlest,
-                  ),
-                  onSelected: (v) {
-                    switch (v) {
-                      case 'edit':
-                        onEdit();
-                      case 'run':
-                        onRunNow();
-                      case 'toggle':
-                        onToggle();
-                      case 'restart':
-                        onRestart();
-                      case 'delete':
-                        onDelete();
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: Text('编辑'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'run',
-                      child: Text('立即运行'),
-                    ),
-                    // 官方：启停仅 active|paused 展示（AutomationsSection
-                    // .tsx:320-322 canToggleAutomation）。
-                    if (e.lifecycleStatus == 'active' ||
-                        e.lifecycleStatus == 'paused')
-                      PopupMenuItem(
-                        value: 'toggle',
-                        child: Text(e.enabled ? '暂停' : '恢复'),
-                      ),
-                    // 官方：重启仅 failed（其余状态服务端静默 no-op）。
-                    if (e.lifecycleStatus == 'failed')
-                      const PopupMenuItem(
-                        value: 'restart',
-                        child: Text('重启'),
-                      ),
-                    PopupMenuItem(
-                      value: 'delete',
+                Row(
+                  children: [
+                    Icon(icon, size: 14, color: color),
+                    const SizedBox(width: 6),
+                    Expanded(
                       child: Text(
-                        '删除',
-                        style: TextStyle(color: context.colors.destructive),
+                        e.title.isEmpty ? '(未命名任务)' : e.title,
+                        translate: e.title.isEmpty,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: AppType.uiBase,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      label,
+                      style: TextStyle(fontSize: AppType.uiXs, color: color),
+                    ),
+                    PopupMenuButton<String>(
+                      key: ValueKey('automation-menu-${e.automationId}'),
+                      icon: Icon(
+                        Icons.more_vert,
+                        size: 18,
+                        color: context.colors.foregroundSubtlest,
+                      ),
+                      onSelected: (v) {
+                        switch (v) {
+                          case 'edit':
+                            onEdit();
+                          case 'run':
+                            onRunNow();
+                          case 'toggle':
+                            onToggle();
+                          case 'restart':
+                            onRestart();
+                          case 'delete':
+                            onDelete();
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(value: 'edit', child: Text('编辑')),
+                        const PopupMenuItem(value: 'run', child: Text('立即运行')),
+                        // 官方：启停仅 active|paused 展示（AutomationsSection
+                        // .tsx:320-322 canToggleAutomation）。
+                        if (e.lifecycleStatus == 'active' ||
+                            e.lifecycleStatus == 'paused')
+                          PopupMenuItem(
+                            value: 'toggle',
+                            child: Text(e.enabled ? '暂停' : '恢复'),
+                          ),
+                        // 官方：重启仅 failed（其余状态服务端静默 no-op）。
+                        if (e.lifecycleStatus == 'failed')
+                          const PopupMenuItem(
+                            value: 'restart',
+                            child: Text('重启'),
+                          ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text(
+                            '删除',
+                            style: TextStyle(color: context.colors.destructive),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                if (e.prompt.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    e.prompt,
+                    translate: false,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppType.uiCaption,
+                      color: context.colors.foregroundSubtle,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: context.colors.foregroundSubtlest.withValues(
+                          alpha: AppAlpha.faint,
+                        ),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                      ),
+                      child: Text(
+                        e.scheduleLabel(),
+                        style: TextStyle(
+                          fontSize: AppType.uiXs,
+                          color: context.colors.foregroundSubtle,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _metaLine(),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppType.uiXs,
+                          color: context.colors.foregroundSubtlest,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-            if (e.prompt.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                e.prompt,
-                translate: false,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppType.uiCaption,
-                  color: context.colors.foregroundSubtle,
-                ),
-              ),
-            ],
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: context.colors.foregroundSubtlest.withValues(alpha: AppAlpha.faint),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
-                  child: Text(
-                    e.scheduleLabel(),
-                    style: TextStyle(
-                      fontSize: AppType.uiXs,
-                      color: context.colors.foregroundSubtle,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _metaLine(),
+                if (e.lastError.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '最近错误：${e.lastError}',
+                    translate: false,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: AppType.uiXs,
-                      color: context.colors.foregroundSubtlest,
+                      color: context.colors.destructive,
                     ),
                   ),
-                ),
+                ],
               ],
             ),
-            if (e.lastError.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                '最近错误：${e.lastError}',
-                translate: false,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppType.uiXs,
-                  color: context.colors.destructive,
-                ),
-              ),
-            ],
-          ],
+          ),
         ),
-      ),
-      ),
       ),
     );
   }
@@ -550,7 +545,9 @@ class _AutomationCard extends StatelessWidget {
     final ws = entry.workspacePath;
     if (ws.isNotEmpty) {
       final norm = ws.replaceAll('\\', '/');
-      parts.add(norm.split('/').lastWhere((s) => s.isNotEmpty, orElse: () => ws));
+      parts.add(
+        norm.split('/').lastWhere((s) => s.isNotEmpty, orElse: () => ws),
+      );
     }
     return parts.join(' · ');
   }
@@ -563,11 +560,7 @@ class _AutomationCard extends StatelessWidget {
     }
     return switch (e.lifecycleStatus) {
       // 视觉走查①：与筛选词"进行中"统一（官方 inProgress 组=active+paused）。
-      'active' => (
-        context.colors.running,
-        '进行中',
-        Icons.schedule,
-      ),
+      'active' => (context.colors.running, '进行中', Icons.schedule),
       'paused' => (
         context.colors.foregroundSubtlest,
         '已暂停',

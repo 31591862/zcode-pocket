@@ -2139,7 +2139,6 @@ class _ConversationPageState extends State<ConversationPage>
   }
 
   Future<void> _pickAttachments() async {
-    final messenger = ScaffoldMessenger.of(context);
     List<PlatformFile> files;
     try {
       files =
@@ -2148,7 +2147,7 @@ class _ConversationPageState extends State<ConversationPage>
     } catch (_) {
       // 等待期可能已退页：用守卫后的 messenger，不再取 context。
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('文件选择器不可用')));
+        TopNotice.show(message: '文件选择器不可用');
       }
       return;
     }
@@ -2167,7 +2166,6 @@ class _ConversationPageState extends State<ConversationPage>
   /// OOM 崩溃面；limit 在选择器层截断（API<30 的 ACTION_GET_CONTENT
   /// 分支不消费 limit，摄取管线另有 kMaxChatAttachments 兜底）。
   Future<void> _pickPhotos() async {
-    final messenger = ScaffoldMessenger.of(context);
     List<PlatformFile> files;
     try {
       files =
@@ -2183,7 +2181,7 @@ class _ConversationPageState extends State<ConversationPage>
               ]);
     } catch (_) {
       if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text(tr('相册不可用'))));
+        TopNotice.show(message: tr('相册不可用'));
       }
       return;
     }
@@ -2193,21 +2191,16 @@ class _ConversationPageState extends State<ConversationPage>
 
   /// 文件/照片共用摄取：计数上限/大小拦截/字节读取/待传队列+上传泵。
   Future<void> _ingestPickedFiles(List<PlatformFile> files) async {
-    final messenger = ScaffoldMessenger.of(context);
     var added = 0;
     for (final f in files) {
       if (_pendingAtts.length >= kMaxChatAttachments) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('最多 $kMaxChatAttachments 个附件')),
-        );
+        TopNotice.show(message: '最多 $kMaxChatAttachments 个附件');
         break;
       }
       // 先按选择器已知大小拦截超限，再读字节（避免大文件整读进内存）。
       final knownLen = f.lengthSync();
       if (knownLen != null && knownLen > kAttachmentMaxBytes) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('「${f.name}」超过 20MB 上限')),
-        );
+        TopNotice.show(message: '「${f.name}」超过 20MB 上限');
         continue;
       }
       final Uint8List bytes;
@@ -2219,9 +2212,7 @@ class _ConversationPageState extends State<ConversationPage>
       // 读字节期间退页（大文件异步读）：不再向已销毁页面写状态。
       if (!mounted) return;
       if (bytes.length > kAttachmentMaxBytes) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('「${f.name}」超过 20MB 上限')),
-        );
+        TopNotice.show(message: '「${f.name}」超过 20MB 上限');
         continue;
       }
       _pendingAtts.add(
@@ -2306,7 +2297,6 @@ class _ConversationPageState extends State<ConversationPage>
   Future<void> _annotateAttachmentById(String id) async {
     final a = _pendingAtts.where((x) => x.id == id).firstOrNull;
     if (a == null || !a.annotatable) return;
-    final messenger = ScaffoldMessenger.of(context);
     var bytes = a.bytes;
     if (bytes.isEmpty && a.uploaded != null) {
       final sessionId = _sessionId;
@@ -2318,11 +2308,9 @@ class _ConversationPageState extends State<ConversationPage>
         bytes = Uint8List.fromList(r.bytes);
       } catch (_) {
         if (!mounted) return;
-        messenger.showSnackBar(
-          SnackBar(
-            content: const Text('暂时取不回原图，稍后再试'),
-            duration: const Duration(seconds: 2),
-          ),
+        TopNotice.show(
+          message: '暂时取不回原图，稍后再试',
+          duration: const Duration(seconds: 2),
         );
         return;
       }
@@ -2413,9 +2401,8 @@ class _ConversationPageState extends State<ConversationPage>
   /// 的残留形态）。
   Future<void> _sendCompact(AppState app) async {
     final sessionId = _sessionId;
-    final messenger = ScaffoldMessenger.of(context);
     if (sessionId == null || app.bridge == null) {
-      messenger.showSnackBar(const SnackBar(content: Text('未连接电脑，暂不能压缩上下文')));
+      TopNotice.show(message: '未连接电脑，暂不能压缩上下文');
       return;
     }
     try {
@@ -2425,14 +2412,12 @@ class _ConversationPageState extends State<ConversationPage>
         final reason = ack is Map
             ? '${ack['reasonCode'] ?? ack['reason'] ?? ''}'
             : '';
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('${tr('压缩被拒绝：')}${reason.isEmpty ? status : reason}'),
-          ),
+        TopNotice.show(
+          message: '${tr('压缩被拒绝：')}${reason.isEmpty ? status : reason}',
         );
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('压缩发起失败：$e')));
+      TopNotice.show(message: '压缩发起失败：$e');
     }
   }
 
@@ -2869,11 +2854,9 @@ class _ConversationPageState extends State<ConversationPage>
         _submittedDraftText = null;
         _draftResultUnknown = false;
         if (mounted) {
-          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            SnackBar(
-              content: Text(tr('已取消发送')),
-              duration: const Duration(seconds: 2),
-            ),
+          TopNotice.show(
+            message: tr('已取消发送'),
+            duration: const Duration(seconds: 2),
           );
         }
         if (fromQueue != null) {
@@ -3113,8 +3096,7 @@ class _ConversationPageState extends State<ConversationPage>
       final result = await app.queryLastSentCommand(sid);
       if (!mounted || result is! Map) {
         if (mounted && !hasRecord) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(tr('重启后无法自动核对，请对照电脑端确认'))));
+          TopNotice.show(message: tr('重启后无法自动核对，请对照电脑端确认'));
         }
         return;
       }
@@ -3174,8 +3156,7 @@ class _ConversationPageState extends State<ConversationPage>
         _draftRevision++;
         await _saveDraft();
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(tr('已确认上次发送未送达，草稿可重发'))));
+          TopNotice.show(message: tr('已确认上次发送未送达，草稿可重发'));
         }
       }
     } finally {
@@ -3210,11 +3191,9 @@ class _ConversationPageState extends State<ConversationPage>
           res['status'] != null &&
           res['status'] != 'accepted') {
         final why = '${res['reasonCode'] ?? res['message'] ?? res['status']}';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('停止未生效：$why'),
-            duration: const Duration(seconds: 2),
-          ),
+        TopNotice.show(
+          message: '停止未生效：$why',
+          duration: const Duration(seconds: 2),
         );
       }
     } catch (e) {
@@ -3377,11 +3356,9 @@ class _ConversationPageState extends State<ConversationPage>
     final rowId = _rowIdNearestMs(target.atMs);
     if (rowId == null) {
       // -3c：零反馈缺陷——给轻提示而非静默吞。
-      ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(const SnackBar(content: Text('相关消息不在当前已加载范围')));
+      TopNotice.show(message: '相关消息不在当前已加载范围');
       return;
     }
-    final messenger = ScaffoldMessenger.maybeOf(context);
     // 顶部提示（批③ 2026-11-17）：带 action 的 SnackBar 在 Flutter 3.47
     // 默认 persist 永驻——改 TopNotice（5s 自动退场，定位窗口期内可点）。
     TopNotice.show(
@@ -3394,9 +3371,7 @@ class _ConversationPageState extends State<ConversationPage>
         if (!mounted) return;
         if (!_jumpToRowStart(rowId)) {
           // 目标不在当前窗口（更早历史）：提示而不静默失败。
-          messenger?.showSnackBar(
-            const SnackBar(content: Text('该消息在更早的历史中，请上滑加载')),
-          );
+          TopNotice.show(message: '该消息在更早的历史中，请上滑加载');
         }
       },
       duration: const Duration(seconds: 5),
@@ -3507,20 +3482,13 @@ class _ConversationPageState extends State<ConversationPage>
         if (!progressed && latestTurnStartRowId(st.rows) == target) break;
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('没有找到本回合开始'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        TopNotice.show(message: '没有找到本回合开始', duration: Duration(seconds: 2));
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('回到本回合开始失败：$error'),
-            duration: const Duration(seconds: 2),
-          ),
+        TopNotice.show(
+          message: '回到本回合开始失败：$error',
+          duration: const Duration(seconds: 2),
         );
       }
     } finally {
@@ -3642,10 +3610,8 @@ class _ConversationPageState extends State<ConversationPage>
     if (sessionId == null) return;
     // await 后不再解析 context——先取 messenger，防页面退出后
     // deactivated-widget 异常。
-    final messenger = ScaffoldMessenger.of(context);
-    void snack(String t) => messenger.showSnackBar(
-      SnackBar(content: Text(t), duration: const Duration(seconds: 2)),
-    );
+    void snack(String t) =>
+        TopNotice.show(message: t, duration: const Duration(seconds: 2));
     try {
       switch (action) {
         // workflowRuns 菜单槽位已撤销（早前批次：入口提升到顶栏）。
@@ -3937,7 +3903,6 @@ class _ConversationPageState extends State<ConversationPage>
       ),
     );
     if (ok != true) return;
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await _callReset('useCodingPlanReset', {
         'idempotencyKey':
@@ -3945,7 +3910,7 @@ class _ConversationPageState extends State<ConversationPage>
             '${_sessionId ?? 'draft'}',
         'resetType': resetType,
       });
-      messenger.showSnackBar(const SnackBar(content: Text('已重置，额度刷新中')));
+      TopNotice.show(message: '已重置，额度刷新中');
       // 30s RPC 窗口内退页——旧无守卫的 setState 抛
       // dispose 异常被 catch 捕获，误报「重置失败：setState() called
       // after dispose()」（核销其实已成功）。
@@ -3957,7 +3922,7 @@ class _ConversationPageState extends State<ConversationPage>
       await _loadEntitlement();
       await _loadResetStatus();
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('重置失败：$e')));
+      TopNotice.show(message: '重置失败：$e');
     }
   }
 
@@ -4143,8 +4108,7 @@ class _ConversationPageState extends State<ConversationPage>
       skills = await app.listSkills();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('技能列表获取失败：$e')));
+        TopNotice.show(message: '技能列表获取失败：$e');
       }
       return;
     }
@@ -4243,11 +4207,9 @@ class _ConversationPageState extends State<ConversationPage>
   ///   开启后药丸右侧出「计划」标记（官方 plan marker 灯泡同款）。
   Future<void> _showModeSheet(ConversationState? state) async {
     if (widget.readOnly) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('子智能体会话为只读，模式跟随主会话'),
-          duration: Duration(seconds: 2),
-        ),
+      TopNotice.show(
+        message: '子智能体会话为只读，模式跟随主会话',
+        duration: Duration(seconds: 2),
       );
       return;
     }
@@ -4394,29 +4356,23 @@ class _ConversationPageState extends State<ConversationPage>
           }
         });
         if (planWasOn) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('计划模式已随权限切换关闭（重新打开请用计划开关）'),
-              duration: Duration(seconds: 3),
-            ),
+          TopNotice.show(
+            message: '计划模式已随权限切换关闭（重新打开请用计划开关）',
+            duration: Duration(seconds: 3),
           );
         }
       } else {
         // stale（重试耗尽）/rejected/failed：保留挂起，随下条消息提交。
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('「${_modeNames[picked] ?? picked}」将在下条消息时生效（会话正忙）'),
-            duration: const Duration(seconds: 3),
-          ),
+        TopNotice.show(
+          message: '「${_modeNames[picked] ?? picked}」将在下条消息时生效（会话正忙）',
+          duration: const Duration(seconds: 3),
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('切换失败（$e）；已挂起，将随下条消息提交'),
-          duration: const Duration(seconds: 3),
-        ),
+      TopNotice.show(
+        message: '切换失败（$e）；已挂起，将随下条消息提交',
+        duration: const Duration(seconds: 3),
       );
     }
   }
@@ -4437,10 +4393,9 @@ class _ConversationPageState extends State<ConversationPage>
     };
     // await RPC 后用 context 查 ScaffoldMessenger 会
     // 抛 deactivated-widget（与 _onTaskMenu 同款）——入口先取。
-    final rowMessenger = ScaffoldMessenger.of(context);
-    void snack(String t) => rowMessenger.showSnackBar(
-      SnackBar(content: Text(t), duration: const Duration(seconds: 3)),
-    );
+
+    void snack(String t) =>
+        TopNotice.show(message: t, duration: const Duration(seconds: 3));
     Future<void> run(Future<dynamic> Function() op) async {
       try {
         // ack status 检查（对抗审查）：sendCommand 对 rejected/stale
@@ -4594,21 +4549,17 @@ class _ConversationPageState extends State<ConversationPage>
         if (res is Map && res['status'] is String) {
           final st = res['status'] as String;
           if (st != 'accepted' && st != 'duplicate' && st != 'noop') {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('操作未生效（${res['reasonCode'] ?? st}）'),
-                duration: const Duration(seconds: 3),
-              ),
+            TopNotice.show(
+              message: '操作未生效（${res['reasonCode'] ?? st}）',
+              duration: const Duration(seconds: 3),
             );
           }
         }
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('编辑失败：${humanizeError(e)}'),
-            duration: const Duration(seconds: 3),
-          ),
+        TopNotice.show(
+          message: '编辑失败：${humanizeError(e)}',
+          duration: const Duration(seconds: 3),
         );
       }
     }
@@ -4641,18 +4592,14 @@ class _ConversationPageState extends State<ConversationPage>
     final previewable = mime.startsWith('image/') || isTextMaterial;
     if (!previewable) {
       if (isVideoOrPdf) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('视频/PDF 预览排在后续版本，当前可在电脑端查看'),
-            duration: Duration(seconds: 2),
-          ),
+        TopNotice.show(
+          message: '视频/PDF 预览排在后续版本，当前可在电脑端查看',
+          duration: Duration(seconds: 2),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('该附件类型不支持预览（仅图片/文本材料）'),
-            duration: Duration(seconds: 2),
-          ),
+        TopNotice.show(
+          message: '该附件类型不支持预览（仅图片/文本材料）',
+          duration: Duration(seconds: 2),
         );
       }
       return;
@@ -4774,11 +4721,9 @@ class _ConversationPageState extends State<ConversationPage>
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('附件读取失败：$e'),
-            duration: const Duration(seconds: 3),
-          ),
+        TopNotice.show(
+          message: '附件读取失败：$e',
+          duration: const Duration(seconds: 3),
         );
       }
     }

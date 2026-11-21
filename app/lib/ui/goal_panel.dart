@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart' hide Text;
+
 import '../core/localized_text.dart';
 
 import '../core/theme.dart';
 import '../core/payload_guard.dart';
 import '../state/app_state_scope.dart';
 import '../transport/conversation.dart';
+import 'top_notice.dart';
 
 /// Goal 面板（2.4，设计稿）：会话页顶部目标卡。
 /// 数据源 snapshot.goal（goalStateSchema：objective/status/iteration/
@@ -62,11 +64,9 @@ class _GoalPanelState extends State<GoalPanel> {
       await run();
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('操作失败：$e'),
-            duration: const Duration(seconds: 3),
-          ),
+        TopNotice.show(
+          message: '操作失败：$e',
+          duration: const Duration(seconds: 3),
         );
       }
     }
@@ -113,11 +113,16 @@ class _GoalPanelState extends State<GoalPanel> {
             decoration: BoxDecoration(
               color: context.colors.card,
               borderRadius: BorderRadius.circular(AppRadius.sm),
-              border: Border.all(color: _statusColor.withValues(alpha: AppAlpha.mid)),
+              border: Border.all(
+                color: _statusColor.withValues(alpha: AppAlpha.mid),
+              ),
             ),
             child: Row(
               children: [
-                const Icon(Icons.flag_outlined, size: 13), // 批次4：emoji→Icon（无障碍/跨端渲染一致）
+                const Icon(
+                  Icons.flag_outlined,
+                  size: 13,
+                ), // 批次4：emoji→Icon（无障碍/跨端渲染一致）
                 const SizedBox(width: 6),
                 Icon(_statusIcon, size: 13, color: _statusColor),
                 const SizedBox(width: 6),

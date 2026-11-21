@@ -11,6 +11,7 @@ import 'aliyun_captcha_page.dart';
 import 'background_captcha.dart';
 import 'app_widgets.dart' show showConfirmDialog;
 import 'settings_style.dart';
+import 'top_notice.dart';
 
 /// 抽屉底部领取卡片（营销投放 banner）：
 /// 直连营销接口取投放 → 手机完成阿里云验证码 → PC 执行领取。
@@ -237,9 +238,7 @@ class _DrawerClaimCardState extends State<DrawerClaimCard> {
         : lower.contains('unavailable')
         ? '活动已结束或套餐暂不可领取'
         : (message.trim().isEmpty ? '领取失败，请稍后重试' : message);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(text)));
+    TopNotice.show(message: text);
   }
 
   @override

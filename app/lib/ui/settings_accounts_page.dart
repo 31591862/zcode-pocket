@@ -11,6 +11,7 @@ import '../transport/z_transport.dart';
 import 'login_page.dart';
 import 'pairing_page.dart';
 import 'settings_style.dart';
+import 'top_notice.dart';
 
 /// 账号管理页（多账号批 2026-10-25，multi-account-plan）：账号
 /// 清单（provider+短标签+绑定电脑数）、添加账号（官方 OAuth）、设为
@@ -38,6 +39,7 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
     }
     super.dispose();
   }
+
   List<StoredAccount> _accounts = const [];
   String? _lastUsed;
 
@@ -78,9 +80,7 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
       await _reload();
       if (!mounted) return;
       // 批2：显式告知「当前账号未变」（消除"加了账号=换账号"错觉）。
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('账号已添加，当前账号未变')),
-      );
+      TopNotice.show(message: '账号已添加，当前账号未变');
     } else {
       // 登录页在 save 落盘与 pop 之间被用户按返回时
       // pop(null)，但账号可能已写进 store——一律按“用户取消”处理会跳过
@@ -143,11 +143,9 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
     } catch (e) {
       debugPrint('[app] removeAccount failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('删除账号失败，请重试'),
-            duration: const Duration(seconds: 3),
-          ),
+        TopNotice.show(
+          message: '删除账号失败，请重试',
+          duration: const Duration(seconds: 3),
         );
       }
     }
@@ -195,8 +193,8 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
                   account.label.trim().isNotEmpty
                       ? account.label.trim()
                       : (account.provider.isEmpty ? '未知账号' : account.provider),
-                  translate: account.label.trim().isEmpty &&
-                      account.provider.isEmpty,
+                  translate:
+                      account.label.trim().isEmpty && account.provider.isEmpty,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -303,9 +301,7 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
           controller: controller,
           autofocus: true,
           maxLength: 20,
-          decoration: InputDecoration(
-            hintText: tr('如「公司订阅」「个人号」（仅本机保存）'),
-          ),
+          decoration: InputDecoration(hintText: tr('如「公司订阅」「个人号」（仅本机保存）')),
         ),
         actions: [
           TextButton(
@@ -339,8 +335,7 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
     return Scaffold(
       backgroundColor: settingsPageBg(Theme.of(context).brightness),
       appBar: AppBar(
-        title:
-            const Text('账号管理', style: TextStyle(fontSize: AppType.uiLg)),
+        title: const Text('账号管理', style: TextStyle(fontSize: AppType.uiLg)),
         backgroundColor: settingsPageBg(Theme.of(context).brightness),
       ),
       body: ListView(

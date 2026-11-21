@@ -8,6 +8,7 @@ import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/conversation.dart';
 import 'brand_logo.dart';
+import 'top_notice.dart';
 import 'turn_model.dart' show submitConfigValueZh;
 
 /// 输入增强面板（2.6）：斜杠命令（prepareWorkspace 目录）与 @文件
@@ -1101,11 +1102,9 @@ class _ModelSheetState extends State<_ModelSheet> {
                       : null) ??
                   (currentProvider.contains('/') ? '' : null);
               if (prov == null || prov.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('该目录项缺少供应商信息，无法挂起'),
-                    duration: Duration(seconds: 2),
-                  ),
+                TopNotice.show(
+                  message: '该目录项缺少供应商信息，无法挂起',
+                  duration: Duration(seconds: 2),
                 );
                 return;
               }

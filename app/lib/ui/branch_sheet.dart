@@ -4,6 +4,7 @@ import '../core/localized_text.dart';
 
 import '../core/theme.dart';
 import '../state/git_branch_service.dart';
+import 'top_notice.dart';
 
 /// 分支切换弹层（阶段 6.2 选分支，2026-10-24）。
 ///
@@ -71,6 +72,7 @@ class _BranchSheetState extends State<_BranchSheet> {
     }
     super.dispose();
   }
+
   GitRepoOverview? _overview;
   String? _error;
   bool _loading = true;
@@ -116,8 +118,7 @@ class _BranchSheetState extends State<_BranchSheet> {
     final hasIssues = issues is List && issues.isNotEmpty;
     if (res['ok'] == true && !hasIssues) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('已切换到 $successLabel')));
+      TopNotice.show(message: '已切换到 $successLabel');
       await _reload();
       return;
     }
@@ -193,8 +194,7 @@ class _BranchSheetState extends State<_BranchSheet> {
         _switching = false;
         _switchingBranch = null;
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('切换失败，请重试：$e')));
+      TopNotice.show(message: '切换失败，请重试：$e');
     }
   }
 
@@ -252,8 +252,7 @@ class _BranchSheetState extends State<_BranchSheet> {
         _switching = false;
         _switchingBranch = null;
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('创建失败，请重试：$e')));
+      TopNotice.show(message: '创建失败，请重试：$e');
     }
   }
 

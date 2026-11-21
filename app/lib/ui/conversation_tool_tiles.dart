@@ -14,6 +14,7 @@ import 'inline_diff_preview.dart';
 import 'markdown_view.dart';
 import 'motion.dart';
 import 'turn_model.dart';
+import 'top_notice.dart';
 
 class TodoTile extends StatefulWidget {
   const TodoTile({
@@ -723,9 +724,7 @@ class PlanModeCard extends StatelessWidget {
 
   void _copy(BuildContext context) {
     Clipboard.setData(ClipboardData(text: markdown));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('计划已复制'), duration: Duration(seconds: 2)),
-    );
+    TopNotice.show(message: '计划已复制', duration: Duration(seconds: 2));
   }
 
   void _openDetail(BuildContext context) {
@@ -865,12 +864,7 @@ class PlanModeDetailPage extends StatelessWidget {
             tooltip: '复制计划',
             onPressed: () {
               Clipboard.setData(ClipboardData(text: markdown));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('计划已复制'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
+              TopNotice.show(message: '计划已复制', duration: Duration(seconds: 2));
             },
             icon: Icon(
               Icons.copy_outlined,

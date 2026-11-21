@@ -6,11 +6,14 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Text;
+
 import '../core/localized_text.dart';
+
 import 'package:flutter/services.dart'
     show Clipboard, ClipboardData, HapticFeedback;
 
 import '../core/theme.dart';
+import 'top_notice.dart';
 
 /// 一键复制小按钮（2026-10-23 用户反馈批）：桌面端消息行/代码块
 /// 右上角都有复制（官方 CopyRowAction ConversationRowView.tsx:182 /
@@ -80,11 +83,9 @@ class _CopyIconButtonState extends State<CopyIconButton> {
               if (!mounted) return;
               // this.context（State 的）：build 参数 context 在 async
               // 闭包里与 mounted guard 不关联会触发 lint。
-              ScaffoldMessenger.of(this.context).showSnackBar(
-                SnackBar(
-                  content: Text(ok ? widget.snackText : '复制失败，请重试'),
-                  duration: const Duration(milliseconds: 1200),
-                ),
+              TopNotice.show(
+                message: ok ? widget.snackText : '复制失败，请重试',
+                duration: const Duration(milliseconds: 1200),
               );
               if (ok) {
                 setState(() => _copied = true);
@@ -276,7 +277,9 @@ Future<bool> showConfirmDialog(
         ),
         FilledButton(
           style: destructive
-              ? FilledButton.styleFrom(backgroundColor: context.colors.destructive)
+              ? FilledButton.styleFrom(
+                  backgroundColor: context.colors.destructive,
+                )
               : null,
           onPressed: () {
             if (destructive) HapticFeedback.mediumImpact();

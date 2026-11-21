@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../core/voice_refine.dart';
 import '../state/app_state_scope.dart';
 import 'settings_style.dart';
+import 'top_notice.dart';
 
 /// 语音输入子页（2026-10-20）：口语自动整理开关 + 整理服务
 /// 提供商选择 + API key 对话框——三项原样自 settings_page 一级页迁入
@@ -35,8 +36,11 @@ class SettingsVoicePage extends StatelessWidget {
               SwitchListTile(
                 value: app.uiPrefs.voiceRefineEnabled,
                 onChanged: (v) => app.uiPrefs.setVoiceRefineEnabled(v),
-                secondary: const Icon(Icons.mic_outlined,
-                    size: 24, color: kSettingsIconGreen),
+                secondary: const Icon(
+                  Icons.mic_outlined,
+                  size: 24,
+                  color: kSettingsIconGreen,
+                ),
                 title: const Text(
                   '口语自动整理',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -51,8 +55,11 @@ class SettingsVoicePage extends StatelessWidget {
               // 整理提供商（2026-10-19 多提供商：智谱/DeepSeek/Kimi——同一
               // 套 OpenAI 兼容协议，端点/模型见 voice_refine.dart）。
               ListTile(
-                leading: const Icon(Icons.dns_outlined,
-                    size: 24, color: kSettingsIconBlue),
+                leading: const Icon(
+                  Icons.dns_outlined,
+                  size: 24,
+                  color: kSettingsIconBlue,
+                ),
                 title: const Text(
                   '整理服务提供商',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -95,19 +102,20 @@ class SettingsVoicePage extends StatelessWidget {
                     // 静默回退原文，开关看起来像坏了）。提醒更新；不自动清
                     // 空防误触切换丢 key。
                     if (oldKey.isNotEmpty && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('已切换提供商——API key 不通用，请更新为新平台的 key'),
-                          duration: Duration(seconds: 4),
-                        ),
+                      TopNotice.show(
+                        message: '已切换提供商——API key 不通用，请更新为新平台的 key',
+                        duration: Duration(seconds: 4),
                       );
                     }
                   }
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.key_outlined,
-                    size: 24, color: kSettingsIconOrange),
+                leading: const Icon(
+                  Icons.key_outlined,
+                  size: 24,
+                  color: kSettingsIconOrange,
+                ),
                 title: Text(
                   '${voiceRefineProviderOf(app.uiPrefs.voiceApiProvider).label} API key（整理用）',
                   style: const TextStyle(fontSize: AppType.uiBase),
@@ -134,8 +142,7 @@ class SettingsVoicePage extends StatelessWidget {
                         key: const ValueKey('voice-api-key-input'),
                         controller: controller,
                         obscureText: true,
-                        decoration:
-                            InputDecoration(hintText: provider.keyHint),
+                        decoration: InputDecoration(hintText: provider.keyHint),
                       ),
                       actions: [
                         TextButton(

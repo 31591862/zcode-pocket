@@ -5,11 +5,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Text;
+
 import '../core/localized_text.dart';
 
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import 'conversation_session_opener.dart';
+import 'top_notice.dart';
 
 Future<void> showSubagentListSheet(
   BuildContext context, {
@@ -31,7 +33,10 @@ Future<void> showSubagentListSheet(
 class _SubagentListSheet extends StatefulWidget {
   final String sessionId;
   final ConversationSessionOpener openSession;
-  const _SubagentListSheet({required this.sessionId, required this.openSession});
+  const _SubagentListSheet({
+    required this.sessionId,
+    required this.openSession,
+  });
 
   @override
   State<_SubagentListSheet> createState() => _SubagentListSheetState();
@@ -66,8 +71,8 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
 
   Future<void> _load() async {
     try {
-      final res = await AppStateScope.of(context)
-          .sessionSubagents(widget.sessionId) ??
+      final res =
+          await AppStateScope.of(context).sessionSubagents(widget.sessionId) ??
           (throw StateError('未连接电脑'));
       if (!mounted) return;
       setState(() {
@@ -99,10 +104,9 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
       _moreError = null;
     });
     try {
-      final res = await AppStateScope.of(context).sessionSubagents(
-            widget.sessionId,
-            endedCursor: _nextCursor,
-          ) ??
+      final res =
+          await AppStateScope.of(context)
+              .sessionSubagents(widget.sessionId, endedCursor: _nextCursor) ??
           (throw StateError('未连接电脑'));
       if (!mounted) return;
       setState(() {
@@ -190,8 +194,10 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
           ? '${res['reasonCode'] ?? res['message'] ?? status}'
           : '$res';
       final alreadyEnded =
-          status != 'accepted' && status != 'duplicate' && reason.contains('not_running') ||
-              reason.contains('not_found');
+          status != 'accepted' &&
+              status != 'duplicate' &&
+              reason.contains('not_running') ||
+          reason.contains('not_found');
       if (status == 'accepted' ||
           status == 'duplicate' ||
           // not_running/not_found=该子代理已终态：本地陈旧行一并移除自愈。
@@ -206,34 +212,26 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
         });
         unawaited(_load());
         if (alreadyEnded) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                reason.contains('not_found')
-                    ? tr('没有找到这个子代理任务')
-                    : tr('该子代理已不在运行（可能刚好结束）'),
-              ),
-              duration: const Duration(seconds: 2),
-            ),
+          TopNotice.show(
+            message: reason.contains('not_found')
+                ? tr('没有找到这个子代理任务')
+                : tr('该子代理已不在运行（可能刚好结束）'),
+            duration: const Duration(seconds: 2),
           );
         }
         return;
       }
       setState(() => _stopping.remove(key));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${tr('停止失败：')}$reason'),
-          duration: const Duration(seconds: 2),
-        ),
+      TopNotice.show(
+        message: '${tr('停止失败：')}$reason',
+        duration: const Duration(seconds: 2),
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _stopping.remove(key));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${tr('停止失败：')}$e'),
-          duration: const Duration(seconds: 2),
-        ),
+      TopNotice.show(
+        message: '${tr('停止失败：')}$e',
+        duration: const Duration(seconds: 2),
       );
     }
   }
@@ -424,8 +422,7 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
                             _loadingMore
                                 ? '加载中…'
                                 : '加载更多（${_ended.length}/$_endedTotal）',
-                            style:
-                                const TextStyle(fontSize: AppType.uiCaption),
+                            style: const TextStyle(fontSize: AppType.uiCaption),
                           ),
                         ),
                       ),
@@ -438,19 +435,19 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
   }
 
   Widget _sectionLabel(BuildContext context, String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: AppType.uiXs,
-            fontWeight: FontWeight.w600,
-            // 独立视觉复核必修2（2026-11-07）：subtlest 档在此底上
-            // 2.65:1（实测）——功能性分组标签（运行中/已结束）升
-            // subtle 档（≈5.2:1）。
-            color: context.colors.foregroundSubtle,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+    child: Text(
+      text,
+      style: TextStyle(
+        fontSize: AppType.uiXs,
+        fontWeight: FontWeight.w600,
+        // 独立视觉复核必修2（2026-11-07）：subtlest 档在此底上
+        // 2.65:1（实测）——功能性分组标签（运行中/已结束）升
+        // subtle 档（≈5.2:1）。
+        color: context.colors.foregroundSubtle,
+      ),
+    ),
+  );
 
   Widget _tile(
     BuildContext context,
@@ -462,7 +459,8 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
     // ConversationStatusPanel.tsx:1589-1611 同款门控——冷恢复/已结束行
     // 不显示 Stop）。
     final control = running ? _stopControlOf(item) : null;
-    final stoppable = control != null &&
+    final stoppable =
+        control != null &&
         '${control['taskId'] ?? ''}'.isNotEmpty &&
         '${control['executionId'] ?? ''}'.isNotEmpty;
     final stoppingKey = stoppable
@@ -474,8 +472,8 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
     final titleColor = failed
         ? context.colors.destructive
         : running
-            ? context.colors.running
-            : context.colors.foreground;
+        ? context.colors.running
+        : context.colors.foreground;
     // 2026-11-05 反馈①：类型徽标（协议 subagentType 字段本就随行返回，
     // 此前 UI 未消费）——标题旁小 chip 给出 general-purpose / Explore
     // 等类型身份。
@@ -484,8 +482,8 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
     final statusSuffix = failed
         ? ' · ${tr('失败')}'
         : status == 'cancelled'
-            ? ' · ${tr('已取消')}'
-            : '';
+        ? ' · ${tr('已取消')}'
+        : '';
     return ListTile(
       key: ValueKey('subagent-${item['childSessionId'] ?? ''}'),
       dense: true,
@@ -543,11 +541,9 @@ class _SubagentListSheetState extends State<_SubagentListSheet> {
       trailing: stoppable
           ? // M3 下 IconButton constraints 不生效——styleFrom 最小尺寸
             // + shrinkWrap（早前批次 的 60dp 拉宽教训）。
-          IconButton(
+            IconButton(
               key: ValueKey('subagent-stop-${item['childSessionId'] ?? ''}'),
-              onPressed: stopping
-                  ? null
-                  : () => _stopRunning(item, control),
+              onPressed: stopping ? null : () => _stopRunning(item, control),
               iconSize: 18,
               style: IconButton.styleFrom(
                 minimumSize: const Size(40, 40),

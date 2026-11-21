@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Text;
+
 import '../core/localized_text.dart';
 
 import '../core/theme.dart';
@@ -9,6 +10,7 @@ import 'workspace_hook_review_page.dart';
 import '../state/app_state_scope.dart';
 import '../transport/conversation.dart';
 import 'inline_diff_preview.dart';
+import 'top_notice.dart';
 
 /// 审批横幅（2.2，设计稿）：pendingInteractions → 横幅贴输入栏上方。
 ///
@@ -60,11 +62,9 @@ class InteractionBanner extends StatelessWidget {
       final msg = '$e';
       if (msg.contains('alreadyResolved')) return;
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('应答发送失败，请重试：$msg'),
-            duration: const Duration(seconds: 4),
-          ),
+        TopNotice.show(
+          message: '应答发送失败，请重试：$msg',
+          duration: const Duration(seconds: 4),
         );
       }
     }
@@ -100,7 +100,8 @@ class InteractionBanner extends StatelessWidget {
             // 待答切换（首条解决后下一条顶上）时整卡重置（旧实现选择草稿
             // 会泄漏到下一张卡，同样被此修复）。
             key: ValueKey(
-                'interaction-${renderable.first['interactionId'] ?? ''}'),
+              'interaction-${renderable.first['interactionId'] ?? ''}',
+            ),
             interaction: renderable.first,
             sessionId: sessionId,
             plan: state.plan,
@@ -115,11 +116,11 @@ class InteractionBanner extends StatelessWidget {
           ),
         for (final hr in hookReviews)
           _HookReviewEntryCard(
-            key: ValueKey(
-                'hook-review-entry-${hr['interactionId'] ?? ''}'),
+            key: ValueKey('hook-review-entry-${hr['interactionId'] ?? ''}'),
             interaction: hr,
           ),
-        if (renderable.length > 1 || (renderable.isNotEmpty && hookReviews.isNotEmpty))
+        if (renderable.length > 1 ||
+            (renderable.isNotEmpty && hookReviews.isNotEmpty))
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
             child: Text(
@@ -230,7 +231,8 @@ class _InteractionCardState extends State<_InteractionCard> {
   /// R5a（2026-10-17 真机反馈）：权限类审批默认折叠明细——横幅不再
   /// 挤压对话区（标题+倒计时+选项按钮常驻，一眼可批）；计划审核等
   /// 需要明细才能决策的默认展开。
-  late bool _detailsExpanded = widget.interaction['payload'] is Map &&
+  late bool _detailsExpanded =
+      widget.interaction['payload'] is Map &&
       '${(widget.interaction['payload'] as Map)['kind']}' != 'permission';
 
   /// 验收#6（优化意见 A）：整卡暂时收起——想先看上下文再回来
@@ -305,9 +307,9 @@ class _InteractionCardState extends State<_InteractionCard> {
     final payload = widget.interaction['payload'];
     final questions = payload is Map && payload['questions'] is List
         ? (payload['questions'] as List)
-            .whereType<Map>()
-            .map((e) => e.cast<String, dynamic>())
-            .toList()
+              .whereType<Map>()
+              .map((e) => e.cast<String, dynamic>())
+              .toList()
         : const <Map<String, dynamic>>[];
     _go(
       action: 'accept',
@@ -354,9 +356,7 @@ class _InteractionCardState extends State<_InteractionCard> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      saved.isNotEmpty
-                          ? tr('自定义：') + saved
-                          : tr('自定义答案…'),
+                      saved.isNotEmpty ? tr('自定义：') + saved : tr('自定义答案…'),
                       translate: false,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -608,7 +608,8 @@ class _InteractionCardState extends State<_InteractionCard> {
     // 2026-10-22 真机反馈①：AskUserQuestion 到达时会话常有 TodoWrite
     // 计划（state.plan 非空）——questions 优先，不再叠加计划清单/改标题
     // 「执行计划？」（截图中提问卡被塞进整份待办即此根因）。
-    final isPlanApproval = kind == 'userInput' &&
+    final isPlanApproval =
+        kind == 'userInput' &&
         planItems is List &&
         planItems.isNotEmpty &&
         !isQuestions;
@@ -619,11 +620,12 @@ class _InteractionCardState extends State<_InteractionCard> {
 
     final title = switch (kind) {
       'permission' => '工具请求权限 · ${payload['toolName'] ?? ''}',
-      'userInput' => isPlanApproval
-          ? '执行计划？'
-          : isQuestions
-              ? '等待你的选择'
-              : '等待你的输入',
+      'userInput' =>
+        isPlanApproval
+            ? '执行计划？'
+            : isQuestions
+            ? '等待你的选择'
+            : '等待你的输入',
       'workspaceHookReview' => '工作区 Hook 审核',
       _ => '需要确认',
     };
@@ -696,8 +698,9 @@ class _InteractionCardState extends State<_InteractionCard> {
         // questions 多题+选项描述体量大：320 硬裁在真机上呈"切一半"
         // （反馈①）——提问卡放宽到近半屏，其余维持 320。
         constraints: BoxConstraints(
-          maxHeight:
-              isQuestions ? MediaQuery.sizeOf(context).height * 0.48 : 320,
+          maxHeight: isQuestions
+              ? MediaQuery.sizeOf(context).height * 0.48
+              : 320,
         ),
         child: SingleChildScrollView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -949,7 +952,8 @@ class _InteractionCardState extends State<_InteractionCard> {
                             padding: EdgeInsets.zero,
                             iconSize: 16,
                             tooltip: tr('下一题（已有作答时）'),
-                            onPressed: _busy ||
+                            onPressed:
+                                _busy ||
                                     _qIndex >= questions.length - 1 ||
                                     !_qAnswered(_qIndex)
                                 ? null
@@ -986,14 +990,13 @@ class _InteractionCardState extends State<_InteractionCard> {
                       child: (_busy || !_anyQAnswered)
                           ? OutlinedButton(
                               style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                               ),
                               onPressed: null,
                               child: Text(
-                                !_anyQAnswered
-                                    ? '选择后继续'
-                                    : '处理中…',
+                                !_anyQAnswered ? '选择后继续' : '处理中…',
                                 style: const TextStyle(
                                   fontSize: AppType.uiCaption,
                                 ),
@@ -1032,38 +1035,41 @@ class _InteractionCardState extends State<_InteractionCard> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final (oi, raw) in (payload['options'] as List).indexed)
+                    for (final (oi, raw)
+                        in (payload['options'] as List).indexed)
                       if (raw is Map)
                         () {
                           final opt = raw.cast<String, dynamic>();
                           final rawLabel =
                               '${opt['label'] ?? opt['optionId'] ?? ''}';
-                          final label = _optionLabelZh[rawLabel] ??
+                          final label =
+                              _optionLabelZh[rawLabel] ??
                               _optionLabelZh[rawLabel.toLowerCase()] ??
                               rawLabel;
                           final desc = '${opt['description'] ?? ''}';
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 4),
                             child: InkWell(
-                              borderRadius:
-                                  BorderRadius.circular(AppRadius.sm),
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
                               onTap: _busy
                                   ? null
                                   : () => _go(
-                                        optionId: '${opt['optionId'] ?? ''}',
-                                        // permission
-                                        // 官方形态=optionId(+content)不带
-                                        // action——action 会让 broker 走
-                                        // accept/decline 精确映射，deny_once
-                                        // 等粒度可能被折叠成裸 decline
-                                        // （官方 V4InteractionDialogs:358）。
-                                        content: {
-                                          for (final key
-                                              in const ['value', 'label', 'kind'])
-                                            if (opt[key] != null)
-                                              key: opt[key],
-                                        },
-                                      ),
+                                      optionId: '${opt['optionId'] ?? ''}',
+                                      // permission
+                                      // 官方形态=optionId(+content)不带
+                                      // action——action 会让 broker 走
+                                      // accept/decline 精确映射，deny_once
+                                      // 等粒度可能被折叠成裸 decline
+                                      // （官方 V4InteractionDialogs:358）。
+                                      content: {
+                                        for (final key in const [
+                                          'value',
+                                          'label',
+                                          'kind',
+                                        ])
+                                          if (opt[key] != null) key: opt[key],
+                                      },
+                                    ),
                               child: Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.symmetric(
@@ -1072,7 +1078,8 @@ class _InteractionCardState extends State<_InteractionCard> {
                                 ),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(
-                                      AppRadius.sm),
+                                    AppRadius.sm,
+                                  ),
                                   color: context.colors.sidebar,
                                 ),
                                 child: Row(
@@ -1084,8 +1091,8 @@ class _InteractionCardState extends State<_InteractionCard> {
                                         style: TextStyle(
                                           fontSize: AppType.uiCaption,
                                           fontWeight: FontWeight.w500,
-                                          color: context
-                                              .colors.foregroundSubtlest,
+                                          color:
+                                              context.colors.foregroundSubtlest,
                                         ),
                                       ),
                                     ),
@@ -1098,17 +1105,17 @@ class _InteractionCardState extends State<_InteractionCard> {
                                               style: TextStyle(
                                                 fontSize: AppType.uiCaption,
                                                 fontWeight: FontWeight.w500,
-                                                color: context
-                                                    .colors.foreground,
+                                                color:
+                                                    context.colors.foreground,
                                               ),
                                             ),
                                             if (desc.isNotEmpty)
                                               TextSpan(
                                                 text: '  $desc',
                                                 style: TextStyle(
-                                                  fontSize:
-                                                      AppType.uiCaption,
-                                                  color: context.colors
+                                                  fontSize: AppType.uiCaption,
+                                                  color: context
+                                                      .colors
                                                       .foregroundSubtle,
                                                 ),
                                               ),
@@ -1228,7 +1235,9 @@ String? _permissionDetailLine(Map payload) {
     return '变更 ${changes.length} 个文件';
   }
   final content = detail['content'] ?? detail['pattern'];
-  if (content is String && content.trim().isNotEmpty && detail['file_path'] != null) {
+  if (content is String &&
+      content.trim().isNotEmpty &&
+      detail['file_path'] != null) {
     return null; // 有文件路径时内容体量留给展开态
   }
   return null;
@@ -1262,9 +1271,7 @@ Map<String, dynamic>? _permissionRichPreview(Map payload) {
         final args = detail['args'];
         return {
           'kind': 'command',
-          'text': args is List && args.isNotEmpty
-              ? '$v ${args.join(' ')}'
-              : v,
+          'text': args is List && args.isNotEmpty ? '$v ${args.join(' ')}' : v,
         };
       }
     }
@@ -1283,19 +1290,24 @@ Map<String, dynamic>? _permissionRichPreview(Map payload) {
   final lines = <String>[
     // 空串也是合法编辑（纯删除/纯新增），split 尾空行照排与 jsdiff
     // structuredPatch 行为一致。
-    if (oldS != null) for (final l in oldS.split('\n')) '-$l',
-    if (newS != null) for (final l in newS.split('\n')) '+$l',
-    if (content != null) for (final l in content.split('\n')) '+$l',
+    if (oldS != null)
+      for (final l in oldS.split('\n')) '-$l',
+    if (newS != null)
+      for (final l in newS.split('\n')) '+$l',
+    if (content != null)
+      for (final l in content.split('\n')) '+$l',
   ];
   if (lines.isEmpty) return null;
   return {
     'kind': 'diff',
     'display': {
       'kind': 'file_diff',
-      'filePath': _readStringField(
-        detail,
-        const ['file_path', 'filePath', 'path', 'target'],
-      ),
+      'filePath': _readStringField(detail, const [
+        'file_path',
+        'filePath',
+        'path',
+        'target',
+      ]),
       'additions': lines.where((l) => l.startsWith('+')).length,
       'deletions': lines.where((l) => l.startsWith('-')).length,
       'structuredPatch': [
@@ -1402,7 +1414,6 @@ const _optionLabelZh = <String, String>{
   'full access': '完全访问',
 };
 
-
 /// 幂等 snooze 内存账（跨重建防重）的写入判据（#13②，公开给单测）：
 /// 每项=sessionId:interactionId——长会话/多交互会无界累积，超限按插入序
 /// 淘汰最旧（有界 FIFO；同键只发一次语义不变）。
@@ -1437,10 +1448,7 @@ class _AutoResolutionCountdown extends StatefulWidget {
   @visibleForTesting
   static int debugActiveTickers = 0;
 
-  const _AutoResolutionCountdown({
-    required this.interaction,
-    this.sessionId,
-  });
+  const _AutoResolutionCountdown({required this.interaction, this.sessionId});
 
   @override
   State<_AutoResolutionCountdown> createState() =>
@@ -1524,8 +1532,11 @@ class _AutoResolutionCountdownState extends State<_AutoResolutionCountdown> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: (urgent ? context.colors.destructive : context.colors.foregroundSubtlest)
-            .withValues(alpha: 0.12),
+        color:
+            (urgent
+                    ? context.colors.destructive
+                    : context.colors.foregroundSubtlest)
+                .withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Row(
@@ -1567,7 +1578,6 @@ class _AutoResolutionCountdownState extends State<_AutoResolutionCountdown> {
   }
 }
 
-
 /// （2026-11-08 拍板③）：Hook 审核入口卡（安全专用——不落通用
 /// 提问渲染；点开 WorkspaceHookReviewPage 逐项审核）。
 class _HookReviewEntryCard extends StatelessWidget {
@@ -1585,7 +1595,9 @@ class _HookReviewEntryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: context.colors.card,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: context.colors.warning.withValues(alpha: 0.4)),
+        border: Border.all(
+          color: context.colors.warning.withValues(alpha: 0.4),
+        ),
       ),
       child: Material(
         color: Colors.transparent,
@@ -1603,18 +1615,26 @@ class _HookReviewEntryCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.shield_outlined,
-                  size: 16, color: context.colors.warning),
+              Icon(
+                Icons.shield_outlined,
+                size: 16,
+                color: context.colors.warning,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   '工作区 Hook 审核 · $pending 项待信任',
                   style: const TextStyle(
-                      fontSize: AppType.uiCaption, fontWeight: FontWeight.w500),
+                    fontSize: AppType.uiCaption,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-              Icon(Icons.chevron_right,
-                  size: 16, color: context.colors.foregroundSubtlest),
+              Icon(
+                Icons.chevron_right,
+                size: 16,
+                color: context.colors.foregroundSubtlest,
+              ),
             ],
           ),
         ),

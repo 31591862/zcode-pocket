@@ -14,6 +14,7 @@ import 'turn_model.dart' show toolInputArgs;
 import 'workflow_dashboards.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
+import 'top_notice.dart';
 import 'app_widgets.dart' show AppLoading;
 import 'file_preview.dart' show HtmlPreviewPage;
 import 'share_flow.dart'
@@ -687,16 +688,10 @@ class _WorkflowRunsPageState extends State<WorkflowRunsPage> {
                         if (!ok) {
                           // 对抗审查 B-/C-M2：_sending 在飞/发送失败
                           // 此前静默丢——给出明确反馈。
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(tr('未能发送（会话正忙或发送失败），请稍后再试')),
-                            ),
-                          );
+                          TopNotice.show(message: tr('未能发送（会话正忙或发送失败），请稍后再试'));
                           return;
                         }
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(tr('已发送收集指令，产物就绪后会出现在下方'))),
-                        );
+                        TopNotice.show(message: tr('已发送收集指令，产物就绪后会出现在下方'));
                         // 对抗审查 B-/C-M3：发送后页面从不刷新——延时
                         // 两次自动重拉覆盖 agent 编排-提交窗口。可取消
                         // Timer（页面退出即弃——widget 测试 pending timer
@@ -1094,7 +1089,7 @@ class _WorkflowRunDetailPageState extends State<WorkflowRunDetailPage> {
   Future<void> _openArtifact(Map<String, dynamic> artifact) async {
     if (_artifactBusy) return;
     final app = AppStateScope.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+
     setState(() => _artifactBusy = true);
     try {
       final r = await readArtifactBlocks(
@@ -1111,9 +1106,7 @@ class _WorkflowRunDetailPageState extends State<WorkflowRunDetailPage> {
       );
       if (r.oversized) {
         if (!mounted) return;
-        messenger.showSnackBar(
-          SnackBar(content: Text(tr('图片过大（超过 16MB），暂不支持预览'))),
-        );
+        TopNotice.show(message: tr('图片过大（超过 16MB），暂不支持预览'));
         return;
       }
       final bytes = r.bytes;
@@ -1123,7 +1116,7 @@ class _WorkflowRunDetailPageState extends State<WorkflowRunDetailPage> {
       final name = '${artifact['title'] ?? artifact['id']}';
       if (isImage) {
         if (bytes.isEmpty) {
-          messenger.showSnackBar(const SnackBar(content: Text('该产物没有可读的内容')));
+          TopNotice.show(message: '该产物没有可读的内容');
           return;
         }
         Navigator.of(context).push(
@@ -1153,7 +1146,7 @@ class _WorkflowRunDetailPageState extends State<WorkflowRunDetailPage> {
       }
       final text = utf8.decode(bytes, allowMalformed: true);
       if (text.isEmpty) {
-        messenger.showSnackBar(const SnackBar(content: Text('该产物没有可读的文本内容')));
+        TopNotice.show(message: '该产物没有可读的文本内容');
         return;
       }
       final displayName = truncated ? '$name（${tr('内容过长已截断')}）' : name;
@@ -1191,7 +1184,7 @@ class _WorkflowRunDetailPageState extends State<WorkflowRunDetailPage> {
       }
     } catch (e) {
       if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text('读取产物失败：$e')));
+        TopNotice.show(message: '读取产物失败：$e');
       }
     } finally {
       if (mounted) setState(() => _artifactBusy = false);
@@ -1287,30 +1280,24 @@ class _WorkflowRunDetailPageState extends State<WorkflowRunDetailPage> {
       if (!mounted) return;
       final status = res is Map ? '${res['status'] ?? ''}' : '';
       if (status == 'accepted' || status == 'duplicate') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text(tr('已发起恢复，新事件稍后出现在时间线')),
-          ),
+        TopNotice.show(
+          message: tr('已发起恢复，新事件稍后出现在时间线'),
+          duration: const Duration(seconds: 3),
         );
         unawaited(_load());
       } else {
         final reason = res is Map ? '${res['reasonCode'] ?? ''}' : '';
         final message = res is Map ? '${res['message'] ?? ''}' : '';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 4),
-            content: Text(workflowCommandFaultText(reason, message)),
-          ),
+        TopNotice.show(
+          message: workflowCommandFaultText(reason, message),
+          duration: const Duration(seconds: 4),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 4),
-            content: Text('恢复失败：$e'),
-          ),
+        TopNotice.show(
+          message: '恢复失败：$e',
+          duration: const Duration(seconds: 4),
         );
       }
     } finally {
@@ -2307,11 +2294,9 @@ class _AmendRunSettingsSheetState extends State<_AmendRunSettingsSheet> {
         if (ModalRoute.of(context)?.isCurrent ?? false) {
           Navigator.of(context).pop();
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(seconds: 3),
-            content: Text(tr('已提交调整')),
-          ),
+        TopNotice.show(
+          message: tr('已提交调整'),
+          duration: const Duration(seconds: 3),
         );
       } else {
         final reason = res is Map ? '${res['reasonCode'] ?? ''}' : '';

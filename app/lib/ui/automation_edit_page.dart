@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/automation_client.dart';
 import 'app_widgets.dart';
+import 'top_notice.dart';
 
 /// 定时任务编辑页（2026-11-05 反馈：此前只可查看——官方
 /// updateAutomation（zcodeAgentPluginParams.ts:216-228）完整支持编辑，
@@ -81,7 +82,8 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
     try {
       final view = await app.modelSelectionView();
       final providers = view?['providers'];
-      final out = <({String pid, String label, String model, List<String> levels})>[];
+      final out =
+          <({String pid, String label, String model, List<String> levels})>[];
       if (providers is List) {
         for (final p in providers) {
           if (p is! Map) continue;
@@ -103,7 +105,10 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
               label: label,
               model: mid,
               levels: vals is List
-                  ? [for (final v in vals) if (v is String) v]
+                  ? [
+                      for (final v in vals)
+                        if (v is String) v,
+                    ]
                   : const <String>[],
             ));
           }
@@ -329,9 +334,7 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
       return;
     }
     if (cron == null) {
-      _snack(_kind == _SchedKind.weekly
-          ? '请选择每周的运行日'
-          : '请填写合法的 cron 表达式（5 段）');
+      _snack(_kind == _SchedKind.weekly ? '请选择每周的运行日' : '请填写合法的 cron 表达式（5 段）');
       return;
     }
     final app = AppStateScope.of(context);
@@ -341,11 +344,14 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
       return;
     }
     final e = widget.entry;
-    final client = AutomationClient(bridge: bridge, scope: {
-      'workspacePath': e.workspacePath,
-      if (e.workspaceIdentity.isNotEmpty)
-        'workspaceIdentity': e.workspaceIdentity,
-    });
+    final client = AutomationClient(
+      bridge: bridge,
+      scope: {
+        'workspacePath': e.workspacePath,
+        if (e.workspaceIdentity.isNotEmpty)
+          'workspaceIdentity': e.workspaceIdentity,
+      },
+    );
     setState(() => _saving = true);
     try {
       final modelChanged =
@@ -457,7 +463,10 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
     if (catalog == null) return;
     // 按短标签分组保序。
     final groups =
-        <String, List<({String pid, String label, String model, List<String> levels})>>{};
+        <
+          String,
+          List<({String pid, String label, String model, List<String> levels})>
+        >{};
     for (final c in catalog) {
       groups.putIfAbsent(c.label, () => []).add(c);
     }
@@ -530,8 +539,7 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
     );
   }
 
-  void _snack(String text) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  void _snack(String text) => TopNotice.show(message: text);
 
   @override
   Widget build(BuildContext context) {
@@ -871,10 +879,7 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
                           padding: const EdgeInsets.symmetric(horizontal: 1.5),
                           child: ChoiceChip(
                             key: ValueKey('automation-sched-weekday-$d'),
-                            label: Text(
-                              weekZh[d],
-                              textAlign: TextAlign.center,
-                            ),
+                            label: Text(weekZh[d], textAlign: TextAlign.center),
                             selected: _weekdays.contains(d),
                             onSelected: (_) => setState(() {
                               _weekdays.contains(d)
@@ -885,8 +890,9 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
                             // 单行等分后每格 ≈44dp 宽：收紧内边距防溢出。
                             visualDensity: VisualDensity.compact,
                             padding: EdgeInsets.zero,
-                            labelPadding:
-                                const EdgeInsets.symmetric(horizontal: 2),
+                            labelPadding: const EdgeInsets.symmetric(
+                              horizontal: 2,
+                            ),
                             backgroundColor: context.colors.card,
                             selectedColor: context.colors.brandAccent
                                 .withValues(alpha: 0.10),

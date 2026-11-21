@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart' hide Text;
+
 import '../core/localized_text.dart';
+
 import 'package:flutter/services.dart';
 
 import '../core/code_highlight.dart';
 import '../core/payload_guard.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
+import 'top_notice.dart';
 
 /// diff 查看器（2.3，波次 3b）：conversationFileChangesV4 文件清单 +
 /// 按目录分组 + 逐文件 hunk 着色 + git-checkpoint 单文件回滚
@@ -151,17 +154,14 @@ class _DiffViewerPageState extends State<DiffViewerPage> {
       preview = res is Map ? res.cast<String, dynamic>() : null;
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('回滚预检失败：$e')));
+        TopNotice.show(message: '回滚预检失败：$e');
       }
       return;
     }
     final canApply = preview?['canApply'] == true;
     if (!canApply) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('当前不支持回滚（部分文件已越过安全边界）')));
+        TopNotice.show(message: '当前不支持回滚（部分文件已越过安全边界）');
       }
       return;
     }
@@ -181,7 +181,9 @@ class _DiffViewerPageState extends State<DiffViewerPage> {
             child: const Text('取消'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: context.colors.warning),
+            style: FilledButton.styleFrom(
+              backgroundColor: context.colors.warning,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('回滚'),
           ),
@@ -195,18 +197,15 @@ class _DiffViewerPageState extends State<DiffViewerPage> {
         target: widget.rowTarget ?? const {},
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('已回滚本轮安全文件'),
-            duration: const Duration(seconds: 2),
-          ),
+        TopNotice.show(
+          message: '已回滚本轮安全文件',
+          duration: const Duration(seconds: 2),
         );
         _load();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('回滚失败：$e')));
+        TopNotice.show(message: '回滚失败：$e');
       }
     }
   }
@@ -446,11 +445,7 @@ class _FileCard extends StatelessWidget {
                   // 每文件按语言整体着色（懒展开单文件，LRU 缓存兜住）；
                   // hunk 逐个 tokenize（跨 hunk 内容本就断开）。
                   for (final patch in patches)
-                    ..._patchLines(
-                      context,
-                      patch,
-                      languageForFilePath(path),
-                    ),
+                    ..._patchLines(context, patch, languageForFilePath(path)),
                   if (patches.isEmpty)
                     Text(
                       '（本文件无文本 hunk）',
@@ -472,22 +467,17 @@ class _FileCard extends StatelessWidget {
     Map<String, dynamic> patch,
     String? language,
   ) {
-    final lines =
-        (listOf(patch['lines']) ?? []).whereType<String>().toList();
+    final lines = (listOf(patch['lines']) ?? []).whereType<String>().toList();
     // 总开关关闭时降 null 回落纯色呈现（对抗审查 ：与内联 diff/
     // 预览/消息代码块同受一个开关，不自相矛盾）。裸树容错默认开。
     final scope = context.getInheritedWidgetOfExactType<AppStateScope>();
-    final highlightOn =
-        scope?.notifier?.uiPrefs.codeHighlightEnabled ?? true;
+    final highlightOn = scope?.notifier?.uiPrefs.codeHighlightEnabled ?? true;
     final views = highlightDiffLines(
       lines,
       highlightOn ? language : null,
       brightness: Theme.of(context).brightness,
     );
-    return [
-      for (var i = 0; i < views.length; i++)
-        _DiffLine(view: views[i]),
-    ];
+    return [for (var i = 0; i < views.length; i++) _DiffLine(view: views[i])];
   }
 }
 

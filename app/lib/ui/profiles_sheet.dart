@@ -8,6 +8,7 @@ import '../state/app_state_scope.dart';
 import '../transport/z_transport.dart';
 import 'app_widgets.dart';
 import 'pairing_page.dart';
+import 'top_notice.dart';
 
 /// 电脑档案管理面板（裁决：档案切换为一级入口）。
 /// 列表 + 添加 + 状态点 + 重命名/删除；两形态同款（折叠态顶栏、展开态图标轨顶部进入）。
@@ -133,17 +134,11 @@ class _ProfilesSheetState extends State<_ProfilesSheet> {
       try {
         await app.renameComputer(profile, name);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('已重命名'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          TopNotice.show(message: '已重命名', duration: const Duration(seconds: 2));
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('重命名失败：$e')));
+          TopNotice.show(message: '重命名失败：$e');
         }
       }
     }
@@ -159,17 +154,11 @@ class _ProfilesSheetState extends State<_ProfilesSheet> {
       try {
         await app.removeComputer(profile);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('已删除'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          TopNotice.show(message: '已删除', duration: const Duration(seconds: 2));
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('删除失败：$e')));
+          TopNotice.show(message: '删除失败：$e');
         }
       }
     }
@@ -238,9 +227,9 @@ class _ProfilesSheetState extends State<_ProfilesSheet> {
               profile: profile,
               accountBadge: profile is AccountV2Profile
                   ? (profile.accountId == null
-                      // 未绑定（迁移前的存量形态）：凭据实际取 lastUsed。
-                      ? '跟随当前账号'
-                      : (_accountLabels[profile.accountId] ?? '账号已删除'))
+                        // 未绑定（迁移前的存量形态）：凭据实际取 lastUsed。
+                        ? '跟随当前账号'
+                        : (_accountLabels[profile.accountId] ?? '账号已删除'))
                   : null,
               active: profile.deviceSid == app.activeProfile?.deviceSid,
               // 波次 3a：各电脑实时状态（后台保活栈显示真实连接态）

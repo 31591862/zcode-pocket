@@ -3,14 +3,17 @@
 // 返回键不拦（builder 层无法 PopScope）：返回=退出 app，锁层仍在，
 // 不泄露内容，可接受（注释留痕；如需严格拦截改 navigatorKey+路由方案）。
 import 'dart:async';
+
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
+
 import '../core/app_lock.dart';
 import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import '../state/ui_prefs.dart';
+import 'top_notice.dart';
 
 /// 根包装：锁定时全屏遮罩；同时负责首帧从 UiPrefs 装载锁配置
 /// （冷启动 locked=mode!=none——UiPrefs 先于 AppState.loaded 读完，
@@ -75,9 +78,7 @@ class _AppLockGateState extends State<AppLockGate> {
     // 对抗审查 ①：软锁死降级提示（一次性）。
     if (app.appLock.pinMaterialMissing.value) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('应用锁数据缺失，已停用；请到设置中重新开启'))),
-        );
+        TopNotice.show(message: tr('应用锁数据缺失，已停用；请到设置中重新开启'));
       });
     }
   }
@@ -252,7 +253,10 @@ class _LockScreenState extends State<_LockScreen> {
                   const Text(
                     '应用已锁定',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: AppType.uiLg, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: AppType.uiLg,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   if (pinMode) ...[
@@ -300,36 +304,38 @@ class _LockScreenState extends State<_LockScreen> {
                       icon: const Icon(Icons.lock_open),
                       label: Text(_verifying ? tr('验证中…') : tr('解锁')),
                     ),
-                    // ①：设备锁被移除——人话+跳系统安全设置出口（防
-                    // 无提示死锁；设置页在遮罩后不可达）。
-                    ValueListenableBuilder<bool>(
-                      valueListenable: widget.controller.systemUnlockUnavailable,
-                      builder: (context, unavailable, _) {
-                        if (!unavailable) return const SizedBox.shrink();
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SizedBox(height: 12),
-                            Text(
-                              tr('设备未设置系统屏幕锁，无法验证；请先在系统设置中配置锁屏'),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: AppType.uiCaption,
-                                color: context.colors.destructive,
-                              ),
+                  // ①：设备锁被移除——人话+跳系统安全设置出口（防
+                  // 无提示死锁；设置页在遮罩后不可达）。
+                  ValueListenableBuilder<bool>(
+                    valueListenable: widget.controller.systemUnlockUnavailable,
+                    builder: (context, unavailable, _) {
+                      if (!unavailable) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 12),
+                          Text(
+                            tr('设备未设置系统屏幕锁，无法验证；请先在系统设置中配置锁屏'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: AppType.uiCaption,
+                              color: context.colors.destructive,
                             ),
-                            const SizedBox(height: 8),
-                            FilledButton.tonalIcon(
-                              style: tonalFilledStyle(context),
-                              key: const ValueKey('app-lock-open-security-settings'),
-                              onPressed: _openSecuritySettings,
-                              icon: const Icon(Icons.settings_outlined, size: 18),
-                              label: Text(tr('打开系统安全设置')),
+                          ),
+                          const SizedBox(height: 8),
+                          FilledButton.tonalIcon(
+                            style: tonalFilledStyle(context),
+                            key: const ValueKey(
+                              'app-lock-open-security-settings',
                             ),
-                          ],
-                        );
-                      },
-                    ),
+                            onPressed: _openSecuritySettings,
+                            icon: const Icon(Icons.settings_outlined, size: 18),
+                            label: Text(tr('打开系统安全设置')),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ],
               ),
             ),

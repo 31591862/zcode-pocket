@@ -13,6 +13,7 @@ import 'conversation_session_opener.dart';
 import 'file_preview.dart';
 import 'markdown_view.dart';
 import 'turn_model.dart';
+import 'top_notice.dart';
 
 class SearchTargetFrame extends StatelessWidget {
   final int? rowId;
@@ -390,9 +391,8 @@ class TurnTailActionsState extends State<TurnTailActions> {
     }
   }
 
-  void _snack(String t) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(t), duration: const Duration(seconds: 2)),
-  );
+  void _snack(String t) =>
+      TopNotice.show(message: t, duration: const Duration(seconds: 2));
 
   /// conversationRowTargetSchema 的 entityId 必填
   /// （strict）——缺失时返回 null，调用方降级为纯本地操作（与 的

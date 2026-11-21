@@ -29,20 +29,35 @@ class TopNotice {
     _rootOverlay = Overlay.maybeOf(context, rootOverlay: true);
   }
 
+  /// 兜底解析：attach 尚未发生（测试 host 无 HomeShell / 生产极端时序）
+  /// 时从根 Element 自动找根 Overlay——首次找到即缓存，等价 attach。
+  static OverlayState? _resolveRootOverlayFallback() {
+    final root = WidgetsBinding.instance.rootElement;
+    if (root == null) return null;
+    OverlayState? found;
+    void visit(Element e) {
+      if (found != null) return;
+      if (e is StatefulElement && e.state is OverlayState) {
+        found = e.state as OverlayState;
+        return;
+      }
+      e.visitChildren(visit);
+    }
+
+    visit(root);
+    return found;
+  }
+
   /// 失败/错误提示快捷入口（红色图标，destructive 色）。
   static void error(String message) {
     Color? iconColor;
     final overlay = _rootOverlay;
-    if (overlay != null) {
+    if (overlay != null && overlay.mounted) {
       try {
         iconColor = overlay.context.colors.destructive;
       } catch (_) {}
     }
-    show(
-      message: message,
-      icon: Icons.error_outline,
-      iconColor: iconColor,
-    );
+    show(message: message, icon: Icons.error_outline, iconColor: iconColor);
   }
 
   static void show({
@@ -54,8 +69,11 @@ class TopNotice {
     VoidCallback? onAction,
     Duration duration = const Duration(seconds: 3),
   }) {
-    final overlay = _rootOverlay;
+    var overlay = _rootOverlay;
+    if (overlay != null && !overlay.mounted) overlay = null;
+    overlay ??= _resolveRootOverlayFallback();
     if (overlay == null) return;
+    _rootOverlay = overlay;
     _discard();
     // 先声明后赋值：onDismissed 闭包要读同一变量（identical 防新条
     // 顶替后旧条退场回调误删新条）。
@@ -86,7 +104,12 @@ class TopNotice {
   /// 立即摘除旧条（顶替场景不做退场动画，避免新旧两卡叠影）。
   static void _discard() {
     _state = null;
-    _entry?.remove();
+    try {
+      _entry?.remove();
+    } catch (_) {
+      // 旧 Overlay 已销毁（测试逐用例拆树/宿主退场）——remove 抛错
+      // 属残影清理，静默吞掉；_entry 照常置空防悬挂引用。
+    }
     _entry = null;
   }
 
@@ -179,61 +202,67 @@ class _TopNoticeCardState extends State<_TopNoticeCard>
           ).animate(_curve),
           child: FadeTransition(
             opacity: _curve,
-            child: Container(
-              decoration: BoxDecoration(
-                color: isDark ? kSettingsCardDark : kSettingsCardLight,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black
-                        .withValues(alpha: isDark ? 0.4 : 0.10),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              // 提示主体可点提前退场（动作按钮独立在下，互不干扰）。
-              child: Material(
-                type: MaterialType.transparency,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
-                  child: Row(
-                    children: [
-                      Icon(
-                        widget.icon,
-                        size: 20,
-                        color: widget.iconColor ?? kSettingsIconBlue,
+            child: IgnorePointer(
+              ignoring: widget.actionLabel == null,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isDark ? kSettingsCardDark : kSettingsCardLight,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.4 : 0.10,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: dismiss,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Text(
-                              widget.message,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: AppType.uiBase),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                // 提示主体可点提前退场（动作按钮独立在下，互不干扰）。
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          widget.icon,
+                          size: 20,
+                          color: widget.iconColor ?? kSettingsIconBlue,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: dismiss,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              child: Text(
+                                widget.message,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: AppType.uiBase,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      if (widget.actionLabel != null)
-                        TextButton(
-                          onPressed: () {
-                            final action = widget.onAction;
-                            dismiss();
-                            action?.call();
-                          },
-                          style: TextButton.styleFrom(
-                            foregroundColor: context.colors.brandAccent,
-                            visualDensity: VisualDensity.compact,
+                        if (widget.actionLabel != null)
+                          TextButton(
+                            onPressed: () {
+                              final action = widget.onAction;
+                              dismiss();
+                              action?.call();
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: context.colors.brandAccent,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: Text(widget.actionLabel!),
                           ),
-                          child: Text(widget.actionLabel!),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

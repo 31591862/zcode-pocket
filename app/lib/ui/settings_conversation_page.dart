@@ -5,6 +5,7 @@ import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/channel_client.dart';
 import 'settings_style.dart';
+import 'top_notice.dart';
 
 /// 对话设置子页（2026-10-20）：显示工具调用开关 + 运行中收到
 /// 新消息选择器——两项原样自 settings_page 一级页迁入（文案/存储 key/
@@ -41,8 +42,11 @@ class SettingsConversationPage extends StatelessWidget {
               SwitchListTile(
                 value: app.uiPrefs.showToolCalls,
                 onChanged: (v) => app.uiPrefs.setShowToolCalls(v),
-                secondary: const Icon(Icons.visibility_outlined,
-                    size: 24, color: kSettingsIconBlue),
+                secondary: const Icon(
+                  Icons.visibility_outlined,
+                  size: 24,
+                  color: kSettingsIconBlue,
+                ),
                 title: const Text(
                   '显示工具调用',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -58,8 +62,11 @@ class SettingsConversationPage extends StatelessWidget {
               SwitchListTile(
                 value: app.uiPrefs.codeHighlightEnabled,
                 onChanged: (v) => app.uiPrefs.setCodeHighlightEnabled(v),
-                secondary: const Icon(Icons.code_outlined,
-                    size: 24, color: kSettingsIconGreen),
+                secondary: const Icon(
+                  Icons.code_outlined,
+                  size: 24,
+                  color: kSettingsIconGreen,
+                ),
                 title: const Text(
                   '代码语法高亮',
                   style: TextStyle(fontSize: AppType.uiBase),
@@ -76,8 +83,11 @@ class SettingsConversationPage extends StatelessWidget {
               // 只存偏好，下次连接不自动补发（官方语义=设置页改即推）。
               SwitchListTile(
                 value: app.uiPrefs.askAutoResolutionEnabled,
-                secondary: const Icon(Icons.question_answer_outlined,
-                    size: 24, color: kSettingsIconOrange),
+                secondary: const Icon(
+                  Icons.question_answer_outlined,
+                  size: 24,
+                  color: kSettingsIconOrange,
+                ),
                 onChanged: (v) async {
                   await app.uiPrefs.setAskAutoResolutionEnabled(v);
                   final bridge = app.bridge;
@@ -105,11 +115,9 @@ class SettingsConversationPage extends StatelessWidget {
                       );
                     } catch (e) {
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(tr('已保存；下发桌面端失败：') + '$e'),
-                            duration: const Duration(seconds: 3),
-                          ),
+                        TopNotice.show(
+                          message: tr('已保存；下发桌面端失败：') + '$e',
+                          duration: const Duration(seconds: 3),
                         );
                       }
                     }
@@ -127,8 +135,11 @@ class SettingsConversationPage extends StatelessWidget {
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.low_priority_outlined,
-                    size: 24, color: kSettingsIconBlue),
+                leading: const Icon(
+                  Icons.low_priority_outlined,
+                  size: 24,
+                  color: kSettingsIconBlue,
+                ),
                 title: const Text(
                   '运行中收到新消息',
                   style: TextStyle(fontSize: AppType.uiBase),

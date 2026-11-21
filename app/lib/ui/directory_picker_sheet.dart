@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
+import 'top_notice.dart';
 
 /// 电脑目录选择弹层（2026-11-19 实证 project.readDirectory 远程开放）：
 /// 浏览桌面文件系统选一个目录作为项目根。返回选中目录的绝对路径；
@@ -231,8 +232,7 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
     if (!mounted || name == null || name.trim().isEmpty) return;
     final trimmed = name.trim();
     if (RegExp(r'[\\/]').hasMatch(trimmed)) {
-      ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(const SnackBar(content: Text('名称不能包含路径分隔符')));
+      TopNotice.show(message: '名称不能包含路径分隔符');
       return;
     }
     setState(() {
@@ -247,8 +247,7 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(SnackBar(content: Text('新建文件夹失败：$e')));
+      TopNotice.show(message: '新建文件夹失败：$e');
     }
   }
 

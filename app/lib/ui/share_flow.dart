@@ -13,13 +13,13 @@
 // 纯逻辑组真文件覆盖（test/artifact_share_test.dart downloadArtifactToFile 组）。
 import 'dart:io';
 
-
 import 'package:flutter/material.dart' hide Text;
 import 'package:path_provider/path_provider.dart';
 
 import '../core/artifact_share.dart';
 import '../core/localized_text.dart';
 import '../core/theme.dart';
+import 'top_notice.dart';
 
 /// 分享磁盘端口（默认真实实现；测试缝）。
 class ArtifactShareDiskPort {
@@ -110,12 +110,12 @@ Future<void> shareArtifactRemotely(
     if (fixed != base) {
       target = await shareDisk.renameTo(target, fixed);
     }
-  } catch (_) {/* 嗅探/改名失败=按原名分享，不阻断 */}
+  } catch (_) {
+    /* 嗅探/改名失败=按原名分享，不阻断 */
+  }
   final ok = await shareArtifactFile(target.path);
   if (!ok && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(tr('分享失败'))),
-    );
+    TopNotice.show(message: tr('分享失败'));
   }
 }
 
@@ -136,15 +136,11 @@ Future<void> shareBytesAsFile(
     await shareDisk.writeBytes(target, bytes);
     final ok = await shareArtifactFile(target.path);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('分享失败'))),
-      );
+      TopNotice.show(message: tr('分享失败'));
     }
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${tr('分享失败')}：$e')),
-      );
+      TopNotice.show(message: '${tr('分享失败')}：$e');
     }
   }
 }
@@ -214,8 +210,8 @@ class _ArtifactShareDialogState extends State<ArtifactShareDialog> {
             ? tr('产物过大（超过 150MB），无法分享')
             // 人话化（A-）：incomplete→不完整。
             : e.reason.startsWith('read-failed(incomplete')
-                ? tr('产物内容不完整，已丢弃')
-                : '${tr('下载产物失败：')}${e.reason}';
+            ? tr('产物内容不完整，已丢弃')
+            : '${tr('下载产物失败：')}${e.reason}';
       });
     }
   }
@@ -248,10 +244,7 @@ class _ArtifactShareDialogState extends State<ArtifactShareDialog> {
             ),
             const SizedBox(height: 8),
             if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(color: context.colors.destructive),
-              )
+              Text(_error!, style: TextStyle(color: context.colors.destructive))
             else
               Text(formatArtifactBytes(_received)),
           ],

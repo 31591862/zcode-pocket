@@ -7,6 +7,7 @@ import '../state/app_state_scope.dart';
 import 'app_widgets.dart';
 import 'markdown_view.dart';
 import 'settings_style.dart';
+import 'top_notice.dart';
 
 /// 关于 ZCode Pocket（2026-11-04 开源说明聚合批）：
 /// 设置-关于组的唯一入口——把原先散落在 README / LICENSE /
@@ -334,8 +335,7 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
     await app.cacheStore?.clearAll();
     await app.notifyStore?.clearLedger();
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(tr('已清除本地缓存'))));
+    TopNotice.show(message: tr('已清除本地缓存'));
   }
 
   void _openText(

@@ -9,6 +9,7 @@ import '../state/app_state_scope.dart';
 import '../transport/channel_client.dart';
 import 'app_widgets.dart';
 import 'settings_style.dart';
+import 'top_notice.dart';
 
 // 优化批 #3：异常→人话映射（原始异常仍在调用方 debugPrint 留痕）。
 String friendlyError(Object e) {
@@ -104,18 +105,16 @@ class _SubagentsPageState extends State<SubagentsPage> {
     }
   }
 
-  List<Map<String, dynamic>> _section(String key) =>
-      _filterSection(
-        (_data?[key] as List?)
-                ?.whereType<Map>()
-                .map((e) => e.cast<String, dynamic>())
-                .toList() ??
-            const [],
-      );
-
-  void _snack(String text) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(text), duration: const Duration(seconds: 3)),
+  List<Map<String, dynamic>> _section(String key) => _filterSection(
+    (_data?[key] as List?)
+            ?.whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList() ??
+        const [],
   );
+
+  void _snack(String text) =>
+      TopNotice.show(message: text, duration: const Duration(seconds: 3));
 
   final Map<String, bool> _optimisticEnabled = {};
 
@@ -240,12 +239,9 @@ class _SubagentsPageState extends State<SubagentsPage> {
     if (!_isOverrideTarget(agent)) return null;
     final override = agent['modelSelectionOverride'];
     final effective = agent['modelSelection'];
-    final modelValue = _selectionToValue(
-      override is Map ? override : null,
-    );
+    final modelValue = _selectionToValue(override is Map ? override : null);
     final baseModel =
-        modelValue ??
-        _selectionToValue(effective is Map ? effective : null);
+        modelValue ?? _selectionToValue(effective is Map ? effective : null);
     final opts = override is Map ? override['options'] : null;
     final thought = opts is Map && opts['reasoningLevel'] != null
         ? '${opts['reasoningLevel']}'
@@ -255,8 +251,7 @@ class _SubagentsPageState extends State<SubagentsPage> {
       thought: thought,
       baseModelValue: baseModel,
       models: [
-        for (final m in _modelCatalog)
-          ('${m['value']}', '${m['name']}'),
+        for (final m in _modelCatalog) ('${m['value']}', '${m['name']}'),
       ],
       thoughtLevels: _thoughtFor(modelValue ?? baseModel),
       onPickModel: (v) => _applyOverride(agent, modelValue: v, pickModel: true),
@@ -308,8 +303,7 @@ class _SubagentsPageState extends State<SubagentsPage> {
       selection = {
         if (slash > 0) 'providerId': nextModel.substring(0, slash),
         'modelId': slash > 0 ? nextModel.substring(slash + 1) : nextModel,
-        if (nextThought != null)
-          'options': {'reasoningLevel': nextThought},
+        if (nextThought != null) 'options': {'reasoningLevel': nextThought},
       };
     }
     try {
@@ -366,15 +360,15 @@ class _SubagentsPageState extends State<SubagentsPage> {
       // 硬编码 'user' 会把工作区子代理搬到用户目录（编辑=搬家）。
       final agentScope =
           agent != null && '${agent['scope'] ?? ''}' == 'workspace'
-              ? 'workspace'
-              : 'user';
+          ? 'workspace'
+          : 'user';
       final projectPath = '${agent?['projectPath'] ?? ''}'.trim();
-      final useProjectPath = agentScope == 'workspace' && projectPath.isNotEmpty;
+      final useProjectPath =
+          agentScope == 'workspace' && projectPath.isNotEmpty;
       final base = {
         'provider': 'glm',
         'scope': agentScope,
-        'workspacePath':
-            useProjectPath ? projectPath : ws?['workspacePath'],
+        'workspacePath': useProjectPath ? projectPath : ws?['workspacePath'],
         // 身份只在回写当前活跃工作区时随行（工作区档案的 projectPath 可能
         // 属于其它目录，配当前 identity 会指错工作区）。
         if (!useProjectPath && ws?['workspaceIdentity'] != null)
@@ -394,10 +388,7 @@ class _SubagentsPageState extends State<SubagentsPage> {
           // 编辑器只产出 7 字段——不透传既有字段的话，disallowedTools/
           // skills/permissionMode/background/mcpServers 会被抹掉。
           // 桌面同款（SubagentsSection.tsx:1011-1032 全字段透传）。
-          'config': {
-            ..._preserveEditorForeignFields(agent),
-            ...saved,
-          },
+          'config': {..._preserveEditorForeignFields(agent), ...saved},
         });
       }
       if (!mounted) return;
@@ -475,9 +466,7 @@ class _SubagentsPageState extends State<SubagentsPage> {
 
   /// 按 id 去重兜底：宿主 runtimeAgents 可能带裸名别名（canonical 与
   /// 裸名同名互撞时只报 diagnostic），同 id 保留首条。
-  List<Map<String, dynamic>> _dedupeById(
-    Iterable<Map<String, dynamic>> list,
-  ) {
+  List<Map<String, dynamic>> _dedupeById(Iterable<Map<String, dynamic>> list) {
     final seen = <String>{};
     final out = <Map<String, dynamic>>[];
     for (final a in list) {
@@ -502,8 +491,7 @@ class _SubagentsPageState extends State<SubagentsPage> {
       ]),
       '内置': _dedupeById(
         runtimeAgents.where(
-          (a) =>
-              '${a['source'] ?? ''}' != 'plugin' && !_isEditableUserAgent(a),
+          (a) => '${a['source'] ?? ''}' != 'plugin' && !_isEditableUserAgent(a),
         ),
       ),
       '插件': _dedupeById(_section('pluginAgents')),
@@ -846,7 +834,8 @@ class _AgentTileState extends State<_AgentTile> {
                     // 晚到一路复核建议8：可编辑行的 ⋮ 槽在非可编辑
                     // 行缺席=开关列错位 32dp（首末卡开关中心 300 vs 330）
                     // ——非可编辑行补同宽占位，行尾三槽恒定。
-                    if (!widget.editable) const SizedBox(width: 32, height: 40)
+                    if (!widget.editable)
+                      const SizedBox(width: 32, height: 40)
                     else
                       SizedBox(
                         width: 32,
@@ -1313,7 +1302,6 @@ class _AgentEditorSheetState extends State<_AgentEditorSheet> {
     );
   }
 }
-
 
 /// 内置/插件子智能体的「模型/思考档覆盖」弹层（官方行内覆盖控件对位；
 /// 官方不开放这些只读档案的全字段编辑——插件 md 升级会被覆写）。

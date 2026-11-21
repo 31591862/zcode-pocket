@@ -11,6 +11,7 @@ import 'package:markdown/markdown.dart' as md;
 import '../core/code_highlight.dart';
 import '../core/theme.dart';
 import 'app_widgets.dart';
+import 'top_notice.dart';
 
 /// 选区工具条重锚（2026-11-19 用户实测 bug）：Flutter 的选区工具条
 /// 用**静态锚点**——显示瞬间从选区几何算一次全局坐标放进根 Overlay，
@@ -236,11 +237,9 @@ class MarkdownView extends StatelessWidget {
             decoded.startsWith('/');
         if (isLocal) return;
         Clipboard.setData(ClipboardData(text: decoded));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('链接：$decoded'),
-            duration: const Duration(seconds: 2),
-          ),
+        TopNotice.show(
+          message: '链接：$decoded',
+          duration: const Duration(seconds: 2),
         );
       },
       styleSheet: styleSheet,

@@ -13,32 +13,33 @@ import 'package:flutter/material.dart' hide Text;
 import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
+import 'top_notice.dart';
 
 /// 交互载荷 → 命令 target（官方 workspaceHookReviewCommandTargetSchema
 /// 的字段全部随载荷携带）。
 Map<String, dynamic> hookReviewTargetOf(Map<String, dynamic> interaction) => {
-      'sessionId': '${interaction['sessionId'] ?? ''}',
-      'taskId': '${interaction['taskId'] ?? ''}',
-      'runId': '${interaction['runId'] ?? ''}',
-      if ('${interaction['remoteSessionId'] ?? ''}'.isNotEmpty)
-        'remoteSessionId': '${interaction['remoteSessionId']}',
-      'workspaceIdentity': '${interaction['workspaceIdentity'] ?? ''}',
-      'bundleDigest': '${interaction['bundleDigest'] ?? ''}',
-      'reviewFlowId': '${interaction['reviewFlowId'] ?? ''}',
-      'generation': interaction['generation'],
-      'interactionId': '${interaction['interactionId'] ?? ''}',
-    };
+  'sessionId': '${interaction['sessionId'] ?? ''}',
+  'taskId': '${interaction['taskId'] ?? ''}',
+  'runId': '${interaction['runId'] ?? ''}',
+  if ('${interaction['remoteSessionId'] ?? ''}'.isNotEmpty)
+    'remoteSessionId': '${interaction['remoteSessionId']}',
+  'workspaceIdentity': '${interaction['workspaceIdentity'] ?? ''}',
+  'bundleDigest': '${interaction['bundleDigest'] ?? ''}',
+  'reviewFlowId': '${interaction['reviewFlowId'] ?? ''}',
+  'generation': interaction['generation'],
+  'interactionId': '${interaction['interactionId'] ?? ''}',
+};
 
 String _trustWord(String state) => switch (state) {
-      'trusted_persistent' => '已信任',
-      'pending_trust' => '待信任',
-      'blocked_untrusted' => '已阻止',
-      'blocked_policy' => '策略阻止',
-      'revoked' => '已撤销',
-      'stale_digest' => '摘要过期',
-      'not_applicable' => '不适用',
-      _ => state,
-    };
+  'trusted_persistent' => '已信任',
+  'pending_trust' => '待信任',
+  'blocked_untrusted' => '已阻止',
+  'blocked_policy' => '策略阻止',
+  'revoked' => '已撤销',
+  'stale_digest' => '摘要过期',
+  'not_applicable' => '不适用',
+  _ => state,
+};
 
 class WorkspaceHookReviewPage extends StatefulWidget {
   final Map<String, dynamic> interaction;
@@ -54,21 +55,24 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
   /// {pending_trust, revoked, stale_digest}）；「信任所选」以它为准。
   late final Set<String> _selected = {
     for (final it in _items)
-      if (const {'pending_trust', 'revoked', 'stale_digest'}
-          .contains('${it['trustState'] ?? ''}'))
+      if (const {
+        'pending_trust',
+        'revoked',
+        'stale_digest',
+      }.contains('${it['trustState'] ?? ''}'))
         '${it['reviewItemId'] ?? ''}',
   };
   bool _busy = false;
 
   List<Map<String, dynamic>> get _items => [
-        for (final it in (widget.interaction['items'] as List? ?? const []))
-          if (it is Map) it.cast<String, dynamic>(),
-      ];
+    for (final it in (widget.interaction['items'] as List? ?? const []))
+      if (it is Map) it.cast<String, dynamic>(),
+  ];
 
   List<Map<String, dynamic>> get _sourceFiles => [
-        for (final f in (widget.interaction['sourceFiles'] as List? ?? const []))
-          if (f is Map) f.cast<String, dynamic>(),
-      ];
+    for (final f in (widget.interaction['sourceFiles'] as List? ?? const []))
+      if (f is Map) f.cast<String, dynamic>(),
+  ];
 
   void _toggle(String itemId, bool value) {
     // 纯本地选择——toggleWorkspaceHookReviewItem 是写配置+作废
@@ -91,29 +95,25 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
       // （对抗审查中②）：业务拒绝=ACK status:'failed'+reasonCode，
       // 不是通道异常——官方判 accepted∈{accepted,duplicate,noop}。
       final status = '${res?['status'] ?? 'accepted'}';
-      if (status != 'accepted' &&
-          status != 'duplicate' &&
-          status != 'noop') {
+      if (status != 'accepted' && status != 'duplicate' && status != 'noop') {
         setState(() => _busy = false);
         final reason = '${res?['reasonCode'] ?? status}';
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text('信任未生效（$reason）——审核已更新，请返回重进')),
-        );
+        TopNotice.show(message: '信任未生效（$reason）——审核已更新，请返回重进');
         return; // 不 pop：审核代已变，页面数据已陈旧
       }
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('信任失败：$e')),
-      );
+      TopNotice.show(message: '信任失败：$e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final summary = (widget.interaction['summary'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final summary =
+        (widget.interaction['summary'] as Map?)?.cast<String, dynamic>() ??
+        const {};
     // （对抗审查）：官方禁该类交互带 autoResolution（snapshot.ts
     // :339-345），deadlineAt 在 payload 顶层（workspace-hook-review.ts:93）。
     final deadline = (widget.interaction['deadlineAt'] as num?)?.toInt();
@@ -144,8 +144,11 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.shield_outlined,
-                              size: 14, color: context.colors.warning),
+                          Icon(
+                            Icons.shield_outlined,
+                            size: 14,
+                            color: context.colors.warning,
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
@@ -154,8 +157,9 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                  fontSize: AppType.uiCaption,
-                                  fontWeight: FontWeight.w600),
+                                fontSize: AppType.uiCaption,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ],
@@ -164,8 +168,9 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
                       Text(
                         '这些钩子将在本工作区自动执行命令——确认来源后才应信任',
                         style: TextStyle(
-                            fontSize: AppType.uiXs,
-                            color: context.colors.foregroundSubtle),
+                          fontSize: AppType.uiXs,
+                          color: context.colors.foregroundSubtle,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -174,19 +179,23 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
                         '${summary['pendingCount'] ?? 0} 待审'
                         '${deadline != null ? ' · 截止 ${_fmtDeadline(deadline)}' : ''}',
                         style: TextStyle(
-                            fontSize: AppType.uiXs,
-                            color: context.colors.foregroundSubtlest),
+                          fontSize: AppType.uiXs,
+                          color: context.colors.foregroundSubtlest,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 10),
                 if (_sourceFiles.isNotEmpty) ...[
-                  Text('源文件',
-                      style: TextStyle(
-                          fontSize: AppType.uiSm,
-                          fontWeight: FontWeight.w600,
-                          color: context.colors.foregroundSubtle)),
+                  Text(
+                    '源文件',
+                    style: TextStyle(
+                      fontSize: AppType.uiSm,
+                      fontWeight: FontWeight.w600,
+                      color: context.colors.foregroundSubtle,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   for (final f in _sourceFiles)
                     Padding(
@@ -208,9 +217,10 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontSize: AppType.uiXs,
-                                  fontFamily: 'monospace',
-                                  color: context.colors.foregroundSubtle),
+                                fontSize: AppType.uiXs,
+                                fontFamily: 'monospace',
+                                color: context.colors.foregroundSubtle,
+                              ),
                             ),
                           ),
                         ],
@@ -218,19 +228,20 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
                     ),
                   const SizedBox(height: 10),
                 ],
-                Text('钩子清单（勾选后统一信任）',
-                    style: TextStyle(
-                        fontSize: AppType.uiSm,
-                        fontWeight: FontWeight.w600,
-                        color: context.colors.foregroundSubtle)),
+                Text(
+                  '钩子清单（勾选后统一信任）',
+                  style: TextStyle(
+                    fontSize: AppType.uiSm,
+                    fontWeight: FontWeight.w600,
+                    color: context.colors.foregroundSubtle,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 for (final it in _items)
                   _HookItemCard(
                     item: it,
-                    selected:
-                        _selected.contains('${it['reviewItemId'] ?? ''}'),
-                    onToggle: (v) =>
-                        _toggle('${it['reviewItemId'] ?? ''}', v),
+                    selected: _selected.contains('${it['reviewItemId'] ?? ''}'),
+                    onToggle: (v) => _toggle('${it['reviewItemId'] ?? ''}', v),
                   ),
               ],
             ),
@@ -244,7 +255,9 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
                   Expanded(
                     child: OutlinedButton(
                       key: const ValueKey('hook-review-later'),
-                      onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                      onPressed: _busy
+                          ? null
+                          : () => Navigator.of(context).pop(),
                       child: const Text('暂不'),
                     ),
                   ),
@@ -253,11 +266,10 @@ class _WorkspaceHookReviewPageState extends State<WorkspaceHookReviewPage> {
                     flex: 2,
                     child: FilledButton(
                       key: const ValueKey('hook-review-trust'),
-                      onPressed:
-                          _busy || _selected.isEmpty ? null : _trustSelected,
-                      child: Text(_busy
-                          ? '提交中…'
-                          : '信任所选（${_selected.length}）'),
+                      onPressed: _busy || _selected.isEmpty
+                          ? null
+                          : _trustSelected,
+                      child: Text(_busy ? '提交中…' : '信任所选（${_selected.length}）'),
                     ),
                   ),
                 ],
@@ -298,8 +310,8 @@ class _HookItemCard extends StatelessWidget {
     final color = trusted
         ? context.colors.foregroundSubtle
         : trustState == 'pending_trust'
-            ? context.colors.warning
-            : context.colors.destructive;
+        ? context.colors.warning
+        : context.colors.destructive;
     return Container(
       key: ValueKey('hook-item-${item['reviewItemId'] ?? ''}'),
       margin: const EdgeInsets.only(bottom: 6),
@@ -349,12 +361,13 @@ class _HookItemCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      fontSize: AppType.uiCaption, fontWeight: FontWeight.w500),
+                    fontSize: AppType.uiCaption,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -373,9 +386,10 @@ class _HookItemCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-                fontSize: AppType.uiXs,
-                fontFamily: 'monospace',
-                color: context.colors.foregroundSubtle),
+              fontSize: AppType.uiXs,
+              fontFamily: 'monospace',
+              color: context.colors.foregroundSubtle,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -387,8 +401,9 @@ class _HookItemCard extends StatelessWidget {
             "${item['executionMode'] == 'background' ? '后台' : '前台'} · "
             '超时 ${((item['resolvedTimeoutMs'] as num?) ?? 0) ~/ 1000}s',
             style: TextStyle(
-                fontSize: AppType.uiXs,
-                color: context.colors.foregroundSubtlest),
+              fontSize: AppType.uiXs,
+              color: context.colors.foregroundSubtlest,
+            ),
           ),
           // editable 只约束写配置：非 editable 项仍可勾选信任，但配置
           // 由来源文件管理——给用户一句明确说明（避免误以为可改）。

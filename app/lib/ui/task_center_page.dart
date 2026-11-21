@@ -272,17 +272,14 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     }
     if (!mounted) return;
     _exitMultiSelect();
-    final messenger = ScaffoldMessenger.of(context);
     if (failed.isEmpty) {
-      messenger.showSnackBar(SnackBar(content: Text('$okLabel $ok 个')));
+      TopNotice.show(message: '$okLabel $ok 个');
     } else {
       final preview = failed.take(3).join('、');
       final suffix = failed.length > 3 ? ' 等 ${failed.length} 个' : '';
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('$okLabel $ok 个，${failed.length} 个失败：$preview$suffix'),
-          duration: const Duration(seconds: 4),
-        ),
+      TopNotice.show(
+        message: '$okLabel $ok 个，${failed.length} 个失败：$preview$suffix',
+        duration: const Duration(seconds: 4),
       );
     }
   }
@@ -508,14 +505,10 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
       final activeSid = app.activeProfile?.deviceSid;
       if (activeSid != targetSid) {
         app.clearPendingDeepLink();
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
-            content: Text(
-              activeSid == null
-                  ? '电脑连接还在准备，请稍后从任务列表打开'
-                  : '该任务属于另一台电脑，已切到当前电脑的任务列表',
-            ),
-          ),
+        TopNotice.show(
+          message: activeSid == null
+              ? '电脑连接还在准备，请稍后从任务列表打开'
+              : '该任务属于另一台电脑，已切到当前电脑的任务列表',
         );
         return;
       }
@@ -528,8 +521,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     if (!mounted) return;
     if (app.bridge == null) {
       app.clearPendingDeepLink();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('该电脑还在重连，稍后从列表点开')));
+      TopNotice.show(message: '该电脑还在重连，稍后从列表点开');
       return;
     }
     final entry = app.taskList?.cards
@@ -563,8 +555,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     // 提示并清掉深链残留，防之后的会话页误弹深链浮层。
     app.clearPendingDeepLink();
     _closeSearch();
-    ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(const SnackBar(content: Text('该任务不在当前工作区，可能已被移除')));
+    TopNotice.show(message: '该任务不在当前工作区，可能已被移除');
   }
 
   /// 深链跨工作区会话返回后恢复原首页上下文（见 _restoreHomeWorkspace）。
@@ -698,8 +689,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     // ——切工作区窗口内 conv 被提前置空但桥仍活，点任务卡应照常走
     // switchToTask（HEAD 同款窗口宽度），不再误弹"还在重连"。
     if (app.bridge == null) {
-      ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(const SnackBar(content: Text('该电脑还在重连，稍后从列表点开')));
+      TopNotice.show(message: '该电脑还在重连，稍后从列表点开');
       return;
     }
     app.markTaskRead(
@@ -729,9 +719,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     final taskId = '${task['taskId'] ?? ''}';
     if (ws == null && project == null && taskId.isEmpty) {
       setState(() => _taskNavigationPending = false);
-      ScaffoldMessenger.maybeOf(
-        context,
-      )?.showSnackBar(const SnackBar(content: Text('找不到该任务所属的工作区，可能已被桌面端移除')));
+      TopNotice.show(message: '找不到该任务所属的工作区，可能已被桌面端移除');
       return;
     }
     // 1.0.1 真机验收（用户拍板拆两段：点卡瞬间进会话页转圈，后台
@@ -763,8 +751,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
       if (app.workspaceError != null) {
         app.clearStaleHomePreview();
         if (!mounted) return;
-        ScaffoldMessenger.maybeOf(context)
-            ?.showSnackBar(const SnackBar(content: Text('工作区切换未完成，请稍后重试')));
+        TopNotice.show(message: '工作区切换未完成，请稍后重试');
         return;
       }
       // 跨工作区打开即已读（best-effort+compare-and-clear）。
@@ -779,8 +766,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     } catch (e) {
       app.clearStaleHomePreview();
       if (mounted) {
-        ScaffoldMessenger.maybeOf(context)
-            ?.showSnackBar(SnackBar(content: Text('打开任务失败：$e')));
+        TopNotice.show(message: '打开任务失败：$e');
       }
     } finally {
       if (mounted) {
@@ -798,8 +784,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     if (app.conversation == null &&
         app.sidebarProjects.isEmpty &&
         app.workspaces.isEmpty) {
-      ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(const SnackBar(content: Text('该电脑还在重连，稍后再试')));
+      TopNotice.show(message: '该电脑还在重连，稍后再试');
       return;
     }
     await showNewTaskSheet(context, openDraftRoute: _openConversation);
@@ -885,9 +870,7 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
             app.pendingShortcutAction = null;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                ScaffoldMessenger.maybeOf(
-                  context,
-                )?.showSnackBar(const SnackBar(content: Text('暂无最近会话，先新建一个吧')));
+                TopNotice.show(message: '暂无最近会话，先新建一个吧');
               }
             });
           }
@@ -2269,8 +2252,7 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
     } catch (_) {
       // （批3）：静默失败=点了没反应——给人话提示。
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(tr('切换电脑失败，请重试'))));
+        TopNotice.show(message: tr('切换电脑失败，请重试'));
       }
       return;
     }
@@ -2375,13 +2357,11 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
     try {
       await app.renameProject(pid, value);
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('已重命名项目')));
+        TopNotice.show(message: '已重命名项目');
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('重命名失败：$e')));
+        TopNotice.show(message: '重命名失败：$e');
       }
     }
   }
@@ -3079,9 +3059,7 @@ class _TaskList extends StatelessWidget {
                 onPaneCollapse: onPaneCollapse,
                 onOpen: (task) {
                   if (app.conversation == null) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('正在重连，稍后打开')));
+                    TopNotice.show(message: '正在重连，稍后打开');
                     return;
                   }
                   (onOpenCross ?? (_) {})(task);
@@ -3650,9 +3628,8 @@ Future<void> showMoveToProjectSheet(
   TaskCardData entry,
 ) async {
   final app = AppStateScope.of(context);
-  void snack(String t) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(t), duration: const Duration(seconds: 3)),
-  );
+  void snack(String t) =>
+      TopNotice.show(message: t, duration: const Duration(seconds: 3));
   // TaskCardData 不带目录/归属字段——从 readTree 任务行按 taskId 反查。
   final row = app.projectTasks
       .where((t) => '${t['taskId'] ?? ''}' == entry.sessionId)
@@ -3732,9 +3709,7 @@ Future<void> _moveTaskTo(
   // 可能已卸载，mounted 守卫防 defunct context。
   void snack(String t) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t), duration: const Duration(seconds: 3)),
-    );
+    TopNotice.show(message: t, duration: const Duration(seconds: 3));
   }
 
   final pid = '${project['id']}';
@@ -3798,9 +3773,7 @@ void _showTaskActions(
   // （归档页 _run 的 messenger 预捕获同款防线，这里以 mounted 收口）。
   void snack(String text) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text), duration: const Duration(seconds: 3)),
-    );
+    TopNotice.show(message: text, duration: const Duration(seconds: 3));
   }
 
   Future<void> run(Future<dynamic> Function() op, String failPrefix) async {
@@ -3947,11 +3920,9 @@ void _showTaskActions(
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   Clipboard.setData(ClipboardData(text: entry.sessionId));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('会话 ID 已复制'),
-                      duration: Duration(seconds: 2),
-                    ),
+                  TopNotice.show(
+                    message: '会话 ID 已复制',
+                    duration: Duration(seconds: 2),
                   );
                 },
               ),
@@ -4922,7 +4893,6 @@ Future<void> _createProjectFlow(
   // 最长 45s，原实现零反馈且无法中断）。navigator/messenger 必须先捕
   // 获——sheetCtx 随 sheet 退场动画卸载，进度层挂 Navigator 上下文。
   final navigator = Navigator.of(sheetCtx);
-  final messenger = ScaffoldMessenger.maybeOf(sheetCtx);
   navigator.pop(); // sheet（dialog 已随返回值关闭）
 
   var cancelled = false;
@@ -4968,15 +4938,11 @@ Future<void> _createProjectFlow(
               // 取消=放弃等待，但创建可能已提交到电脑端（结果未知）。
               cancelled = true;
               closeProgress();
-              messenger?.showSnackBar(
-                SnackBar(
-                  content: Text(
-                    !createdDone
-                        ? '已提交创建，结果未知——稍后刷新项目列表查看'
-                        : '项目已创建，已取消进入——可从项目列表打开',
-                  ),
-                  duration: const Duration(seconds: 4),
-                ),
+              TopNotice.show(
+                message: !createdDone
+                    ? '已提交创建，结果未知——稍后刷新项目列表查看'
+                    : '项目已创建，已取消进入——可从项目列表打开',
+                duration: const Duration(seconds: 4),
               );
             },
             child: const Text('取消等待'),
@@ -4994,7 +4960,7 @@ Future<void> _createProjectFlow(
   } catch (e) {
     if (cancelled) return;
     closeProgress();
-    messenger?.showSnackBar(SnackBar(content: Text('创建失败：$e')));
+    TopNotice.show(message: '创建失败：$e');
     return;
   }
   if (cancelled) return;
@@ -5024,15 +4990,13 @@ Future<void> _createProjectFlow(
   } catch (e) {
     if (cancelled) return;
     closeProgress();
-    messenger?.showSnackBar(SnackBar(content: Text('进入新项目失败：$e（可从项目列表手动打开）')));
+    TopNotice.show(message: '进入新项目失败：$e（可从项目列表手动打开）');
     return;
   }
   if (cancelled) return;
   closeProgress();
   if (app.workspaceError != null) {
-    messenger?.showSnackBar(
-      const SnackBar(content: Text('工作区切换未完成，请稍后从项目列表打开')),
-    );
+    TopNotice.show(message: '工作区切换未完成，请稍后从项目列表打开');
     return;
   }
   // 注释语义：成功后切换进新项目，直接开新会话继续新建对话流程。
@@ -5167,11 +5131,9 @@ Future<void> showNewTaskSheet(
     } catch (e) {
       closeLoading();
       if (context.mounted && !cancelled) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('切换失败，请重试：$e'),
-            duration: const Duration(seconds: 4),
-          ),
+        TopNotice.show(
+          message: '切换失败，请重试：$e',
+          duration: const Duration(seconds: 4),
         );
       }
       return;
@@ -5180,8 +5142,7 @@ Future<void> showNewTaskSheet(
     closeLoading();
     if (!context.mounted) return;
     if (app.workspaceError != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('工作区切换未完成，请稍后重试')));
+      TopNotice.show(message: '工作区切换未完成，请稍后重试');
       return;
     }
     final route = openDraftRoute;
@@ -5480,7 +5441,6 @@ class _ProjectOrderSheetState extends State<_ProjectOrderSheet> {
               onReorder: (oldIndex, newIndex) {
                 // messenger 在同步段捕获（：落盘失败不
                 // 静默丢单；跨 async gap 用 State.context 会被 lint 拦）。
-                final messenger = ScaffoldMessenger.maybeOf(context);
                 setState(() {
                   if (newIndex > oldIndex) newIndex -= 1;
                   final item = _items.removeAt(oldIndex);
@@ -5492,9 +5452,7 @@ class _ProjectOrderSheetState extends State<_ProjectOrderSheet> {
                       for (final e in _items) '${e['id'] ?? ''}',
                     ]);
                   } catch (e) {
-                    messenger?.showSnackBar(
-                      SnackBar(content: Text('顺序保存失败，请重试：$e')),
-                    );
+                    TopNotice.show(message: '顺序保存失败，请重试：$e');
                   }
                 }();
               },

@@ -13,6 +13,7 @@ import '../core/theme.dart';
 import '../core/update_check.dart';
 import '../core/update_download.dart';
 import '../state/app_state_scope.dart';
+import 'top_notice.dart';
 import 'app_widgets.dart' show showConfirmDialog;
 
 /// 根 Navigator key（静默检查从 app 层弹窗用；app.dart 挂到 MaterialApp）。
@@ -72,7 +73,7 @@ Future<String?> _currentVersionName() async {
 }
 
 void _snack(BuildContext context, String msg) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  TopNotice.show(message: msg);
 }
 
 Future<void> _showUpdateDialog(BuildContext context, UpdateInfo info) async {
@@ -86,7 +87,10 @@ Future<void> _showUpdateDialog(BuildContext context, UpdateInfo info) async {
         children: [
           Text(
             'v${info.version}',
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppType.uiBase),
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: AppType.uiBase,
+            ),
           ),
           const SizedBox(height: 8),
           if (info.notes.isNotEmpty)
@@ -97,7 +101,8 @@ Future<void> _showUpdateDialog(BuildContext context, UpdateInfo info) async {
                   style: TextStyle(
                     fontSize: AppType.uiCaption,
                     height: 1.5,
-                    color: Theme.of(dctx).colorScheme.onSurface.withValues(alpha: 0.8),
+                    color: Theme.of(dctx).colorScheme.onSurface
+                        .withValues(alpha: 0.8),
                   ),
                 ),
               ),
@@ -182,8 +187,9 @@ Future<void> _downloadAndInstall(
   final tmpDir = await getTemporaryDirectory();
   final dir = Directory('${tmpDir.path}/updates');
   await dir.create(recursive: true);
-  final file =
-      File('${dir.path}/${updateApkFileName(info.version, asset.name)}');
+  final file = File(
+    '${dir.path}/${updateApkFileName(info.version, asset.name)}',
+  );
 
   final downloader = UpdateDownload();
   var failed = false;
@@ -306,35 +312,35 @@ class _DownloadDialogState extends State<_DownloadDialog> {
         if (!didPop) widget.onCancel();
       },
       child: AlertDialog(
-      title: Text(tr('正在下载更新')),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          LinearProgressIndicator(
-            value: _progress,
-            minHeight: 6,
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-          ),
-          const SizedBox(height: 8),
-          if (_error.isNotEmpty)
-            Text(tr('下载失败'), style: TextStyle(color: context.colors.destructive))
-          else if (_progress != null)
-            Text('${(_progress! * 100).toStringAsFixed(0)}%')
-          else
-            Text(tr('准备中…')),
-        ],
-      ),
-      actions: [
-        if (_error.isNotEmpty)
-          FilledButton(
-            onPressed: _start,
-            child: Text(tr('重试')),
-          ),
-        TextButton(
-          onPressed: widget.onCancel,
-          child: Text(_error.isEmpty ? tr('取消') : tr('关闭')),
+        title: Text(tr('正在下载更新')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            LinearProgressIndicator(
+              value: _progress,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+            const SizedBox(height: 8),
+            if (_error.isNotEmpty)
+              Text(
+                tr('下载失败'),
+                style: TextStyle(color: context.colors.destructive),
+              )
+            else if (_progress != null)
+              Text('${(_progress! * 100).toStringAsFixed(0)}%')
+            else
+              Text(tr('准备中…')),
+          ],
         ),
-      ],
+        actions: [
+          if (_error.isNotEmpty)
+            FilledButton(onPressed: _start, child: Text(tr('重试'))),
+          TextButton(
+            onPressed: widget.onCancel,
+            child: Text(_error.isEmpty ? tr('取消') : tr('关闭')),
+          ),
+        ],
       ),
     );
   }

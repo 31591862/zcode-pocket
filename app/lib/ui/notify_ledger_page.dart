@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart' hide Text;
+
 import '../core/localized_text.dart';
+
 import 'package:flutter/services.dart';
 
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
+import 'top_notice.dart';
 import '../state/notify_core.dart' show LedgerEntry;
 
 /// 通知台账页（阶段 3 第二段）："零漏发"以台账核对判定（ 决策
@@ -65,9 +68,7 @@ class NotifyLedgerPage extends StatelessWidget {
                     Clipboard.setData(
                       ClipboardData(text: entries.map(_formatLine).join('\n')),
                     );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('已复制 200 条内台账文本')),
-                    );
+                    TopNotice.show(message: '已复制 200 条内台账文本');
                   },
           ),
         ],
@@ -189,14 +190,15 @@ class NotifyLedgerPage extends StatelessWidget {
     );
   }
 
-  (Color, String) _outcomeChip(BuildContext context, String outcome) => switch (outcome) {
-    'posted' => (context.colors.success, '已通知'),
-    'muted' => (context.colors.warning, '通道静音'),
-    'noChannel' => (context.colors.destructive, '通知不可用'),
-    'deduped' => (context.colors.foregroundSubtle, '已去重'),
-    'viewing' => (context.colors.foregroundSubtle, '查看中未打扰'),
-    'firstSeen' => (context.colors.foregroundSubtle, '首见建基线'),
-    'aggregated' => (context.colors.foregroundSubtle, '并入聚合'),
-    _ => (context.colors.foregroundSubtle, outcome),
-  };
+  (Color, String) _outcomeChip(BuildContext context, String outcome) =>
+      switch (outcome) {
+        'posted' => (context.colors.success, '已通知'),
+        'muted' => (context.colors.warning, '通道静音'),
+        'noChannel' => (context.colors.destructive, '通知不可用'),
+        'deduped' => (context.colors.foregroundSubtle, '已去重'),
+        'viewing' => (context.colors.foregroundSubtle, '查看中未打扰'),
+        'firstSeen' => (context.colors.foregroundSubtle, '首见建基线'),
+        'aggregated' => (context.colors.foregroundSubtle, '并入聚合'),
+        _ => (context.colors.foregroundSubtle, outcome),
+      };
 }

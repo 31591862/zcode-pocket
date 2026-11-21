@@ -10,6 +10,7 @@ import '../core/usage_format.dart';
 import '../state/app_state_scope.dart';
 import '../transport/conversation.dart';
 import 'conversation_composer.dart';
+import 'top_notice.dart';
 
 class ContextDetailsCard extends StatelessWidget {
   final ConversationState state;
@@ -494,7 +495,9 @@ class InfoRow extends StatelessWidget {
           const SizedBox(width: 6),
 
           Text(
-            hasUsage ? '${_fmtK(used.toInt())}/${_fmtK(max.toInt())}' : '0/1000k',
+            hasUsage
+                ? '${_fmtK(used.toInt())}/${_fmtK(max.toInt())}'
+                : '0/1000k',
 
             style: TextStyle(
               fontSize: AppType.uiSm,
@@ -522,7 +525,6 @@ class InfoRow extends StatelessWidget {
                   ),
                   tooltip: tr('压缩上下文'),
                   onPressed: () async {
-                    final messenger = ScaffoldMessenger.of(context);
                     final ok = await showDialog<bool>(
                       context: context,
                       builder: (dialogContext) => AlertDialog(
@@ -547,16 +549,12 @@ class InfoRow extends StatelessWidget {
                     if (ok != true) return;
                     try {
                       await AppStateScope.of(context).compact(sessionId!);
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text('已发起上下文压缩'),
-                          duration: Duration(seconds: 2),
-                        ),
+                      TopNotice.show(
+                        message: '已发起上下文压缩',
+                        duration: Duration(seconds: 2),
                       );
                     } catch (e) {
-                      messenger.showSnackBar(
-                        SnackBar(content: Text('压缩失败：$e')),
-                      );
+                      TopNotice.show(message: '压缩失败：$e');
                     }
                   },
                 ),
