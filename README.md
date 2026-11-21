@@ -82,6 +82,54 @@ https://github.com/user-attachments/assets/4e81ba59-6d69-4316-a5fc-67955c261c47
 - About page: unofficial disclaimer, service-terms notice, privacy notes,
   project license and third-party notices (bundled offline)
 
+## Differences from upstream
+
+This fork carries substantial interaction and behavior changes on top of
+upstream. The main differences:
+
+**Conversation streaming & scrolling (reverse anchored list)**
+
+- Reverse anchored list: scroll offset 0 = bottom, bottom-pinned semantics
+  natively; streaming growth causes zero displacement at any reading
+  position (structural re-anchoring)
+- Entering a conversation always lands at the bottom (matches the desktop
+  behavior; no cross-entry scroll memory)
+- Bottom re-snap: drag-direction gating + ≤48px visually-equivalent pixel
+  remap + 120ms short animation — no instant jumps, no flashes, no
+  "yanked back to the header row"
+
+**Message rendering aligned with the desktop**
+
+- Tool-row display images: inline thumbnails for node_repl screenshots;
+  the collapsed turn shows the last delivered screenshot; tap to zoom
+- Attachment chips with full-size preview
+- Timestamp semantics: turn header row = start time, tail actions row =
+  end time
+- Single-source collapse/expand state for turn headers (first tap works
+  after list recycling)
+- User bubbles: decorative bar removed, tail radius bottom-right, 65dp
+  minimum left inset (long text never touches both edges)
+
+**Feature differences**
+
+- The marketing benefits card is a fork-original **fully functional claim
+  flow**: drawer-bottom card hits the marketing API directly → the phone
+  completes the Aliyun captcha → the desktop executes the claim (upstream
+  ships a read-only reminder card that redirects to the desktop; not
+  adopted in this fork)
+- Automatic backfill of headerless window heads (200-row pages): the file
+  change card of a huge turn appears without manual scrolling
+- Model panel: the background refresh chain re-pulls the task catalog
+  (Start Plan models appear within seconds); the "clear pending" entry is
+  removed (the desktop has no such UI)
+- Notification deep links across workspaces restore the original home
+  context on back
+- Branch label failures retry with backoff (no more "sometimes visible")
+- Home connection status is condensed into the app-bar subtitle (no more
+  list-covering banners)
+- `SCROLL_TRACE` build-gated scroll diagnostics (off by default in
+  release; pass `--dart-define=SCROLL_TRACE=true` for a diagnostic build)
+
 ## Why a native app?
 
 ZCode already provides an official web remote control: nothing to install,
