@@ -482,10 +482,6 @@ class _ConversationPageState extends State<ConversationPage>
   // 只更新基线不介入。
   final GlobalKey _liveAnchorBoxKey = GlobalKey();
 
-  /// 惯性中途中止粘底（ScrollUpdate dist>48）时置位，ScrollEnd 静止
-  /// 落点补做结构重锚。
-  bool _pendingReAnchor = false;
-
   /// 最近一次拖拽方向（true=朝历史/离开底部）。48px 回吸只对"向底部
   /// 方向结束"的手势生效——用户主动上滑读历史、松手落在 48px 内时不
   /// 回吸（真机实证：小上滑全被 correctPixels(0) 拽回底部=滑不动）。
@@ -1957,7 +1953,6 @@ class _ConversationPageState extends State<ConversationPage>
               'anchor=$_listCenterItemKey',
             );
           }
-          _pendingReAnchor = false;
           _lastDragTowardOlder = false;
           setState(() => _stickToBottom = true);
           // ≤48px 贴底差走**短动画**（120ms easeOutCubic）——瞬跳（布局期
@@ -1989,16 +1984,13 @@ class _ConversationPageState extends State<ConversationPage>
           );
         }
       } else if (n is ScrollEndNotification) {
-        // 静止落点离底=结构重锚（贴底态直接重锚；惯性中途中止
-        // 的 _pendingReAnchor 在此补做）——锚点让位后阅读位置
-        // 对后续增高天然零位移，无需任何补偿。
+        // 静止落点离底=结构重锚（贴底态直接重锚）——锚点让位后
+        // 阅读位置对后续增高天然零位移，无需任何补偿。
         _followTick?.cancel();
         setState(() => _stickToBottom = false);
         _reAnchorAboveRunningTurn();
-        _pendingReAnchor = false;
       } else if (_stickToBottom) {
         _followTick?.cancel();
-        _pendingReAnchor = true;
         setState(() => _stickToBottom = false);
       }
     }
@@ -4838,12 +4830,11 @@ class _ConversationPageState extends State<ConversationPage>
               style: const TextStyle(fontSize: AppType.uiBase),
             ),
             // 副行只留分支标签（2026-11-17 用户拍板：设备名退役——
-            // 设备维度归抽屉电脑卡；运行状态由下方既有
-            // if (running) Text('运行中…') 常驻标题列，即用户记忆中的
-            // 那个元素）。点按进分支弹层——draft 态切完再发消息=
-            // 会话跑在新分支上。
-            // 运行中并入分支行尾（批⑤ 用户拍板：不单独起一行）。
-            if (running || _branchCurrent != null)
+            // 设备维度归抽屉电脑卡）。点按进分支弹层——draft 态切完
+            // 再发消息=会话跑在新分支上。
+            // （2026-11-21 用户拍板：运行中状态整体移除——运行中时
+            // 输入框右下角就是停止键，状态自明。）
+            if (_branchCurrent != null)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -4854,19 +4845,13 @@ class _ConversationPageState extends State<ConversationPage>
                         borderRadius: BorderRadius.circular(AppRadius.pill),
                         onTap: () => _openBranchSheet(app2),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 2,
-                            horizontal: 4,
-                          ),
+                          // 无水平内边距：分支文字与标题文字严格左对齐
+                          // （2026-11-21 用户对齐要求；分支图标挪行尾作
+                          // 展开提示符，不再占文字左缘）。
+                          padding: const EdgeInsets.symmetric(vertical: 2),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.call_split,
-                                size: 10,
-                                color: context.colors.foregroundSubtlest,
-                              ),
-                              const SizedBox(width: 3),
                               Flexible(
                                 child: Text(
                                   _branchCurrent!,
@@ -4878,23 +4863,17 @@ class _ConversationPageState extends State<ConversationPage>
                                   ),
                                 ),
                               ),
+                              const SizedBox(width: 3),
+                              Icon(
+                                Icons.call_split,
+                                size: 10,
+                                color: context.colors.foregroundSubtlest,
+                              ),
                             ],
                           ),
                         ),
                       ),
                     ),
-                  if (running) ...[
-                    const SizedBox(width: 8),
-                    RunningPulseDot(color: context.colors.running, size: 8),
-                    const SizedBox(width: 4),
-                    Text(
-                      '运行中…',
-                      style: TextStyle(
-                        fontSize: AppType.uiXs,
-                        color: context.colors.foregroundSubtle,
-                      ),
-                    ),
-                  ],
                 ],
               ),
           ],
