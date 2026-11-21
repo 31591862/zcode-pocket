@@ -9,6 +9,7 @@ import '../transport/channel_client.dart';
 import '../transport/companion_client.dart';
 import '../transport/connection_params.dart';
 import '../transport/conversation.dart';
+import '../transport/device_info.dart' show companionPlatformName;
 import '../transport/relay_client.dart';
 import '../transport/project_tree.dart';
 import '../transport/relay_v2.dart';
@@ -17,6 +18,7 @@ import 'account_store.dart';
 import 'computer_stack.dart';
 import 'draft_store.dart';
 import 'device_stack_registry.dart';
+import 'marketing_controller.dart';
 import 'send_queue_store.dart';
 import 'local_cache.dart';
 import 'cache_policy.dart';
@@ -78,6 +80,13 @@ class AppState extends ChangeNotifier {
         ]);
       },
     );
+    // marketing-claim-review-1：账号集合/当前账号变更（save/setLastUsed/
+    // removeAccount）显式通知营销控制器（失效缓存+立即重拉）——此前账号
+    // 切换的重拉时机取决于无关的 AppState 通知（审查②）。
+    this.accountStore.onChanged = (_) {
+      marketing?.onAccountChanged();
+      notifyListeners();
+    };
   }
 
   late final DeviceStackRegistry _deviceRegistry;
@@ -102,6 +111,10 @@ class AppState extends ChangeNotifier {
   /// 断网消息排队（6.6②，2026-10-29 批次）：断连期发送入队+重连自动
   /// 发出；懒加载与草稿同款。
   SendQueueStore? sendQueue;
+
+  /// 官方福利领取（marketing-claim-1）：load 末尾懒建+首拉；
+  /// 拉取失败静默（增益面）。测试可直接覆写此字段注入假件（UI 只读）。
+  MarketingController? marketing;
 
   /// 通知体系（阶段 3 第二段）：服务（安卓通道）+ 协调器（差分/台账）。
   NotificationService? notifyService;
@@ -1017,6 +1030,13 @@ class AppState extends ChangeNotifier {
       _log('account bind migration failed (contained): $e');
     }
     loaded = true;
+    // 官方福利领取（marketing-claim-1）：控制器在 loaded 后立即创建并
+    // 首拉（marketing-claim-review-1 前移——原挂在 load() 末尾，test
+    // pairing 早退路径会整个跳过致本进程无卡；首拉此刻读账号，后续
+    // seam 注入的账号经卡片挂载 ensurePulled 自然覆盖）。失败静默
+    // （增益面）；每账号每会话闸+失败退避在控制器内。
+    marketing ??= _createMarketingController();
+    unawaited(marketing!.pull());
     // 自动化配对（intent extra 优先于档案恢复）
     final launchArgs = await testLaunchArgsReader?.call();
     _consumeShortcutFromLaunch(launchArgs);
@@ -1075,6 +1095,35 @@ class AppState extends ChangeNotifier {
     // 冷启动通知最后消费（状态层批）：profiles/通知协调器就绪后——目标
     // 电脑有可用档案先激活，再走既有打开链；markClicked 可写台账。
     await _flushPendingLaunch();
+  }
+
+  /// 营销控制器依赖注入（marketing-claim-1）：版本号读原生通道并进程级
+  /// 缓存（marketing-claim-review-1：每次建客户端不再走一遍通道），读
+  /// 失败报 0.0.0——服务端仅用作分析/投放门槛，不参与鉴权。
+  MarketingController _createMarketingController() => MarketingController(
+    accountIdProvider: () => accountStore.lastUsedAccountId,
+    jwtProvider: (id) => accountStore.readJwtFor(id),
+    deviceMidProvider: uiPrefs.ensureDeviceMid,
+    localeProvider: () => L10n.resolvedLocale,
+    appVersionProvider: _readAppVersionNameOrDefault,
+    platformProvider: companionPlatformName,
+    originProvider: relayV2DefaultOrigin,
+  );
+
+  String? _cachedAppVersionName;
+
+  Future<String> _readAppVersionNameOrDefault() async {
+    final cached = _cachedAppVersionName;
+    if (cached != null) return cached;
+    try {
+      final res = await const MethodChannel('companion/appinfo')
+          .invokeMethod<Map<dynamic, dynamic>>('get');
+      final v = res?['versionName'] as String?;
+      if (v != null && v.trim().isNotEmpty) {
+        return _cachedAppVersionName = v.trim();
+      }
+    } catch (_) {}
+    return _cachedAppVersionName ??= '0.0.0';
   }
 
   /// 冷启动通知点击路由（load 末尾调用）。档案不可达也走打开链——
@@ -1658,6 +1707,21 @@ class AppState extends ChangeNotifier {
     return conv.cancelBackgroundWork(sessionId, workId);
   }
 
+  /// 后台 Bash 输出详情（bg-bash-output-1：只读查询，详情页轮询消费）。
+  Future<dynamic> backgroundBashOutput(String sessionId, String workId) async {
+    final conv = _conv;
+    if (conv == null) throw StateError('no active computer');
+    return conv.backgroundBashOutput(sessionId, workId);
+  }
+
+  /// history-first-1：runtime 初始化失败重试（仅 failed 态生效，详见
+  /// transport 层注释；订阅缺席静默返回）。
+  Future<void> retryInitialization(String sessionId) async {
+    final conv = _conv;
+    if (conv == null) return;
+    await conv.retryInitialization(sessionId);
+  }
+
   /// ② 逐条停止子代理（早前批次，官方 stopSubagent 命令；参数来自快照
   /// running 行的 stopControl——UI 只对带 stopControl 的行出钮）。
   Future<dynamic> stopSubagent(
@@ -1668,6 +1732,39 @@ class AppState extends ChangeNotifier {
     final conv = _conv;
     if (conv == null) throw StateError('no active computer');
     return conv.stopSubagent(sessionId, taskId, executionId);
+  }
+
+  /// 批C（workflow-control-1）：恢复被打断的工作流 run（详见 transport
+  /// 层注释——workId≡runId、拒绝词表、能力缺席形态）。
+  Future<dynamic> resumeWorkflowRun(
+    String sessionId,
+    String workId, {
+    String? name,
+  }) async {
+    final conv = _conv;
+    if (conv == null) throw StateError('no active computer');
+    return conv.resumeWorkflowRun(sessionId, workId, name: name);
+  }
+
+  /// 批C：运行中调整 run 配置（三态纪律详见 transport 层注释）。
+  Future<dynamic> amendWorkflowRunSettings(
+    String sessionId,
+    String workId, {
+    String? subagentModelValue,
+    bool subagentModelReset = false,
+    int? maxConcurrencyValue,
+    bool maxConcurrencyReset = false,
+  }) async {
+    final conv = _conv;
+    if (conv == null) throw StateError('no active computer');
+    return conv.amendWorkflowRunSettings(
+      sessionId,
+      workId,
+      subagentModelValue: subagentModelValue,
+      subagentModelReset: subagentModelReset,
+      maxConcurrencyValue: maxConcurrencyValue,
+      maxConcurrencyReset: maxConcurrencyReset,
+    );
   }
 
   /// ① 上下文组成下钻（早前批次，v4/conversation/contextComposition）。
@@ -2702,6 +2799,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    accountStore.onChanged = null; // marketing-claim-review-1：钩子随宿主摘除
     _bgDisconnectTimer?.cancel();
     _bgDisconnectTimer = null;
     _switchNoticeTimer?.cancel();

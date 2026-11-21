@@ -149,6 +149,13 @@ String humanizeError(Object error) {
 String? _stringOf(dynamic v) => v is String ? v : null;
 bool? _boolOf(dynamic v) => v is bool ? v : null;
 
+/// runtime 初始化未就绪期语音直发的文本兜底（history-first-1 对抗审查
+/// 修复 U4/T1，公开给单测）：输入框空=回填口述文本；有草稿=合并一行
+/// （口述内容是用户刚说的，不覆盖已输入内容）。
+@visibleForTesting
+String mergeBlockedVoiceDraft(String current, String incoming) =>
+    current.trim().isEmpty ? incoming : '$current\n$incoming';
+
 class ConversationPage extends StatefulWidget {
   /// 测试缝：清空会话级工具行折叠记忆（深浅双侧游览共用 sessionId，
   /// 防跨轮状态污染——深色轮起始态须与浅色轮一致）。
@@ -2519,6 +2526,28 @@ class _ConversationPageState extends State<ConversationPage>
       await _sendCompact(app);
       return true;
     }
+    // history-first-1：runtime 初始化未就绪（initializing/failed）前置拦发
+    // ——官方 runtimeBlocked 同口径（命令层 guard.runtimeInitializing/Failed
+    // 拒绝，本地拦截免发起注定被拒的 RPC）。语音直发路径文本回填/合并进
+    // 输入框防无痕丢失（同族；对抗审查修复 U4：有草稿时合并而非丢
+    // 弃——长按语音允许带草稿开面板）；离线队列重放返 false 留队（drain
+    // 下轮重试）。
+    final blockedState = _sub?.state;
+    if (blockedState != null && blockedState.runtimeInitializationBlocked) {
+      if (fromQueue == null && text.trim().isNotEmpty) {
+        final merged = mergeBlockedVoiceDraft(_input.text, text);
+        _suppressDraftSync = true;
+        try {
+          _input.text = merged;
+          _draftTextSnapshot = merged;
+        } finally {
+          _suppressDraftSync = false;
+        }
+        _draftRevision++;
+        unawaited(_saveDraft());
+      }
+      return false;
+    }
     // 断网消息排队（6.6②）：无桥或链路未在线=断连（90s 后台断连窗口/
     // 冷启动未连/切工作区期/飞行模式）——文本消息入队等重连自动发出，
     // 不发起注定失败的 RPC。验收修复（反馈#6）：此前只看
@@ -3581,6 +3610,8 @@ class _ConversationPageState extends State<ConversationPage>
               builder: (_) => BackgroundWorksPage(
                 sessionId: sessionId,
                 state: sub.state,
+                fetchBashOutput: (sid, workId) =>
+                    AppStateScope.of(context).backgroundBashOutput(sid, workId),
                 onCancel: (sid, workId) async {
                   await AppStateScope.of(context)
                       .cancelBackgroundWork(sid, workId);
@@ -5626,6 +5657,54 @@ class _ConversationPageState extends State<ConversationPage>
             // 技能/审批卡与用量卡已改悬浮（批⑥ 2026-11-18 用户拍板：
             // 不再挤占消息列表高度）——见消息列表 Stack 内悬浮层。
             if (state != null) QueueStrip(state: state, sessionId: _sessionId),
+            // 上游 1.0.8 history-first：runtime 初始化失败条（官方口径：
+            // initializing 不显示提示条仅禁发；failed 显示错误+重试——
+            // ConversationComposer 同位）。
+            if (state != null &&
+                state.runtimeInitializationFailed &&
+                !widget.readOnly)
+              Padding(
+                key: const ValueKey('runtime-init-failed'),
+                padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 15,
+                      color: context.colors.destructive,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Builder(
+                        builder: (_) {
+                          final msg =
+                              '${state.runtimeInitialization?['message'] ?? ''}';
+                          return Text(
+                            msg.isEmpty ? '初始化失败，暂时无法发送' : '初始化失败，暂时无法发送：$msg',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: AppType.uiXs,
+                              color: context.colors.destructive,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    TextButton(
+                      key: const ValueKey('runtime-init-retry'),
+                      onPressed: () {
+                        final sid = _sessionId;
+                        if (sid == null) return;
+                        unawaited(
+                          AppStateScope.of(context).retryInitialization(sid),
+                        );
+                      },
+                      child: const Text('重试'),
+                    ),
+                  ],
+                ),
+              ),
             // 用量详情卡（状态点开关，桌面悬停卡的手机等价物——用户设计）。
             // 信息条（用户 2026-10-17 设计定稿二）：上下文用量+模式紧凑左组，
 
@@ -5846,6 +5925,10 @@ class _ConversationPageState extends State<ConversationPage>
                 focusNode: _inputFocusNode,
                 running: running,
                 sending: _sending,
+                // 上游 1.0.8 history-first U5：运行时门控只认活订阅——
+                // 缓存预渲（effState 回落）携带的陈旧 runtimeInitialization
+                // 不得禁发（离线队列本可受理；与 _sendText 拦截同源同判）。
+                runtimeBlocked: state?.runtimeInitializationBlocked ?? false,
                 onSend: _send,
                 onStop: _stop,
                 // 纯附件发送（2026-11-16）：托盘有附件时发送键亮发送态，
@@ -6048,6 +6131,11 @@ class _ConversationPageState extends State<ConversationPage>
       ),
     );
   }
+
+  /// 测试缝（审查轮2 T4）：直调 _sendText——锁 blocked 期语音文本合并
+  /// 回填的调用点接线（纯函数已单测，防调用点被无声拆除）。
+  @visibleForTesting
+  Future<bool> debugSendTextForTest(String text) => _sendText(text);
 
   void _retrySubscribe() {
     final sessionId = _sessionId;

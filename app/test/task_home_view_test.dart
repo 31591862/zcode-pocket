@@ -3,12 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcode_pocket/state/app_state.dart';
+import 'package:zcode_pocket/state/marketing_controller.dart';
+import 'package:zcode_pocket/transport/marketing_client.dart'
+    show MarketingDelivery;
 import 'package:zcode_pocket/transport/companion_client.dart';
 import 'package:zcode_pocket/state/app_state_scope.dart';
 import 'package:zcode_pocket/transport/conversation.dart';
 import 'package:zcode_pocket/transport/project_tree.dart';
 import 'package:zcode_pocket/ui/conversation_page.dart';
 import 'package:zcode_pocket/ui/task_center_page.dart';
+import 'package:zcode_pocket/ui/top_notice.dart';
 
 class _FakeConversation implements ConversationTransport {
   @override
@@ -32,6 +36,13 @@ class _HomeBridge implements BridgeSession {
   Map<String, dynamic> get bridge => const {};
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// 归档提示旅程专用：记录 archiveTask 调用。
+class _ArchiveSnackBarApp extends _HomeApp {
+  int archiveCalls = 0;
+  @override
+  Future<dynamic> archiveTask(String taskId) async => archiveCalls++;
 }
 
 class _HomeApp extends AppState {
@@ -184,6 +195,28 @@ Future<void> _openDrawer(WidgetTester tester) async {
 
 Finder inDrawer(Finder f) =>
     find.descendant(of: find.byType(Drawer), matching: f);
+
+/// marketing-claim-1：主页领取卡插槽假控制器（真状态机见
+/// marketing_controller_test；此处只验插槽渲染与零卡零占位）。
+class _SlotMarketing extends MarketingController {
+  _SlotMarketing(MarketingDelivery? seed)
+    : super(
+        accountIdProvider: () async => 'acc-slot',
+        jwtProvider: (id) async => 'jwt',
+        deviceMidProvider: () async => 'mid',
+        localeProvider: () => 'zh-CN',
+        appVersionProvider: () async => '0',
+        platformProvider: () => 'android',
+        originProvider: () => Uri.parse('https://zcode.z.ai'),
+      ) {
+    if (seed != null) {
+      card = MarketingCard(accountId: 'acc-slot', delivery: seed);
+    }
+  }
+
+  @override
+  Future<void> ensurePulled() async {}
+}
 
 void main() {
   final now = DateTime.now().millisecondsSinceEpoch;
@@ -356,6 +389,31 @@ void main() {
     await tester.pump();
 
     expect(find.text('项目A运行任务'), findsNothing);
+  });
+
+  testWidgets('归档提示自动消失（TopNotice 自管时长；上游 persist 真因同语义）', (tester) async {
+    await _narrow(tester);
+    final app = _ArchiveSnackBarApp()..tasks = rows();
+    await tester.pumpWidget(_host(app));
+    // TopNotice 走根 Overlay 单例（HomeShell 首帧 attach）——测试 host
+    // 无 HomeShell，需手动挂载（与真机语义同源）。
+    TopNotice.attach(tester.element(find.byType(TaskCenterPage)));
+    await tester.pump();
+
+    await tester.longPress(find.byKey(const ValueKey('cross-task-card-t1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('归档'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(app.archiveCalls, 1);
+    expect(find.textContaining('已归档「'), findsOneWidget);
+    // fork 实现：TopNotice（Overlay 自绘卡）自带 Timer 关闭（默认 3s），
+    // 不走 SnackBar `persist = action != null` 永驻陷阱——上游 1.0.8
+    // 以 persist:false + 4s 修复同一用户问题，本实现同一语义。
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.textContaining('已归档「'), findsNothing, reason: '到期自动消失');
   });
 
   testWidgets('长按恢复任务菜单，置顶文案随状态切换', (tester) async {
@@ -746,5 +804,37 @@ void main() {
       findsNothing,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  // marketing-claim-1：领取卡插槽在主页 header 下方（_TaskHomeView 内）。
+  testWidgets('领取卡：主页在线态出卡（header 下方）；无卡零占位', (tester) async {
+    await _narrow(tester);
+    final app = _HomeApp();
+    app.tasks = rows();
+    app.marketing = _SlotMarketing(
+      const MarketingDelivery(
+        campaignId: 'cmp-slot',
+        priority: 80,
+        position: 'banner',
+        buttonText: '领取',
+        claimPlanId: 'plan-slot',
+      ),
+    );
+    await tester.pumpWidget(_host(app));
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('官方福利'), findsOneWidget, reason: '文字兜底卡出现');
+    expect(find.text('领取您的专属福利'), findsOneWidget);
+
+    // 无卡：同页零渲染（插槽零高度）。
+    final app2 = _HomeApp();
+    app2.tasks = rows();
+    app2.marketing = _SlotMarketing(null);
+    await tester.pumpWidget(_host(app2));
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('官方福利'), findsNothing);
   });
 }

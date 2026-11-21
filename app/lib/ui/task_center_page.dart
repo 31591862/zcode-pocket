@@ -22,6 +22,7 @@ import '../transport/project_tree.dart';
 import '../transport/z_transport.dart';
 import 'app_widgets.dart';
 import 'login_page.dart';
+import 'marketing_claim_card.dart';
 import 'status_badge.dart';
 import 'archived_tasks_page.dart';
 import 'automation_page.dart';
@@ -37,6 +38,17 @@ import 'top_notice.dart';
 
 /// 任务中心（home）：全部任务 + 最近｜项目分组（项目栏优化 B 方案）。
 /// 折叠/展开共用同一主页；项目成为分组与新建上下文，不再是常驻导航轨。
+
+/// 首页刷新统一联动福利卡拉取（marketing-claim-review-1）：任务刷新与
+/// 营销 force 拉取并行，一起 await（顶栏刷新与下拉刷新同款；搜索路径
+/// 仍纯任务刷新）。
+Future<void> refreshWorkspacesWithMarketing(AppState app) async {
+  final marketing = app.marketing;
+  await Future.wait([
+    app.refreshWorkspaces(),
+    if (marketing != null) marketing.pull(force: true),
+  ]);
+}
 
 /// 卡片摘要剥 Markdown 记号（**强调**/`代码`/标题# 等）——纯文本场景
 /// 裸符号观感糙（视觉走查-10-18）。
@@ -1037,13 +1049,20 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
             ),
             appBar: _GlassAppBar(
               title: Text(
-                app.activeProfile?.label ?? 'ZCode Companion',
+                // 上游 1.0.8 multi-account-ux-1：多账号时顶栏显示
+                // 「电脑名 · 账号显示名」（备注名优先）；单账号维持电脑名。
+                app.activeAccountLabel == null
+                    ? (app.activeProfile?.label ?? 'ZCode Companion')
+                    : '${app.activeProfile?.label ?? 'ZCode Companion'} · '
+                          '${app.activeAccountLabel}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: _appBarLinkStatus(app, context),
-              onRefresh: app.refreshWorkspaces,
+              // 上游 1.0.8：顶栏刷新联动福利卡（仅下拉联动时顶栏刷新
+              // 漏营销）；搜索路径仍纯任务。
+              onRefresh: () => refreshWorkspacesWithMarketing(app),
               onSearchToggle: () {
                 // 关闭复用 _closeSearch——原实现只清
                 // query，在飞防抖 300ms 后照常发一次全文 RPC（结果被守卫
@@ -2393,10 +2412,18 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
     return Column(
       children: [
         _buildHeader(context),
+        // 官方福利领取卡（marketing-claim-1）：header 下方常驻槽位——
+        // 无投放时零高度；搜索期本视图整体不出现，卡天然隐藏。
+        const MarketingClaimCard(),
         Expanded(child: _buildBody(context, app, rows)),
       ],
     );
   }
+
+  /// 下拉刷新联动福利卡拉取（marketing-claim-1）：统一走
+  /// [refreshWorkspacesWithMarketing]（顶栏刷新同款）。
+  Future<void> _refreshHome(AppState app) =>
+      refreshWorkspacesWithMarketing(app);
 
   Widget _buildHeader(BuildContext context) {
     // 抽屉化（2026-11-17 用户拍板）：最近/项目 segmented 与 ⋮（项目
@@ -2465,7 +2492,7 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
           (app.workspaceOpening ||
               (app.readTreeStatus == 'loading' && app.taskList == null));
       return RefreshIndicator(
-        onRefresh: app.refreshWorkspaces,
+        onRefresh: () => _refreshHome(app),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
@@ -2535,7 +2562,7 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
       fullyExpandedGroups: widget.fullyExpandedGroups,
     );
     return RefreshIndicator(
-      onRefresh: app.refreshWorkspaces,
+      onRefresh: () => _refreshHome(app),
       // 主页行也包 _MinuteTicker——「刚刚/N 分钟前」
       // 标签此前只在下一次数据 notify 才重算，停留期间不刷新（搜索路径
       // 既有同款先例）。

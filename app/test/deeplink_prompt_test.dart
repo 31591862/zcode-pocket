@@ -115,6 +115,14 @@ void main() {
       findsOneWidget,
       reason: 'B5 修复：参数透传后浮层出现（旧时序恒不出现）',
     );
+    // rewards-table-fit-1 同批：本 SDK 带 action 的 SnackBar 默认
+    // persist=true 永不过期（snack_bar.dart:303）——真机「提示不消失」
+    // 家族根因，显式 false。
+    final bar = tester.widget<SnackBar>(
+      find.byKey(const ValueKey('deeplink-prompt')),
+    );
+    expect(bar.persist, isFalse);
+    expect(bar.duration, const Duration(seconds: 5));
 
     // #3 高：点「定位」必须把 center 锚到目标行所属**顶层条目**——
     // 命中行是回合内 assistantText（没有独立 'row-*' 键），旧实现直接
