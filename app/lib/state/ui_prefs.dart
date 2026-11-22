@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../core/oem_vendor.dart'
+    show kQrPreviewAuto, normalizeQrPreviewMode;
 import '../transport/id.dart' show generateUuid;
 
 /// UI 偏好（阶段 2 波次 1）：工具调用显示开关（需求池 #1，设置页第一项）。
@@ -32,6 +34,16 @@ class UiPrefs extends ChangeNotifier {
   static const _keyMuteApprovals = 'ui.muteApprovals';
   static const _keyMuteTasks = 'ui.muteTasks';
   static const _keyMuteGoals = 'ui.muteGoals';
+
+  /// 任务完成横幅（orientation-unlock-1 批，用户 vivo 真机反馈「任务
+  /// 完成只有震动+锁屏内容、无顶部横幅」——tasks 渠道 default 档为
+  /// 2026-10-20 通知设计拍板「完成不打断」）：默认关保持原语义；开后
+  /// 任务完成走高优渠道顶部横幅。
+  static const _keyTaskHeadsUp = 'ui.taskHeadsUp';
+
+  /// 扫码实时预览模式偏好（qr-preview-oem-1）：auto|preview|no_preview。
+  static const _keyQrPreviewMode = 'ui.qrPreviewMode';
+
   static const _keyFollowupMode = 'ui.followupMode'; // queue|guide
   static const _keyVoiceApiKey = 'ui.voiceApiKey';
   static const _keyVoiceRefine = 'ui.voiceRefine';
@@ -125,6 +137,12 @@ class UiPrefs extends ChangeNotifier {
   bool _muteTasks = false;
   bool _muteGoals = false;
 
+  /// 任务完成横幅（默认关——「完成不打断」原语义不变）。
+  bool _taskHeadsUp = false;
+
+  /// 扫码实时预览模式偏好（默认 auto：按平台与厂商分流）。
+  String _qrPreviewMode = kQrPreviewAuto;
+
   /// 运行中收到新消息的处置（官方 followupMode，queue|guide——设置页为
   /// 用户事实源，SessionPane.tsx:4173-4190 同款：改设置即推送到活跃会话）。
   String _followupMode = 'queue';
@@ -159,6 +177,8 @@ class UiPrefs extends ChangeNotifier {
   bool get muteApprovals => _muteApprovals;
   bool get muteTasks => _muteTasks;
   bool get muteGoals => _muteGoals;
+  bool get taskHeadsUp => _taskHeadsUp;
+  String get qrPreviewMode => _qrPreviewMode;
   String get followupMode => _followupMode;
   bool get voiceRefineEnabled => _voiceRefineEnabled;
   String? get voiceApiKey => _voiceApiKey;
@@ -260,6 +280,8 @@ class UiPrefs extends ChangeNotifier {
         // 单键材料：必须排在既有键之后（reads 按位置索引——插在
         // 中间会让 26/27 错位读到材料键，更新开关/时间戳被破坏）。
         _storage.read(key: _keyAppLockPinMaterial), // 28
+        _storage.read(key: _keyTaskHeadsUp), // 29
+        _storage.read(key: _keyQrPreviewMode), // 30
       ];
       final reads = await Future.wait(
         readFutures.map(
@@ -341,6 +363,8 @@ class UiPrefs extends ChangeNotifier {
       // 更新开关缺省 true；显式 'false' 才关。
       _updateInAppEnabled = reads[26] != 'false';
       _updateLastCheckAt = int.tryParse(reads[27] ?? '') ?? 0;
+      _taskHeadsUp = reads[29] == 'true';
+      _qrPreviewMode = normalizeQrPreviewMode(reads[30]);
       try {
         final qr = reads[14];
         if (qr != null && qr.isNotEmpty) {
@@ -469,6 +493,24 @@ class UiPrefs extends ChangeNotifier {
     }
     notifyListeners();
     await _persist(key, muted ? 'true' : 'false');
+  }
+
+  /// 任务完成横幅开关（orientation-unlock-1 批）。开关即生效（下一条
+  /// 任务完成通知走对应渠道），无服务启停副作用。
+  Future<void> setTaskHeadsUp(bool value) async {
+    if (_taskHeadsUp == value) return;
+    _taskHeadsUp = value;
+    notifyListeners();
+    await _persist(_keyTaskHeadsUp, value ? 'true' : 'false');
+  }
+
+  /// 扫码实时预览模式偏好（qr-preview-oem-1）：auto|preview|no_preview。
+  Future<void> setQrPreviewMode(String mode) async {
+    final normalized = normalizeQrPreviewMode(mode);
+    if (_qrPreviewMode == normalized) return;
+    _qrPreviewMode = normalized;
+    notifyListeners();
+    await _persist(_keyQrPreviewMode, normalized);
   }
 
   /// followupMode 变更（queue|guide）。推送副作用由调用方（AppState/
