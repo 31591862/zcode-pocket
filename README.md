@@ -285,18 +285,19 @@ services.
 Each of these is also tracked as a `known-limitation` issue with its current
 status and workaround.
 
-- Portrait is the only main orientation; wide screens and foldables unfolded
-  (≥600dp) use a dual-pane layout (task list + conversation); the
-  large-tablet layout is still being polished.
-- Files generated in a conversation cannot be previewed directly (the
-  remote-control protocol has no byte channel for them): newly created
-  HTML/plain-text files (Markdown/CSV/JSON/code) preview and share locally;
-  binaries such as images, PDFs and spreadsheets can be downloaded via the
-  one-tap "Collect artifacts" command, which asks the agent to publish them
-  as downloadable workflow artifacts.
-- QR pairing shows a static viewfinder instead of a live camera preview
-  (a renderer workaround for some devices), and the screen rebuilds once
-  after a successful pairing.
+- Narrow screens (short edge <600dp) stay portrait-locked; wide screens and
+  foldables unfolded (≥600dp) follow system rotation (dual-pane layout:
+  task list + conversation); the large-tablet layout is still being
+  polished.
+- Conversation-generated files have no direct byte channel (protocol
+  boundary): newly created HTML/plain-text files (Markdown/CSV/JSON/code)
+  preview and share locally; after the one-tap "Collect artifacts" command
+  publishes them as workflow artifacts, images and PDFs (≤16MB) preview
+  in-app and share, and other binaries can be downloaded.
+- QR pairing is routed per device: most Android devices get a live camera
+  preview by default and return from pairing without a screen rebuild; a
+  few affected ROMs stay on the defensive static-viewfinder + rebuild path,
+  with a one-tap toggle on the scan screen to switch modes.
 - The app disconnects about 90 seconds after backgrounding (battery by
   design); you don't get real-time task-completion notifications in the
   background unless "approval alerts" is enabled.
