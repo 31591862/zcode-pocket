@@ -446,6 +446,39 @@ void main() {
     });
   });
 
+  group('手动重试（2026-11-22 用户「点重试无效」）', () {
+    test('错误态重试：重放期间错误即清（UI 回 loading），成功后台桥落位', () async {
+      final h = _Harness(_offlineClient());
+      final ws = const {'workspacePath': 'G:/w', 'kind': 'local'};
+      // 首次切换失败（桥拒）→ 错误态残留 activeWorkspace + _lastOpenAction
+      h.client.openImpl = (key) async =>
+          throw StateError('workspace-bridge-error: denied');
+      await h.controller.switchWorkspace(ws);
+      expect(h.controller.workspaceError, contains('拒绝'));
+
+      // 重试：open 在飞期间错误必须已清（旧实现保留错误 → UI 仍显示
+      // 红色横幅，用户观感「点了没反应」）。
+      final gate = Completer<void>();
+      final bridge = _StubBridge(conv: _FakeConv());
+      h.client.openImpl = (key) async {
+        await gate.future;
+        return bridge;
+      };
+      final retrying = h.controller.retryWorkspaceOpen();
+      expect(await _until(() => h.client.openCalls.length >= 2), isTrue,
+          reason: '重试必须重放原意图（旧实现错误态静默短路）');
+      expect(
+        h.controller.workspaceError,
+        isNull,
+        reason: '重放在飞期间错误已清（UI 回 loading）',
+      );
+      gate.complete();
+      await retrying;
+      expect(h.controller.bridge, same(bridge), reason: '重放原意图开桥成功');
+      await h.controller.close();
+    });
+  });
+
   group('③ bootstrap 收尾新近性守卫（J1-3/J3 P2-1）', () {
     test('bootstrap await 窗口内用户手切：收尾不拆用户刚开的工作区（修复前=反向覆盖）', () async {
       final h = _Harness(_offlineClient());

@@ -533,8 +533,21 @@ class ComputerStack extends ChangeNotifier {
   /// 手动重试入口（任务中心 workspaceError 态按钮）：优先重放原意图
   /// ——失败切换残留的 activeWorkspace 是占位键（不带 project/task
   /// intent），直接重开会再吃一次"目标工作区不在当前桌面窗口中"。
-  Future<void> retryWorkspaceOpen() =>
-      _workspaceController.retryWorkspaceOpen();
+  Future<void> retryWorkspaceOpen() async {
+    final client = _client;
+    // 未配对（连接中/掉线卡住，2026-11-22 用户实测「点重试无效，杀掉
+    // app 重进才好」）：旧实现把 open 重放打向死链路，redrive 又因
+    // relay 未 paired 永不触发——只有重启进程才恢复。这里走「重建连接」
+    // 轻量版：suspend 释放整条连接（保留栈注册/缓存），start 重建
+    // relay→bootstrap→桥；bootstrap 会按 profile 上次工作区自动打开。
+    if (client == null || client.relay.state != RelayState.paired) {
+      _log('[workspace] retry while not paired -> rebuild connection');
+      await suspend();
+      await resume();
+      return;
+    }
+    return _workspaceController.retryWorkspaceOpen();
+  }
 
   void _onWorkspaceList(dynamic result) =>
       _workspaceController.onWorkspaceList(result);

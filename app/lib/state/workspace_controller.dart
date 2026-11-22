@@ -173,6 +173,12 @@ class WorkspaceController {
   }
 
   Future<void> retryWorkspaceOpen() async {
+    // 错误态重试先清 workspaceError（UI 回 loading，避免「点了没反应」；
+    // 后续失败会重新写入分档文案）。
+    if (workspaceError != null) {
+      workspaceError = null;
+      _onNotify();
+    }
     final action = _lastOpenAction;
     if (action != null) {
       await action();
@@ -319,7 +325,10 @@ class WorkspaceController {
     if (client == null || key == null) return;
     if (workspaceKeyOf(activeWorkspace ?? const {}) == key &&
         _bridge != null &&
-        _sessionsIndex != null) {
+        _sessionsIndex != null &&
+        // 错误态不短路：看似已打开实为失败残留，强制重开（2026-11-22
+        // 用户实测「点重试无效」——旧实现在此静默 return）。
+        workspaceError == null) {
       return;
     }
     final epoch = ++_switchEpoch;
