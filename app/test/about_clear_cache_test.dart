@@ -38,6 +38,15 @@ void main() {
     await tester.pump();
     addTearDown(app.dispose);
 
+    // 披露句在场（明文缓存如实告知）——先滚到披露句本身：页面文案
+    // 增多后直接滚到清理行会把它滚出视口回收（2026-11-22 基线修复）。
+    await tester.scrollUntilVisible(
+      find.textContaining('明文 JSON'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump();
+    expect(find.textContaining('明文 JSON'), findsOneWidget);
     final row = find.byKey(const ValueKey('about-clear-cache'));
     await tester.scrollUntilVisible(
       row,
@@ -45,8 +54,6 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pump();
-    // 披露句在场（明文缓存如实告知）。
-    expect(find.textContaining('明文 JSON'), findsOneWidget);
 
     // 取消路径：不触发清理。
     await tester.tap(row);

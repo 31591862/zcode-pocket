@@ -115,14 +115,11 @@ void main() {
       findsOneWidget,
       reason: 'B5 修复：参数透传后浮层出现（旧时序恒不出现）',
     );
-    // rewards-table-fit-1 同批：本 SDK 带 action 的 SnackBar 默认
-    // persist=true 永不过期（snack_bar.dart:303）——真机「提示不消失」
-    // 家族根因，显式 false。
-    final bar = tester.widget<SnackBar>(
-      find.byKey(const ValueKey('deeplink-prompt')),
-    );
-    expect(bar.persist, isFalse);
-    expect(bar.duration, const Duration(seconds: 5));
+    // 批③ 2026-11-17：带 action 提示从 SnackBar 改顶部自绘 TopNotice
+    // （SnackBar.persist 永驻问题退役）——形态断言=提示文本在场；
+    // 5s 自管退场由下一个用例锁定（旧 tester.widget<SnackBar> 断言
+    // 在改造后强转崩溃，2026-11-22 基线修复）。
+    expect(find.text('已打开会话——要定位到产生通知的消息吗？'), findsOneWidget);
 
     // #3 高：点「定位」必须把 center 锚到目标行所属**顶层条目**——
     // 命中行是回合内 assistantText（没有独立 'row-*' 键），旧实现直接
@@ -136,6 +133,28 @@ void main() {
       ConversationPage.debugLastJumpAnchorKey,
       'turn-h2',
       reason: '行号→回合条目键映射（turnHeader rowId=2）',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('深链提示 5s 自管退场（TopNotice，不永驻）', (tester) async {
+    tester.view.physicalSize = const Size(375, 806);
+    tester.view.devicePixelRatio = 1.0;
+    final anchor = DateTime.now().millisecondsSinceEpoch - 5000;
+    final app = _DeepLinkApp(anchor)..pendingDeepLinkAt = anchor;
+    await tester.pumpWidget(_host(app, deepLinkAtMs: anchor));
+    _seedAndNotify(app.sub, anchor);
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byKey(const ValueKey('deeplink-prompt')), findsOneWidget);
+    // 5s 窗口过后自动退场（SnackBar 时代 persist 永驻问题的对位锁）。
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      find.byKey(const ValueKey('deeplink-prompt')),
+      findsNothing,
+      reason: 'TopNotice 到时自退，不永驻',
     );
     expect(tester.takeException(), isNull);
   });

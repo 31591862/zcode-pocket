@@ -17,6 +17,17 @@ import 'package:zcode_pocket/ui/conversation_page.dart';
 /// 命令 ②用量详情卡「压缩上下文」动作（官方 contextUsage 压缩按钮
 /// 对位）③普通文本不受影响。
 
+class _NullChannels extends ChannelClient {
+  _NullChannels() : super(sendBody: (_) {});
+  @override
+  Future<dynamic> call(
+    String channel,
+    String method,
+    List<Object?> args, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async => null;
+}
+
 class _CompactBridge implements BridgeSession {
   @override
   Map<String, dynamic>? get projectIntent => null;
@@ -35,7 +46,7 @@ class _CompactBridge implements BridgeSession {
   @override
   RpcFrameTransport get transport => throw UnimplementedError();
   @override
-  ChannelClient get channels => throw UnimplementedError();
+  final ChannelClient channels = _NullChannels();
   @override
   String? get workspaceKey => 'ws-compact';
   @override
@@ -49,9 +60,50 @@ class _CompactBridge implements BridgeSession {
   void dispose() {}
 }
 
+/// live 订阅替身（2026-11-22 夹具修复）：用量卡渲染门要求 state 非空
+///（批⑥ 悬浮卡改造），仅 readSessionCache 的旧夹具永远看不到卡。
+class _CompactSub implements ConversationSubscription {
+  _CompactSub(this.sessionId) {
+    state.applySeed(
+      ConversationSeed(
+        rows: [
+          {'rowId': 1, 'kind': 'turnHeader', 'state': 'completedSuccess'},
+          {'rowId': 2, 'kind': 'userInput', 'text': 'hi'},
+        ],
+        logEpoch: 'e1',
+        seq: 3,
+        firstRowId: 1,
+        totalCount: 3,
+        snapshot: {
+          'title': '压缩测试',
+          'control': {'phase': 'idle'},
+          'usage': {
+            'contextWindow': {'usedTokens': 500000, 'maxTokens': 1000000},
+          },
+        },
+      ),
+    );
+  }
+  @override
+  final String sessionId;
+  @override
+  final ConversationState state = ConversationState();
+  @override
+  bool get isDisposed => false;
+  @override
+  bool get hasLiveFrames => true;
+  @override
+  String? get subscriptionId => 'sub-$sessionId';
+  @override
+  String get topic => 'conversation/$sessionId';
+  @override
+  Future<void> dispose() async {}
+}
+
 class _CompactApp extends AppState {
   final List<String> compactCalls = [];
   final List<String> sentTexts = [];
+  final sub = _CompactSub('s1');
 
   @override
   LinkPhase get phase => LinkPhase.online;
@@ -62,6 +114,13 @@ class _CompactApp extends AppState {
     'workspaceIdentity': 'ws-compact',
     'workspacePath': '/example-workspace',
   };
+  @override
+  bool get conversationTransportReady => true;
+  @override
+  Future<ConversationSubscription> ensureConversation(
+    String id, {
+    Object? seedCacheEntry,
+  }) async => sub;
   @override
   Future<SessionCacheEntry?> readSessionCache(String id) async =>
       SessionCacheEntry(
