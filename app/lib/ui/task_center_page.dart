@@ -2499,7 +2499,7 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
                     ? '该项目暂无任务'
                     : widget.compact
                     ? '还没有任务\n点下方「新建任务」开始对话'
-                    : '还没有任务\n点抽屉底部「新建任务」开始对话',
+                    : '还没有任务\n点抽屉「新建任务」开始对话',
               ),
             if (widget.showNewTaskNav && widget.onNew != null) ...[
               const SizedBox(height: 12),
