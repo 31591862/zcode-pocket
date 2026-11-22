@@ -85,6 +85,18 @@ void main() {
     expect(find.text('后台工作 · 2'), findsOneWidget, reason: '标题带计数');
     expect(find.text('跑构建脚本'), findsOneWidget);
     expect(find.text('已完成待投递'), findsOneWidget);
+    // 2026-11-22 用户反馈：终态行右侧 44 空槽退役——状态贴行右缘
+    //（375 屏宽 - 16 页边距）；running 行仍左让取消钮 44 槽。
+    expect(
+      tester.getTopRight(find.text('已完成待投递')).dx,
+      closeTo(375 - 16, 2),
+      reason: '终态行状态文字贴右，不留 44 空槽',
+    );
+    expect(
+      tester.getTopRight(find.text('执行中')).dx,
+      closeTo(375 - 16 - 44, 2),
+      reason: 'running 行状态左让取消钮槽',
+    );
     // 仅 running+cancellable 可取消。
     expect(
       find.byKey(const ValueKey('background-work-cancel-w-bash')),

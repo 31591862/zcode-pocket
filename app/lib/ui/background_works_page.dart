@@ -129,9 +129,11 @@ class BackgroundWorksPage extends StatelessWidget {
                       ),
                     )
                   else
-                    // 空槽同高 44：running→终态时取消钮消失行高不跳变
-                    //（视觉复核 r2 建议①）。
-                    const SizedBox(width: 44, height: 44),
+                    // 2026-11-22 用户反馈：终态行右侧 44px 空槽+16 页边距
+                    // =60dp 留白，长列表（144 条）观感大片空——宽度归零让
+                    // 状态贴右，仅保留 44 高度维持行高一致（running→终态
+                    // 行高不跳；状态词本就同时变化，右缘位移可接受）。
+                    const SizedBox(width: 0, height: 44),
                 ],
               );
               // bash 行整行可点开输出详情（bg-bash-output-1，副行同属点按
