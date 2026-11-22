@@ -4829,12 +4829,12 @@ class _ConversationPageState extends State<ConversationPage>
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: AppType.uiBase),
             ),
-            // 副行只留分支标签（2026-11-17 用户拍板：设备名退役——
-            // 设备维度归抽屉电脑卡）。点按进分支弹层——draft 态切完
-            // 再发消息=会话跑在新分支上。
-            // （2026-11-21 用户拍板：运行中状态整体移除——运行中时
-            // 输入框右下角就是停止键，状态自明。）
-            if (_branchCurrent != null)
+            // 副行分支标签（2026-11-21 用户拍板：真实会话**隐藏不删除**
+            // ——分支入口收敛到顶栏 ⋮ 菜单「分支」项；draft 页无 ⋮，
+            // 此处仍为唯一入口，故仅 draft 保留）。点按进分支弹层——
+            // draft 态切完再发消息=会话跑在新分支上。
+            if (_branchCurrent != null &&
+                !(state != null && _sessionId != null))
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -4977,6 +4977,9 @@ class _ConversationPageState extends State<ConversationPage>
                       ),
                       const AnchoredMenuItem(value: 'unread', label: '标为未读'),
                       const AnchoredMenuItem(value: 'archive', label: '归档'),
+                      // 分支切换入口（与标题副行分支标签同行为：拉起
+                      // 分支列表弹层）。
+                      const AnchoredMenuItem(value: 'branch', label: '分支'),
                       // 后台工作二级页入口（compactness-feedback-1109 反馈②）：
                       // 有后台工作才出现在菜单，带计数；一级感知=任务卡
                       // 后台小点（既有）。
@@ -4988,6 +4991,10 @@ class _ConversationPageState extends State<ConversationPage>
                       const AnchoredMenuItem(value: 'copyId', label: '复制会话 ID'),
                     ],
                   );
+                  if (v == 'branch') {
+                    _openBranchSheet(app2);
+                    return;
+                  }
                   if (v != null) _onTaskMenu(v);
                 },
               ),
