@@ -185,17 +185,25 @@ class ContextDetailsCard extends StatelessWidget {
             ),
             // 压缩上下文动作（compact-command-1：官方 contextUsage 压缩
             // 按钮对位；进度反馈=时间线「正在压缩上下文」标记行）。
+            // 2026-11-22 用户：胶囊形态保留（当时排障只回滚了口径，
+            // 把胶囊一起丢了）——全宽品牌色胶囊（主题黑，用户拍板）、
+            // 白字+图标，高 40。
             if (onCompact != null) ...[
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
                   key: const ValueKey('compact-context'),
                   onPressed: onCompact,
-                  icon: const Icon(Icons.compress, size: 16),
+                  icon: const Icon(Icons.compress, size: 18),
                   label: Text(tr('压缩上下文')),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+                  style: FilledButton.styleFrom(
+                    shape: const StadiumBorder(),
+                    minimumSize: const Size.fromHeight(40),
+                    textStyle: const TextStyle(
+                      fontSize: AppType.uiBase,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),

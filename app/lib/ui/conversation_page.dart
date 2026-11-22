@@ -661,6 +661,11 @@ class _ConversationPageState extends State<ConversationPage>
 
   /// 悬浮层矩形锚（外点关闭用：卡内点击排除）。
   final GlobalKey _floatingLayerKey = GlobalKey();
+
+  /// 状态点按钮矩形锚（2026-11-22 用户 bug：卡开着再点绿圈，down 先被
+  /// 外点关闭收掉、随后 toggle 又打开——永远关不掉。点绿圈时跳过
+  /// 预先关闭，开关语义全交 _toggleUsageCard）。
+  final GlobalKey _statusDotKey = GlobalKey();
   Map<String, dynamic>? _entCache;
   // 验收#2：缓存所属套餐档——档位切换后旧快照不得复用。
   String? _entCachePlanKind;
@@ -3802,6 +3807,17 @@ class _ConversationPageState extends State<ConversationPage>
         _slashCandidates.isNotEmpty ||
         _fileCandidates.isNotEmpty;
     if (!open) return;
+    // 状态点自身跳过（2026-11-22 用户 bug）：down 先关、tap 的 toggle 再
+    // 开——连点永远"只显示不关闭"。点绿圈=开关交给 _toggleUsageCard。
+    final dotCtx = _statusDotKey.currentContext;
+    final dotBox = dotCtx?.findRenderObject();
+    if (dotBox is RenderBox &&
+        dotBox.attached &&
+        (dotBox.localToGlobal(Offset.zero) & dotBox.size).contains(
+          event.position,
+        )) {
+      return;
+    }
     final ctx = _floatingLayerKey.currentContext;
     if (ctx != null) {
       final box = ctx.findRenderObject();
@@ -5947,6 +5963,7 @@ class _ConversationPageState extends State<ConversationPage>
                 statusColor: _statusDotColor(context),
                 statusProgress: _contextUsageProgress(effState),
                 onStatusTap: _toggleUsageCard,
+                statusDotKey: _statusDotKey,
                 attachmentsBar: _pendingAtts.isEmpty
                     ? null
                     : PendingAttachmentChips(

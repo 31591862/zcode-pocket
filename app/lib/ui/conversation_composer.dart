@@ -154,6 +154,10 @@ class InputBar extends StatelessWidget {
   final double? statusProgress;
   final VoidCallback? onStatusTap;
 
+  /// 状态点容器 key（2026-11-22）：页面层外点关闭需按矩形排除状态点
+  /// 自身（否则 down 关、tap 开，卡永远关不掉）。
+  final Key? statusDotKey;
+
   const InputBar({
     required this.controller,
     required this.focusNode,
@@ -175,6 +179,7 @@ class InputBar extends StatelessWidget {
     this.statusColor,
     this.statusProgress,
     this.onStatusTap,
+    this.statusDotKey,
   });
 
   @override
@@ -297,6 +302,7 @@ class InputBar extends StatelessWidget {
                               // 点；点按=用量详情卡。
                               if (statusColor != null)
                                 SizedBox(
+                                  key: statusDotKey,
                                   width: 36,
                                   height: 36,
                                   child: IconButton(
