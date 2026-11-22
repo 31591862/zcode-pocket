@@ -5092,8 +5092,11 @@ class _ConversationPageState extends State<ConversationPage>
             // ——分支入口收敛到顶栏 ⋮ 菜单「分支」项；draft 页无 ⋮，
             // 此处仍为唯一入口，故仅 draft 保留）。点按进分支弹层——
             // draft 态切完再发消息=会话跑在新分支上。
-            if (_branchCurrent != null &&
-                !(state != null && _sessionId != null))
+            // 2026-11-22 用户 bug：判据原含 live `state != null`——分支
+            // 信息（独立 git RPC）常先于会话订阅返回，同步期 state 仍
+            // null → 副行闪现一瞬再消失。draft 判据只需 _sessionId
+            // 为空（异步时序无关）。
+            if (_branchCurrent != null && _sessionId == null)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

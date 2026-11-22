@@ -395,6 +395,33 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('真实会话预渲期：分支先加载也不得闪现副行（2026-11-22 bug）',
+        (tester) async {
+      final app = _EntryApp();
+      await tester.pumpWidget(
+        AppStateScope(
+          app: app,
+          child: const MaterialApp(
+            home: ConversationPage(sessionId: 's1', title: '真实会话'),
+          ),
+        ),
+      );
+      // 同步期（live state 未就绪）：分支信息独立 git RPC 往往先返回。
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        app.stub.calls.map((c) => c.$1),
+        contains('getLocalBranches'),
+        reason: '对照组：分支信息已加载（同夹具 draft 用例可显示）',
+      );
+      // 真实会话（有 ⋮ 菜单）副行恒隐藏——旧判据含 live state 会闪现。
+      expect(
+        find.byKey(const ValueKey('branch-entry')),
+        findsNothing,
+        reason: '预渲期 state==null 不得让副行漏出',
+      );
+    });
   });
 }
 
