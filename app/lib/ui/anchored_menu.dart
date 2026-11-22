@@ -8,6 +8,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart' hide Text;
+import 'package:flutter/scheduler.dart';
 
 import '../core/localized_text.dart';
 import '../core/theme.dart';
@@ -33,7 +34,7 @@ class AnchoredMenuItem {
 /// 弹出锚定菜单；选择返回 value，点外关闭返回 null。
 Future<String?> showAnchoredMenu(
   BuildContext context, {
-  required LayerLink link,
+  LayerLink? link,
   required List<AnchoredMenuItem> items,
   Alignment targetAnchor = Alignment.bottomRight,
   Alignment followerAnchor = Alignment.topRight,
@@ -88,71 +89,96 @@ Future<String?> showAnchoredMenu(
     entry = null;
   }
 
+  // 翻转自纠：link 模式下首帧后量 follower 底缘，越屏即翻（重挂一次）。
+  var flipChecked = false;
+  final cardKey = GlobalKey();
   entry = OverlayEntry(
-    builder: (overlayContext) => Stack(
-      children: [
-        // 全屏关闭层（菜单外任意点击=关闭；菜单是兄弟节点且在顶层，
-        // 自身点击不会被此层吞）。
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              onDismissed?.call();
-              close(null);
-            },
+    builder: (overlayContext) {
+      final screenH = MediaQuery.of(overlayContext).size.height;
+
+      void scheduleFlipCheck() {
+        if (flipChecked || link == null) return;
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (entry == null || completer.isCompleted) return;
+          final box = cardKey.currentContext?.findRenderObject();
+          if (box is! RenderBox || !box.hasSize) return;
+          final bottom = box.localToGlobal(Offset(0, box.size.height)).dy;
+          if (bottom > screenH - 8) {
+            flipChecked = true;
+            entry!.markNeedsBuild();
+          }
+        });
+      }
+
+      scheduleFlipCheck();
+
+      return Stack(
+        children: [
+          // 全屏关闭层（菜单外任意点击=关闭；菜单是兄弟节点且在顶层，
+          // 自身点击不会被此层吞）。
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                onDismissed?.call();
+                close(null);
+              },
+            ),
           ),
-        ),
-        CompositedTransformFollower(
-          link: link,
-          targetAnchor: tAnchor,
-          followerAnchor: fAnchor,
-          offset: off,
-          showWhenUnlinked: false,
-          child: IntrinsicWidth(
-            child: Material(
-              type: MaterialType.transparency,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: bg,
-                  borderRadius: radius,
-                  border: Border.all(color: border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(
-                        alpha:
-                            Theme.of(overlayContext).brightness ==
-                                Brightness.dark
-                            ? 0.4
-                            : 0.10,
-                      ),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
+          if (link != null)
+            CompositedTransformFollower(
+              link: link,
+              targetAnchor: flipChecked ? Alignment.topRight : tAnchor,
+              followerAnchor: flipChecked ? Alignment.bottomRight : fAnchor,
+              offset: flipChecked ? Offset.zero : off,
+              showWhenUnlinked: false,
+              child: IntrinsicWidth(
+                key: cardKey,
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: bg,
+                      borderRadius: radius,
+                      border: Border.all(color: border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha:
+                                Theme.of(overlayContext).brightness ==
+                                    Brightness.dark
+                                ? 0.4
+                                : 0.10,
+                          ),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final item in items)
-                      _AnchoredMenuTile(
-                        key: item.key,
-                        label: item.label,
-                        color: item.selected
-                            ? (selectedTextColor ?? item.color)
-                            : item.color,
-                        highlight: hl,
-                        selected: item.selected,
-                        onTap: () => close(item.value),
-                      ),
-                  ],
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final item in items)
+                          _AnchoredMenuTile(
+                            key: item.key,
+                            label: item.label,
+                            color: item.selected
+                                ? (selectedTextColor ?? item.color)
+                                : item.color,
+                            highlight: hl,
+                            selected: item.selected,
+                            onTap: () => close(item.value),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
-      ],
-    ),
+        ],
+      );
+    },
   );
   overlay.insert(entry!);
   return completer.future;
