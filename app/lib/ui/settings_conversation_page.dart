@@ -4,6 +4,7 @@ import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/channel_client.dart';
+import 'anchored_menu.dart';
 import 'settings_style.dart';
 import 'top_notice.dart';
 
@@ -116,7 +117,7 @@ class SettingsConversationPage extends StatelessWidget {
                     } catch (e) {
                       if (context.mounted) {
                         TopNotice.show(
-                          message: tr('已保存；下发桌面端失败：') + '$e',
+                          message: '已保存；下发桌面端失败：$e',
                           duration: const Duration(seconds: 3),
                         );
                       }
@@ -134,44 +135,63 @@ class SettingsConversationPage extends StatelessWidget {
                   style: TextStyle(fontSize: AppType.uiCaption),
                 ),
               ),
-              ListTile(
-                leading: const Icon(
-                  Icons.low_priority_outlined,
-                  size: 24,
-                  color: kSettingsIconBlue,
-                ),
-                title: const Text(
-                  '运行中收到新消息',
-                  style: TextStyle(fontSize: AppType.uiBase),
-                ),
-                subtitle: Text(
-                  app.uiPrefs.followupMode == 'guide'
-                      ? '引导：插入到下一轮工具调用后生效'
-                      : '队列：排队等当前回合结束后依次发送',
-                  style: const TextStyle(fontSize: AppType.uiCaption),
-                ),
-                trailing: const Icon(Icons.chevron_right, size: 18),
-                onTap: () async {
-                  final picked = await showDialog<String>(
-                    context: context,
-                    builder: (dialogContext) => SimpleDialog(
-                      title: const Text('运行中收到新消息'),
-                      children: [
-                        SimpleDialogOption(
-                          onPressed: () =>
-                              Navigator.pop(dialogContext, 'queue'),
-                          child: const Text('队列——排队等回合结束依次发送'),
+              Builder(
+                builder: (rowCtx) => ListTile(
+                  leading: const Icon(
+                    Icons.low_priority_outlined,
+                    size: 24,
+                    color: kSettingsIconBlue,
+                  ),
+                  title: const Text(
+                    '运行中收到新消息',
+                    style: TextStyle(fontSize: AppType.uiBase),
+                  ),
+                  subtitle: Text(
+                    app.uiPrefs.followupMode == 'guide'
+                        ? '引导：插入到下一轮工具调用后生效'
+                        : '队列：排队等当前回合结束后依次发送',
+                    style: const TextStyle(fontSize: AppType.uiCaption),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        app.uiPrefs.followupMode == 'guide' ? '引导' : '队列',
+                        style: const TextStyle(fontSize: AppType.uiCaption),
+                      ),
+                      const Icon(Icons.arrow_drop_down, size: 18),
+                    ],
+                  ),
+                  onTap: () async {
+                    final box = rowCtx.findRenderObject()! as RenderBox;
+                    final anchorRect =
+                        box.localToGlobal(Offset.zero) & box.size;
+                    final v = await showAnchoredMenu(
+                      context,
+                      anchorRect: anchorRect,
+                      items: [
+                        AnchoredMenuItem(
+                          value: 'queue',
+                          label: '队列——排队等回合结束依次发送',
+                          selected: app.uiPrefs.followupMode == 'queue',
+                          key: const ValueKey('followup-queue'),
                         ),
-                        SimpleDialogOption(
-                          onPressed: () =>
-                              Navigator.pop(dialogContext, 'guide'),
-                          child: const Text('引导——插到下一轮工具调用后运行'),
+                        AnchoredMenuItem(
+                          value: 'guide',
+                          label: '引导——插到下一轮工具调用后运行',
+                          selected: app.uiPrefs.followupMode == 'guide',
+                          key: const ValueKey('followup-guide'),
                         ),
                       ],
-                    ),
-                  );
-                  if (picked != null) await app.changeFollowupMode(picked);
-                },
+                      selectedTextColor: context.colors.brandAccent,
+                      highlight: context.colors.brandAccent.withValues(
+                        alpha: 0.14,
+                      ),
+                      maxWidth: 300,
+                    );
+                    if (v != null) await app.changeFollowupMode(v);
+                  },
+                ),
               ),
             ]),
           ],

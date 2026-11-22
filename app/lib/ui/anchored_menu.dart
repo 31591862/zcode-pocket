@@ -94,7 +94,9 @@ Future<String?> showAnchoredMenu(
   final cardKey = GlobalKey();
   entry = OverlayEntry(
     builder: (overlayContext) {
-      final screenH = MediaQuery.of(overlayContext).size.height;
+      final media = MediaQuery.of(overlayContext);
+      final screenH = media.size.height;
+      final screenW = media.size.width;
 
       void scheduleFlipCheck() {
         if (flipChecked || link == null) return;
@@ -112,10 +114,72 @@ Future<String?> showAnchoredMenu(
 
       scheduleFlipCheck();
 
+      // 菜单卡内容（link follower / rect 定位两种方式复用）。
+      final menuCard = IntrinsicWidth(
+        key: cardKey,
+        child: Material(
+          type: MaterialType.transparency,
+          child: Container(
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: radius,
+              border: Border.all(color: border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha:
+                        Theme.of(overlayContext).brightness == Brightness.dark
+                        ? 0.4
+                        : 0.10,
+                  ),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            constraints: BoxConstraints(maxWidth: maxWidth ?? double.infinity),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final item in items)
+                    _AnchoredMenuTile(
+                      key: item.key,
+                      label: item.label,
+                      color: item.selected
+                          ? (selectedTextColor ?? item.color)
+                          : item.color,
+                      highlight: hl,
+                      selected: item.selected,
+                      onTap: () => close(item.value),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final menu = link != null
+          ? CompositedTransformFollower(
+              link: link,
+              targetAnchor: flipChecked ? Alignment.topRight : tAnchor,
+              followerAnchor: flipChecked ? Alignment.bottomRight : fAnchor,
+              offset: flipChecked ? Offset.zero : off,
+              showWhenUnlinked: false,
+              child: menuCard,
+            )
+          : anchorRect != null
+          ? Positioned(
+              right: (screenW - anchorRect.right).clamp(8.0, screenW - 8.0),
+              top: flip ? null : anchorRect.bottom + 4,
+              bottom: flip ? screenH - anchorRect.top + 4 : null,
+              child: menuCard,
+            )
+          : const SizedBox.shrink();
       return Stack(
         children: [
-          // 全屏关闭层（菜单外任意点击=关闭；菜单是兄弟节点且在顶层，
-          // 自身点击不会被此层吞）。
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -125,57 +189,7 @@ Future<String?> showAnchoredMenu(
               },
             ),
           ),
-          if (link != null)
-            CompositedTransformFollower(
-              link: link,
-              targetAnchor: flipChecked ? Alignment.topRight : tAnchor,
-              followerAnchor: flipChecked ? Alignment.bottomRight : fAnchor,
-              offset: flipChecked ? Offset.zero : off,
-              showWhenUnlinked: false,
-              child: IntrinsicWidth(
-                key: cardKey,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: bg,
-                      borderRadius: radius,
-                      border: Border.all(color: border),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(
-                            alpha:
-                                Theme.of(overlayContext).brightness ==
-                                    Brightness.dark
-                                ? 0.4
-                                : 0.10,
-                          ),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (final item in items)
-                          _AnchoredMenuTile(
-                            key: item.key,
-                            label: item.label,
-                            color: item.selected
-                                ? (selectedTextColor ?? item.color)
-                                : item.color,
-                            highlight: hl,
-                            selected: item.selected,
-                            onTap: () => close(item.value),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          menu,
         ],
       );
     },
