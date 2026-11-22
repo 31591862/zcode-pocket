@@ -312,6 +312,10 @@ class _ConversationPageState extends State<ConversationPage>
     });
   }
 
+  /// 通道注入窗口期计数（2s/拍）：持续未就绪 3 拍（6s）才显示
+  /// 「工作区尚未打开」——窗口期静默，真卡死仍有提示（2026-11-22）。
+  int _transportWaitTicks = 0;
+
   void _convHealthTick() {
     if (!mounted || _convHealthBusy) return;
     final lifecycle = WidgetsBinding.instance.lifecycleState;
@@ -319,7 +323,20 @@ class _ConversationPageState extends State<ConversationPage>
     if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
     final app = _appRef;
     if (app == null || app.phase != LinkPhase.online) return;
-    if (!app.conversationTransportReady) return;
+    if (!app.conversationTransportReady) {
+      if (_transportWaitTicks < 3) _transportWaitTicks++;
+      if (_transportWaitTicks >= 3 &&
+          _sub == null &&
+          mounted &&
+          _syncError == null) {
+        setState(() {
+          _syncError = tr('工作区尚未打开，请稍后重试');
+          _error = _syncError;
+        });
+      }
+      return;
+    }
+    _transportWaitTicks = 0;
     final sid = _sessionId;
     if (sid == null || sid.isEmpty) return;
     final sub = _sub;
@@ -1553,6 +1570,19 @@ class _ConversationPageState extends State<ConversationPage>
       // 三轮审查 /：新增三类内部 StateError 的人话映射——不再把
       // 「Bad state:」英文前缀裸给用户，桥自建场景也不再误称"已切换"。
       final raw = '$e';
+      // 通道注入窗口期（切工作区/冷启动，2026-11-22 用户 bug）：首轮订阅
+      // 撞 no active workspace 时静默——2s 巡检待通道就绪自动补订；只有
+      // 持续 6s 未就绪才由巡检显示提示（不动真错误路径）。
+      if (raw.contains('no active workspace') &&
+          !AppStateScope.of(context).conversationTransportReady) {
+        if (mounted) {
+          setState(() {
+            _error = null;
+            _syncError = null;
+          });
+        }
+        return;
+      }
       final friendly = raw.contains('session-lineage-invalid')
           ? tr('该会话归属其他项目目录，当前桌面版本无法从手机打开')
           : raw.contains('会话订阅已重置')

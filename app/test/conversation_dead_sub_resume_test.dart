@@ -145,6 +145,11 @@ class _ResubApp extends AppState {
     String id, {
     Object? seedCacheEntry,
   }) async {
+    // 对齐真实 ConversationRegistry：通道未注入（切工作区/冷启动窗口期）
+    // 即抛 no active workspace。
+    if (!conversationTransportReady) {
+      throw StateError('no active workspace');
+    }
     ensureCalls++;
     // suspend→resume 后 registry 已重建：同 sid 返回新驻留实例。
     return sub1.disposed ? sub2 : sub1;
@@ -202,6 +207,38 @@ void main() {
     await tester.pump(const Duration(milliseconds: 2500));
     await _settle(tester);
     expect(app.ensureCalls, before, reason: '活订阅不重订（复核仍活）');
+  });
+
+  testWidgets('切工作区窗口期：首轮订阅撞 no active workspace 静默（不出错横幅）',
+      (tester) async {
+    final app = _ResubApp()..workspaceOpen = false;
+    await tester.pumpWidget(_host(app));
+    // 窗口期（首轮订阅已发起并失败→静默）：不得出现错误横幅。
+    await _settle(tester, rounds: 8);
+    expect(
+      find.textContaining('工作区尚未打开'),
+      findsNothing,
+      reason: '通道注入窗口期静默等巡检补订（旧实现横幅闪现）',
+    );
+
+    // 通道就绪 → 巡检自动补订并渲染真实内容。
+    app.workspaceOpen = true;
+    app.notifyListeners();
+    await _settle(tester, rounds: 15);
+    expect(app.ensureCalls, greaterThan(0), reason: '就绪后巡检补订成功');
+    expect(find.textContaining('后台前的旧输出'), findsOneWidget);
+  });
+
+  testWidgets('通道持续未就绪：6s 后兜底显示「工作区尚未打开」', (tester) async {
+    final app = _ResubApp()..workspaceOpen = false;
+    await tester.pumpWidget(_host(app));
+    // 3 拍巡检（2s/拍）后兜底提示出现（窗口期静默 ≠ 永久无反馈）。
+    await _settle(tester, rounds: 72);
+    expect(
+      find.textContaining('工作区尚未打开'),
+      findsOneWidget,
+      reason: '通道持续未就绪须有明确提示（可重试）',
+    );
   });
 
   testWidgets('工作区未就绪：不冲订阅（不出错横幅），就绪后自轮询补订', (tester) async {
