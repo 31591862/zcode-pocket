@@ -26,29 +26,25 @@ Color settingsPageBg(Brightness brightness) =>
 
 /// 组标签：卡外的小号灰字（替代旧 AppSectionHeader 的理工风区块头）。
 Widget settingsGroupLabel(BuildContext context, String label) => Padding(
-      padding: const EdgeInsets.fromLTRB(4, 22, 16, 8),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0x99EBEBEB)
-              : const Color(0x8A262626),
-        ),
-      ),
-    );
+  padding: const EdgeInsets.fromLTRB(4, 22, 16, 8),
+  child: Text(
+    label,
+    style: TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w500,
+      color: Theme.of(context).brightness == Brightness.dark
+          ? const Color(0x99EBEBEB)
+          : const Color(0x8A262626),
+    ),
+  ),
+);
 
 /// 分组卡：白色（深色 #232427）无边框圆角 16 容器，行间自动插 54 缩进
 /// 细分隔线（对齐 ListTile leading 图标右缘）。
 ///
 /// ListTile 的墨水画在最近的 Material 祖先上——卡容器有底色时必须内套
 /// 透明 Material，否则涟漪/高亮被底色遮蔽（Flutter 框架断言）。
-Widget settingsGroupCard(
-  BuildContext context,
-  bool isDark,
-  List<Widget> rows,
-) {
+Widget settingsGroupCard(BuildContext context, bool isDark, List<Widget> rows) {
   final divider = Divider(
     height: 1,
     thickness: 0.5,
@@ -60,14 +56,22 @@ Widget settingsGroupCard(
     children.add(rows[i]);
     if (i < rows.length - 1) children.add(divider);
   }
-  return Container(
-    decoration: BoxDecoration(
-      color: isDark ? kSettingsCardDark : kSettingsCardLight,
-      borderRadius: BorderRadius.circular(16),
+  // 卡内 ListTile 统一圆角墨水（2026-11-21 用户拍板：按压不再直角）。
+  return Theme(
+    data: Theme.of(context).copyWith(
+      listTileTheme: ListTileThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
     ),
-    child: Material(
-      type: MaterialType.transparency,
-      child: Column(children: children),
+    child: Container(
+      decoration: BoxDecoration(
+        color: isDark ? kSettingsCardDark : kSettingsCardLight,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(children: children),
+      ),
     ),
   );
 }
