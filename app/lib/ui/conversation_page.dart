@@ -1323,6 +1323,7 @@ class _ConversationPageState extends State<ConversationPage>
     _inputFocusNode.dispose();
     _scroll.dispose();
     _convHealthTimer?.cancel();
+    _fabHintTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _search.dispose();
     _fileDebounce?.cancel();
@@ -5137,7 +5138,11 @@ class _ConversationPageState extends State<ConversationPage>
           ],
         ),
         actions: [
-          if (state != null && _sessionId != null)
+          // 顶栏入口统一按 effState 门控（2026-11-22 用户反馈：进会话
+          // 「正在同步最新消息」期间缓存预渲期 state 为 null，四个入口
+          // 集体消失，观感像卡死）。effState=live 回落缓存预渲，会话级
+          // 操作（下载/菜单/子代理）预渲期即可用；live 到达自动切换。
+          if (effState != null && _sessionId != null)
             // 工作流运行入口（早前批次，用户拍板从 ⋮ 提升到顶栏
             // 一级：文件下载高频需求，回访旧产物要一步直达）。entry-
             // polish-1 当初挪入菜单的「低频查看项」前提已被产物分享
@@ -5150,7 +5155,7 @@ class _ConversationPageState extends State<ConversationPage>
               // 运行中 run 计数（快照 workflowRuns 投影活数据）。
               icon: _TopBarCountBadge(
                 badgeKey: const ValueKey('topbar-badge-workflow'),
-                count: state.workflowRunsList
+                count: effState.workflowRunsList
                     .where((r) => '${r['status']}' == 'running')
                     .length,
                 icon: Icons.download_outlined,
@@ -5171,7 +5176,7 @@ class _ConversationPageState extends State<ConversationPage>
                 ),
               ),
             ),
-          if (state != null && _sessionId != null)
+          if (effState != null && _sessionId != null)
             IconButton(
               key: const ValueKey('conversation-search-entry'),
               icon: Icon(
@@ -5185,7 +5190,7 @@ class _ConversationPageState extends State<ConversationPage>
             ),
           // 子代理列表入口（2026-10-26 批④拍板）：长会话免翻找，直达
           // 本会话全部子智能体（运行中/已结束+下钻只读会话）。
-          if (state != null && _sessionId != null)
+          if (effState != null && _sessionId != null)
             IconButton(
               key: const ValueKey('subagents-entry'),
               // 运行中高亮（真机反馈 2026-11-14「计数徽喧宾夺主，图标
@@ -5195,7 +5200,7 @@ class _ConversationPageState extends State<ConversationPage>
               icon: Icon(
                 Icons.smart_toy_outlined,
                 size: 18,
-                color: countRunningSubagents(state.rows) > 0
+                color: countRunningSubagents(effState.rows) > 0
                     ? context.colors.warning
                     : null,
               ),
@@ -5208,7 +5213,7 @@ class _ConversationPageState extends State<ConversationPage>
               ),
             ),
           // （WR 对齐）：窗口内任务操作菜单（桌面 TaskActionMenu 对位）。
-          if (state != null && _sessionId != null)
+          if (effState != null && _sessionId != null)
             CompositedTransformTarget(
               link: _taskMenuLink,
               child: IconButton(

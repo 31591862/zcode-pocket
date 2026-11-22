@@ -81,6 +81,13 @@ Map<String, dynamic> _subagentRow(
       'summaryText': summary,
     };
 
+/// 内容区子代理卡图标（size 16）——顶栏 subagents-entry 同款图标 size 18
+///（2026-11-22 顶栏改 effState 门控后预渲期可见），全局 byIcon 会重复
+/// 计数；断言/点按一律限定内容卡尺寸。
+final _cardRobotIcon = find.byWidgetPredicate(
+  (w) => w is Icon && w.icon == Icons.smart_toy_outlined && w.size == 16,
+);
+
 void main() {
   testWidgets('parentToolCallId 精确配对：工具行撤销，只渲染一张卡',
       (tester) async {
@@ -97,7 +104,7 @@ void main() {
     await _pump(tester);
 
     // 卡（smart_toy 图标）恰好一张。
-    expect(find.byIcon(Icons.smart_toy_outlined), findsOneWidget);
+    expect(_cardRobotIcon, findsOneWidget);
     // 2026-11-05 反馈①：合并卡=「子智能体 · 类型 · summary」三段式
     //（官方 ToolSummaryRow 对位）——前缀恰一份；工具行 preview 若残留
     // 会是第二份（重复根源）。
@@ -125,7 +132,7 @@ void main() {
     await tester.pumpWidget(_host(app));
     await _pump(tester);
 
-    await tester.tap(find.byIcon(Icons.smart_toy_outlined));
+    await tester.tap(_cardRobotIcon);
     await _pump(tester);
     // 2026-11-05 反馈①：下钻页 AppBar 标题=类型名（官方
     // sidePaneTabPresentation L127 优先用 subagentType；合并卡本体在
@@ -153,7 +160,7 @@ void main() {
     ]);
     await tester.pumpWidget(_host(app));
     await _pump(tester);
-    expect(find.byIcon(Icons.smart_toy_outlined), findsOneWidget);
+    expect(_cardRobotIcon, findsOneWidget);
     expect(find.textContaining('general-purpose ·'), findsOneWidget,
         reason: '验收②形态恰一份；工具行残留会是第二份');
   });
@@ -171,7 +178,7 @@ void main() {
     await tester.pumpWidget(_host(app));
     await _pump(tester);
     // tc-1 配对撤销；tc-2 未配对→工具行保留（宁可重复不丢行）。
-    expect(find.byIcon(Icons.smart_toy_outlined), findsOneWidget,
+    expect(_cardRobotIcon, findsOneWidget,
         reason: '配对的 subagent 卡');
     expect(find.textContaining('子智能体 · 任务乙'), findsOneWidget,
         reason: '未配对的 Agent 工具行照常渲染');
@@ -286,7 +293,7 @@ void main() {
     await tester.pumpWidget(_host(app));
     await _pump(tester);
 
-    expect(find.byIcon(Icons.smart_toy_outlined), findsOneWidget,
+    expect(_cardRobotIcon, findsOneWidget,
         reason: '跨段配对后只出一张合并卡（旧行为段一工具行+段二卡双渲染）');
     expect(find.textContaining('general-purpose ·'), findsOneWidget,
         reason: '验收②形态：类型 · 摘要恰一份');
@@ -294,7 +301,7 @@ void main() {
     // 位于 guided 追问气泡之前。
     final cardTop = tester.getTopLeft(
       find.ancestor(
-        of: find.byIcon(Icons.smart_toy_outlined),
+        of: _cardRobotIcon,
         matching: find.byType(Container),
       ),
     );
@@ -326,7 +333,7 @@ void main() {
     expect(find.textContaining('子智能体 · 无行号甲'), findsOneWidget,
         reason: 'rowId 缺失的工具行不配对（不误吞）');
     expect(find.textContaining('子智能体 · 无行号乙'), findsOneWidget);
-    expect(find.byIcon(Icons.smart_toy_outlined), findsOneWidget,
+    expect(_cardRobotIcon, findsOneWidget,
         reason: 'subagent 行因父行无法配对而独立保留（fail-open）');
   });
 
@@ -355,7 +362,7 @@ void main() {
     await tester.pumpWidget(_host(app));
     await _pump(tester);
     // 修复前红：4 工具行 + 4 卡双渲染（真机截图形态）。
-    expect(find.byIcon(Icons.smart_toy_outlined), findsNWidgets(4),
+    expect(_cardRobotIcon, findsNWidgets(4),
         reason: '四张合并卡');
     expect(find.textContaining('子智能体 ·'), findsNothing,
         reason: '文本双射全中→工具行零残留');
@@ -377,7 +384,7 @@ void main() {
     ]);
     await tester.pumpWidget(_host(app));
     await _pump(tester);
-    expect(find.byIcon(Icons.smart_toy_outlined), findsNWidgets(2),
+    expect(_cardRobotIcon, findsNWidgets(2),
         reason: '孤儿 id 落文本兜底配对');
     expect(find.textContaining('子智能体 ·'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -398,7 +405,7 @@ void main() {
     await tester.pumpWidget(_host(app));
     await _pump(tester);
     // 双侧键均重复=歧义：两条工具行 + 两张卡全保留。
-    expect(find.byIcon(Icons.smart_toy_outlined), findsNWidgets(2));
+    expect(_cardRobotIcon, findsNWidgets(2));
     expect(find.textContaining('子智能体 ·'), findsNWidgets(2),
         reason: '歧义不配——误配比重复更糟');
     expect(tester.takeException(), isNull);
@@ -419,7 +426,7 @@ void main() {
     ]);
     await tester.pumpWidget(_host(app));
     await _pump(tester);
-    expect(find.byIcon(Icons.smart_toy_outlined), findsNWidgets(2),
+    expect(_cardRobotIcon, findsNWidgets(2),
         reason: '甲=合并卡；乙的 subagent 独立成卡');
     expect(find.textContaining('子智能体 · 任务乙'), findsOneWidget,
         reason: '乙工具行无匹配→保留（fail-open）');
