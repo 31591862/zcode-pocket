@@ -2,6 +2,8 @@
 // （非仓库短路不拉分支）、分支弹层旅程（列表/当前标记/切换成功/运行中
 // 任务确认门/阻塞码人话/新建分支/非仓库态）——全部 fixture 注入，不打
 // 真桥。通道放行由 tools/git-channel-probe.mjs 对真桌面实证（2026-10-24）。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcode_pocket/state/app_state.dart';
@@ -32,7 +34,11 @@ class _StubGit {
   // switchBranch / createBranchAndSwitch 的脚本化结果（默认成功）。
   Map<String, dynamic> mutationResult = {'ok': true, 'didChange': true};
 
+  /// 加载闸门：非 null 时先挂起（捕捉 loading 态弹层高度）。
+  Completer<void>? gate;
+
   Future<dynamic> call(String method, List<Object?> args) async {
+    if (gate != null) await gate!.future;
     if (throwOn != null) throw throwOn!;
     calls.add((method, args.first is Map ? Map<String, dynamic>.from(args.first as Map) : {}));
     switch (method) {
@@ -173,6 +179,27 @@ void main() {
   });
 
   group('分支弹层旅程（widget，fixture 注入）', () {
+    testWidgets('加载态不撑满弹层（先很高再变低回归）', (tester) async {
+      final stub = _StubGit();
+      final gate = Completer<void>();
+      stub.gate = gate;
+      await tester.pumpWidget(_host(stub));
+      await tester.tap(find.byKey(const ValueKey('open')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      // 修复前 loading 态 Center 在 Flexible 有界约束下取最大高度，
+      // 弹层撑到 70% 屏高、数据到位再收缩=「先很高再变低」。
+      final sheet = tester.getSize(find.byType(BottomSheet));
+      expect(
+        sheet.height,
+        lessThan(200),
+        reason: 'loading 态不得撑满 70% 屏高（真机先高后矮根因）',
+      );
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('branch-list')), findsOneWidget);
+    });
+
     testWidgets('列表+当前标记+upstream 副行', (tester) async {
       final stub = _StubGit();
       await _openSheet(tester, stub);

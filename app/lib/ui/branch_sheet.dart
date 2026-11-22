@@ -335,9 +335,16 @@ class _BranchSheetState extends State<_BranchSheet> {
 
   Widget _buildBody(BuildContext context, GitRepoOverview? overview) {
     if (_loading) {
+      // heightFactor: 1——Center 默认在 0..maxHeight 有界约束下取最大
+      // 高度：loading 态会把弹层撑到 70% 屏高、数据到位后又收缩到
+      // 列表实际高（2026-11-22 用户实锤「弹窗先很高再变低」）。
+      // 钉成内容高：打开瞬间只占加载指示器那一小条。
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 32),
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        child: Center(
+          heightFactor: 1,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
       );
     }
     if (_error != null) {
