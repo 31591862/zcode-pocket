@@ -138,6 +138,26 @@ class SettingsNotificationsPage extends StatelessWidget {
                   style: TextStyle(fontSize: AppType.uiCaption),
                 ),
               ),
+              // 任务完成横幅（上游 1.0.9 orientation-unlock-1，vivo 真机
+              // 反馈「完成只有震动+锁屏内容、无顶部弹窗」）：tasks 渠道
+              // default 档「完成不打断」保持默认关；开后走 tasks_alert
+              // 高优渠道顶部弹窗。iOS 无渠道 importance 概念，入口隐藏。
+              if (ZpCapabilities.supportsHeadsUpChannelToggle)
+                SwitchListTile(
+                  value: app.uiPrefs.taskHeadsUp,
+                  onChanged: (v) => app.uiPrefs.setTaskHeadsUp(v),
+                  secondary: const Icon(Icons.notifications_active_outlined,
+                      size: 24, color: kSettingsIconOrange),
+                  title: const Text(
+                    '任务完成横幅',
+                    style: TextStyle(fontSize: AppType.uiBase),
+                  ),
+                  subtitle: const Text(
+                    '开启后任务完成以顶部横幅弹出（更醒目），关闭则仅'
+                    '状态栏与锁屏提醒',
+                    style: TextStyle(fontSize: AppType.uiCaption),
+                  ),
+                ),
               SwitchListTile(
                 value: !app.uiPrefs.muteGoals,
                 onChanged: (v) => app.uiPrefs.setChannelMute('goals', !v),
@@ -153,10 +173,10 @@ class SettingsNotificationsPage extends StatelessWidget {
                 ),
               ),
             ]),
-            // OEM 省电白名单引导（notify-guide-oem-1）：iOS 无此概念
-            //（结构性，supportsOemPowerGuide）入口隐藏（早前批次）。
             settingsGroupLabel(context, '台账与保障'),
             settingsGroupCard(context, isDark, [
+              // OEM 省电白名单引导（notify-guide-oem-1）：iOS 无此概念
+              //（结构性，supportsOemPowerGuide）入口隐藏（早前批次）。
               if (ZpCapabilities.supportsOemPowerGuide)
                 ListTile(
                   leading: const Icon(Icons.tune_outlined,

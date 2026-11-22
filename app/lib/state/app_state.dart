@@ -9,7 +9,6 @@ import '../transport/channel_client.dart';
 import '../transport/companion_client.dart';
 import '../transport/connection_params.dart';
 import '../transport/conversation.dart';
-import '../transport/device_info.dart' show companionPlatformName;
 import '../transport/relay_client.dart';
 import '../transport/project_tree.dart';
 import '../transport/relay_v2.dart';
@@ -626,6 +625,9 @@ class AppState extends ChangeNotifier {
     } else {
       notifyService = service;
     }
+    // 任务完成横幅开关（orientation-unlock-1）：解析器读 uiPrefs，
+    // 开关即生效（下一条任务完成通知走 tasks_alert 高优渠道）。
+    notifyService!.taskHeadsUpResolver = () => uiPrefs.taskHeadsUp;
     // 通知点击回调不依赖台账：存储降级环境（store
     // 创建失败）下 onTap 也要挂上——否则该次会话所有通知点击（含冷启
     // 动点击直达）失效，只剩无导航的通知。
@@ -1076,22 +1078,6 @@ class AppState extends ChangeNotifier {
     // 冷启动通知最后消费（状态层批）：profiles/通知协调器就绪后——目标
     // 电脑有可用档案先激活，再走既有打开链；markClicked 可写台账。
     await _flushPendingLaunch();
-  }
-
-  String? _cachedAppVersionName;
-
-  Future<String> _readAppVersionNameOrDefault() async {
-    final cached = _cachedAppVersionName;
-    if (cached != null) return cached;
-    try {
-      final res = await const MethodChannel('companion/appinfo')
-          .invokeMethod<Map<dynamic, dynamic>>('get');
-      final v = res?['versionName'] as String?;
-      if (v != null && v.trim().isNotEmpty) {
-        return _cachedAppVersionName = v.trim();
-      }
-    } catch (_) {}
-    return _cachedAppVersionName ??= '0.0.0';
   }
 
   /// 冷启动通知点击路由（load 末尾调用）。档案不可达也走打开链——
