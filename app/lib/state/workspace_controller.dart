@@ -145,14 +145,24 @@ class WorkspaceController {
   /// 恢复键可能指向桌面端已关闭的窗口 tab，重试同一目标永远失败。
   /// 按列表顺序尝试其余工作区；成功即落位（switchWorkspace 内部会持久化
   /// lastWorkspaceKey），全失败保留最后一个错误。
+  /// 轮换代际：用户手动切换（switchWorkspace 非 fromFallback 入口）即
+  /// 递增——进行中的轮换见代际变化立刻放弃，不再拆用户刚选的工作区
+  ///（2026-11-23 用户线索：问题集中在频繁切换工作区时）。
+  int _fallbackSeq = 0;
+
   Future<bool> _openFallbackWorkspace(String failedKey) async {
+    final seq = ++_fallbackSeq;
     for (final ws in workspaces) {
+      if (seq != _fallbackSeq) {
+        _onLog('[workspace] fallback abandoned: superseded');
+        return false;
+      }
       final key = workspaceKeyOf(ws);
       if (key == null || key == failedKey) continue;
       workspaceError = null;
       workspaceErrorRaw = null;
       _onNotify();
-      await switchWorkspace(ws);
+      await switchWorkspace(ws, fromFallback: true);
       if (workspaceError == null && _bridge != null) {
         _onLog('[workspace] fallback opened $key (primary $failedKey rejected)');
         return true;
@@ -366,7 +376,10 @@ class WorkspaceController {
   Future<void> switchWorkspace(
     Map<String, dynamic> workspace, {
     bool keepHomePreview = false,
+    bool fromFallback = false,
   }) async {
+    // 用户/外部手动切换 → 作废进行中的轮换（防轮换拆掉用户刚选的目标）。
+    if (!fromFallback) _fallbackSeq++;
     final client = _clientProvider();
     final key = workspaceKeyOf(workspace);
     if (client == null || key == null) return;

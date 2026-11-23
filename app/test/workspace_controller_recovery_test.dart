@@ -471,6 +471,56 @@ void main() {
       await h.controller.close();
     });
 
+    test('轮换中用户手动切走 → 轮换放弃（不拆用户目标，频繁切换竞态）',
+        () async {
+      final h = _Harness(_offlineClient());
+      h.client.listResult = {
+        'workspaces': [
+          {'workspacePath': 'G:/dead', 'kind': 'local'},
+          {'workspacePath': 'G:/slow', 'kind': 'local'},
+          {'workspacePath': 'G:/next', 'kind': 'local'},
+          {'workspacePath': 'G:/user', 'kind': 'local'},
+        ],
+        'tasks': null,
+      };
+      final deadErr =
+          StateError('workspace-bridge-error: 目标工作区不在当前桌面窗口中');
+      final gate = Completer<void>();
+      final userGate = Completer<void>();
+      final userBridge = _StubBridge(conv: _FakeConv());
+      h.client.openImpl = (key) async {
+        if (key == 'G:/dead') throw deadErr;
+        if (key == 'G:/slow') {
+          await gate.future;
+          throw deadErr;
+        }
+        if (key == 'G:/user') {
+          await userGate.future;
+          return userBridge;
+        }
+        return userBridge; // G:/next：无守卫时会被轮换误触（拆用户切换）
+      };
+      final booting = h.controller.bootstrapWorkspace(h.client);
+      expect(await _until(() => h.client.openCalls.contains('G:/slow')), isTrue,
+          reason: '前置：轮换进入第一个候选（挂起）');
+      // 用户在轮换进行中手动切到目标（在飞、挂起）——轮换必须放弃，
+      // 不得继续试 next（否则会拆掉用户刚发起的切换）。
+      final userSwitch =
+          h.controller.switchWorkspace(const {'workspacePath': 'G:/user'});
+      gate.complete(); // 轮换候选 slow 失败返回，轮换有机会"继续下一候选"
+      await Future<void>.delayed(const Duration(milliseconds: 4500));
+      expect(
+        h.client.openCalls,
+        isNot(contains('G:/next')),
+        reason: '轮换已被用户切换作废，不得继续尝试后续候选',
+      );
+      userGate.complete();
+      await userSwitch;
+      await booting;
+      expect(h.controller.bridge, same(userBridge), reason: '用户目标生效');
+      await h.controller.close();
+    });
+
     test('全部被拒 → 明确提示桌面端没有可用工作区窗口', () async {
       final h = _Harness(_offlineClient());
       h.client.listResult = {
