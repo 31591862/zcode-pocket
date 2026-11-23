@@ -134,6 +134,7 @@ desktop **3.16+**):
 
 | Desktop version | Status |
 |---|---|
+| 4.0.0 | Assessed against official sources and the installer package: zero breaking changes, no adaptation needed; verified on device |
 | 3.19.1 | Assessed against the official installer package: zero breaking changes, no adaptation needed; verified on device |
 | 3.19.0 | Assessed against the official installer package: zero breaking changes, no adaptation needed; verified on device |
 | 3.18.2 | Assessed against the official installer package and sources: zero breaking changes, no adaptation needed; verified on device |
