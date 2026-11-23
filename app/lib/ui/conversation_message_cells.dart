@@ -202,7 +202,9 @@ class AssistantText extends StatelessWidget {
           child: CachedContent(
             cacheKey: [
               text,
-              streaming,
+              // streaming 不参与缓存键（2026-11-22 完成帧闪烁修复②）：
+              // 渲染已与流式态无关（光标移除/高亮常开）——完成边沿
+              // text 不变即复用整棵 markdown 子树，不再整段重解析。
               codeHighlight,
               sessionId,
               header?['rowId'],

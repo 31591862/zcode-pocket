@@ -199,13 +199,18 @@ class MarkdownView extends StatelessWidget {
     // :405-409 实证）——从原文把「代码文本→语言」先抽成表，pre 构建器
     // 按文本反查（同内容多块同语言，键不敏感）。禁用/流式时跳过全文
     // 正则扫描（审查 B：流式期间 O(n²)/帧纯浪费）。
-    final highlightOn = codeHighlightEnabled && !streaming;
+    // 2026-11-22 完成帧闪烁修复②（用户反馈每回合总结输出完毕闪一下）：
+    // 流式期不再关闭代码高亮、不再拼接尾部光标——流式/完成两态渲染
+    // 完全一致，完成边沿无需整段重解析（仅 text 变化才重建）。
+    // 代价：流式每帧代码块也走高亮（块数少，MarkdownBody 本来每帧
+    // 因 text 变化重建，增量开销可控；真机流式卡顿即回退此开关）。
+    final highlightOn = codeHighlightEnabled;
     final languages = highlightOn
         ? _fenceLanguages(data)
         : const <String, String>{};
     final body = MarkdownBody(
       selectable: false,
-      data: _encodeLocalLinks(streaming ? '$data ▍' : data),
+      data: _encodeLocalLinks(data),
       builders: {
         'pre': _PreHighlightBuilder(
           brightness: brightness,

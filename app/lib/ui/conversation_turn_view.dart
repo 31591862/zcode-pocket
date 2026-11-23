@@ -523,60 +523,51 @@ class TurnBarState extends State<TurnBar> {
                     // 文本选择（2026-11-16 用户拍板）：正文 selectable 化
                     // 后长按=进入系统选择手柄，行操作菜单移除（协议操作
                     // 走轮尾操作行——重试按钮已补进 TurnTailActions）。
-                    (running ||
-                            unitIdx != lastTextUnitIdx ||
-                            '${row['state']}' == 'streaming' ||
-                            // 对抗审查 ：中断/失败轮不出操作行（官方
-                            // 只认 complete；窗口截断的无头末段放宽，
-                            // 见 _tailActionsAllowed）；guided 只挂末段。
-                            !_tailActionsAllowed ||
-                            !work.isLastSegment ||
-                            // 发了文件卡的轮操作行改挂卡尾
-                            //（收起态 316 行同款守卫）——展开态漏守卫会
-                            // 与 FileSummaryCard 尾部各出一条=双操作行。
-                            work.hasSummaryCard)
-                        ? SearchTargetFrame(
-                            rowId: intOf(row['rowId']),
-                            activeRowId: widget.searchTargetRowId,
-                            targetKey: widget.searchTargetKey,
-                            child: AssistantText(
-                              text: '${row['text'] ?? ''}',
-                              streaming: row['state'] == 'streaming',
-                              sessionId: widget.sessionId,
-                              header: work.header,
-                              searchQuery: widget.searchQuery,
-                              searchUseRegex: widget.searchUseRegex,
-                              searchCompiledRegex: widget.searchCompiledRegex,
-                            ),
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SearchTargetFrame(
-                                rowId: intOf(row['rowId']),
-                                activeRowId: widget.searchTargetRowId,
-                                targetKey: widget.searchTargetKey,
-                                child: AssistantText(
-                                  text: '${row['text'] ?? ''}',
-                                  streaming: row['state'] == 'streaming',
-                                  sessionId: widget.sessionId,
-                                  header: work.header,
-                                  searchQuery: widget.searchQuery,
-                                  searchUseRegex: widget.searchUseRegex,
-                                  searchCompiledRegex:
-                                      widget.searchCompiledRegex,
-                                ),
-                              ),
-                              TurnTailActions(
-                                row: row,
-                                copyText: work.allTextJoined,
-                                sessionId: widget.sessionId,
-                                atMs: _tailAtMs,
-                                openSession: widget.openSession,
-                              ),
-                            ],
+                    //
+                    // 2026-11-22 完成帧闪烁修复①（用户反馈每回合总结
+                    // 输出完毕闪一下）：树形统一为同一 Column——旧实现
+                    // 完成瞬间从 SearchTargetFrame 直换成 Column（带操作
+                    // 行），正文 Element 整棵销毁重建（整段 markdown 重
+                    // 解析）+ 操作行插入高度突变 + 贴底校正=闪。现在
+                    // 正文恒居首 child（Element 跨流式/完成复用），操作
+                    // 行仅追加为第二 child。
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SearchTargetFrame(
+                          rowId: intOf(row['rowId']),
+                          activeRowId: widget.searchTargetRowId,
+                          targetKey: widget.searchTargetKey,
+                          child: AssistantText(
+                            text: '${row['text'] ?? ''}',
+                            streaming: row['state'] == 'streaming',
+                            sessionId: widget.sessionId,
+                            header: work.header,
+                            searchQuery: widget.searchQuery,
+                            searchUseRegex: widget.searchUseRegex,
+                            searchCompiledRegex: widget.searchCompiledRegex,
                           ),
+                        ),
+                        // 轮尾操作行（条件与旧分支一致）：中断/失败轮不出
+                        //（官方只认 complete；窗口截断无头末段放宽见
+                        // _tailActionsAllowed）；guided 只挂末段；已挂
+                        // 文件卡的轮操作行改挂卡尾（防双操作行）。
+                        if (!running &&
+                            unitIdx == lastTextUnitIdx &&
+                            '${row['state']}' != 'streaming' &&
+                            _tailActionsAllowed &&
+                            work.isLastSegment &&
+                            !work.hasSummaryCard)
+                          TurnTailActions(
+                            row: row,
+                            copyText: work.allTextJoined,
+                            sessionId: widget.sessionId,
+                            atMs: _tailAtMs,
+                            openSession: widget.openSession,
+                          ),
+                      ],
+                    ),
                   'subagent' => SubagentTile(
                     row: row,
                     openSession: widget.openSession,
