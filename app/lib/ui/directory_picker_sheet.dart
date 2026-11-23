@@ -31,8 +31,13 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
   String? _error;
   int _generation = 0;
 
-  /// 桌面平台（system.info）——Windows 下显示磁盘切换入口。
+  /// 桌面平台（system.info）——Windows 盘根再上翻进入磁盘列表。
   String? _platform;
+
+  /// 虚拟"此电脑"层（2026-11-24 用户拍板：磁盘选择做进浏览流——上翻到
+  /// 当前盘根后再上翻即出现磁盘列表，顶部独立磁盘按钮退役）。
+  bool _showDrives = false;
+  List<String> _driveLetters = const [];
 
   @override
   void didChangeDependencies() {
@@ -77,31 +82,19 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
     return found;
   }
 
-  Future<void> _pickDrive() async {
-    setState(() => _loading = true);
+  /// 进入虚拟"此电脑"层：并行探测盘符后原地展示（不弹对话框）。
+  Future<void> _enterDrives() async {
+    setState(() {
+      _showDrives = true;
+      _loading = true;
+      _error = null;
+    });
     final drives = await _probeDrives();
-    if (!mounted) return;
-    setState(() => _loading = false);
-    final picked = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('选择磁盘'),
-        children: [
-          for (final d in drives)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(dialogContext).pop(d),
-              child: Row(
-                children: [
-                  const Icon(Icons.storage_outlined, size: 20),
-                  const SizedBox(width: 10),
-                  Text('$d:\\'),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-    if (picked != null && mounted) await _load('$picked:\\');
+    if (!mounted || !_showDrives) return;
+    setState(() {
+      _driveLetters = drives;
+      _loading = false;
+    });
   }
 
   /// 直接输入绝对路径跳转（两平台通用）。
@@ -139,6 +132,7 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
     setState(() {
       _loading = true;
       _error = null;
+      _showDrives = false;
     });
     try {
       final app = AppStateScope.of(context);
@@ -235,6 +229,12 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
     }
   }
 
+  /// Windows 盘根判定（`D:\` / `D:/` / `D:`）。
+  bool _isDriveRoot(String? path) {
+    final p = (path ?? '').trim();
+    return RegExp(r'^[A-Za-z]:[\\/]?$').hasMatch(p);
+  }
+
   /// 上级目录（兼容 / 与 \ 分隔符；根目录返回 null）。
   String? _parentOf(String? path) {
     if (path == null || path.isEmpty) return null;
@@ -291,9 +291,9 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
                         key: const ValueKey('dir-drive'),
                         tooltip: '切换磁盘',
                         icon: const Icon(Icons.storage_outlined, size: 21),
-                        onPressed: _loading || _path == null
+                        onPressed: _loading || _path == null || _showDrives
                             ? null
-                            : _pickDrive,
+                            : _enterDrives,
                       ),
                     IconButton(
                       key: const ValueKey('dir-input-path'),
@@ -308,7 +308,10 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
                         Icons.create_new_folder_outlined,
                         size: 22,
                       ),
-                      onPressed: _loading || _error != null || _path == null
+                      onPressed: _loading ||
+                              _error != null ||
+                              _path == null ||
+                              _showDrives
                           ? null
                           : _createFolder,
                     ),
@@ -334,7 +337,7 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
                   child: Text(
-                    _path ?? '…',
+                    _showDrives ? '此电脑' : (_path ?? '…'),
                     translate: false,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -378,9 +381,43 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
                           ),
                         ),
                       )
+                    : _showDrives
+                    ? ListView(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        children: [
+                          // 虚拟"此电脑"层（2026-11-24 用户拍板）：盘根
+                          // 再上翻即出现，点选进入对应盘根目录。
+                          for (final d in _driveLetters)
+                            ListTile(
+                              key: ValueKey('drive-$d'),
+                              leading: Icon(
+                                Icons.storage_outlined,
+                                size: 20,
+                                color: colors.brandAccent,
+                              ),
+                              title: Text('$d:\\', translate: false),
+                              dense: true,
+                              onTap: () => _load('$d:\\'),
+                            ),
+                          if (!_loading && _driveLetters.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                tr('未发现可用磁盘'),
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: AppType.uiCaption,
+                                  color: colors.foregroundSubtle,
+                                ),
+                              ),
+                            ),
+                        ],
+                      )
                     : ListView(
                         padding: const EdgeInsets.only(bottom: 8),
                         children: [
+                          // 上级目录：普通目录→父目录；Windows 盘根→
+                          // 进入磁盘列表（'_showDrives' 虚拟层）。
                           if (_parentOf(_path) case final parent?)
                             ListTile(
                               key: const ValueKey('dir-up'),
@@ -388,6 +425,15 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
                               title: const Text('上级目录'),
                               dense: true,
                               onTap: () => _load(parent),
+                            )
+                          else if (_platform == 'win32' &&
+                              _isDriveRoot(_path))
+                            ListTile(
+                              key: const ValueKey('dir-up'),
+                              leading: const Icon(Icons.arrow_upward, size: 20),
+                              title: const Text('上级目录'),
+                              dense: true,
+                              onTap: _enterDrives,
                             ),
                           for (final d in _dirs)
                             ListTile(
@@ -427,7 +473,10 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                 child: FilledButton.icon(
                   key: const ValueKey('dir-pick-confirm'),
-                  onPressed: (_path == null || _loading || _error != null)
+                  onPressed: (_path == null ||
+                          _loading ||
+                          _error != null ||
+                          _showDrives)
                       ? null
                       : () => Navigator.of(context).pop(_path),
                   icon: const Icon(Icons.check, size: 18),

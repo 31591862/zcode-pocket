@@ -164,20 +164,69 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    // win32 下磁盘入口在场
+    // win32 下磁盘入口仍在（快捷入口），点击进入「此电脑」磁盘列表层
+    // （2026-11-24 用户拍板：不再弹对话框，与盘根上翻共用同一层）。
     expect(find.byKey(const ValueKey('dir-drive')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('dir-drive')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('选择磁盘'), findsOneWidget);
-    expect(find.text(r'C:\'), findsOneWidget);
-    expect(find.text(r'D:\'), findsOneWidget);
-    expect(find.text(r'E:\'), findsNothing, reason: '不存在的盘不出现');
+    expect(find.text('选择磁盘'), findsNothing, reason: '对话框退役');
+    expect(find.byKey(const ValueKey('drive-C')), findsOneWidget);
+    expect(find.byKey(const ValueKey('drive-D')), findsOneWidget);
+    expect(find.byKey(const ValueKey('drive-E')), findsNothing,
+        reason: '不存在的盘不出现');
 
-    await tester.tap(find.text(r'D:\'));
+    await tester.tap(find.byKey(const ValueKey('drive-D')));
     await tester.pumpAndSettle();
     expect(find.text(r'D:\'), findsOneWidget, reason: '路径栏显示 D:\\');
+  });
+
+  testWidgets('Windows：盘根再上翻进入磁盘列表（自然导航）', (tester) async {
+    final app = _WinApp();
+    await tester.pumpWidget(
+      AppStateScope(
+        app: app,
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () => showDirectoryPickerSheet(context),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    // homedir C:\Users\u → 上级 C:\Users → 上级 C:\（盘根）
+    for (var i = 0; i < 2; i++) {
+      await tester.tap(find.byKey(const ValueKey('dir-up')));
+      for (var j = 0; j < 3; j++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+    expect(find.text(r'C:\'), findsOneWidget, reason: '已到 C: 盘根');
+    // 盘根再上翻 → 磁盘列表
+    await tester.tap(find.byKey(const ValueKey('dir-up')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('此电脑'), findsOneWidget, reason: '虚拟层路径栏');
+    expect(find.byKey(const ValueKey('drive-C')), findsOneWidget);
+    expect(find.byKey(const ValueKey('drive-D')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('drive-D')));
+    await tester.pumpAndSettle();
+    expect(find.text(r'D:\'), findsOneWidget);
   });
 
   testWidgets('Windows：新建文件夹走正常输入并调用创建（2026-11-23 解锁）',
@@ -273,10 +322,13 @@ class _WinApp extends AppState {
   @override
   Future<Map<String, dynamic>> readComputerDirectory(String? path) async {
     final p = (path == null || path.isEmpty) ? r'C:\Users\u' : path;
-    if (p == r'C:\' || p == r'C:\Users\u') {
+    // 归一化：_parentOf 返回正斜杠形式（C:/Users），真实桌面端两种
+    // 分隔符都接受；fake 统一按 / 比较。
+    final norm = p.replaceAll('\\', '/');
+    if (norm == 'C:/' || norm == 'C:/Users' || norm == 'C:/Users/u') {
       return {'path': p, 'entries': <dynamic>[]};
     }
-    if (p == r'D:\') {
+    if (norm == 'D:/') {
       return {'path': p, 'entries': <dynamic>[]};
     }
     throw StateError('no drive: $p');
