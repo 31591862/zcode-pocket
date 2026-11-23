@@ -182,28 +182,12 @@ class _DirectoryPickerSheetState extends State<DirectoryPickerSheet> {
   Future<void> _createFolder() async {
     final parent = _path;
     if (parent == null) return;
-    if (_platform == 'win32') {
-      // Windows：桌面协议无 mkdir；PTY 方案在 Windows 桌面端实测不可用
-      // （会话惰死/早退、写入零执行，2026-11-19 三次新会话复现）。
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('暂不支持'),
-          content: const Text(
-            'Windows 电脑暂不支持在手机上新建文件夹（桌面协议限制）。'
-            '请先在电脑上建好文件夹，再回到这里浏览选择；'
-            '也可用上层弹层的「新建项目」，在 ZCodeProject 下按名字新建。',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('知道了'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
+    // Windows 不再硬拦截（2026-11-23，官方桌面端 4.0.0）：官方
+    // terminalService 已完整实现 Windows（node-pty ConPTY +
+    // pwsh/powershell/cmd 解析）——旧版（3.18/3.19）PTY 会话惰死/写入
+    // 零执行的问题在 4.0.0 重新实测；PTY 方案（PowerShell/cmd 命令
+    // 模板 + 3 次新会话重试 + readDirectory 验证）照常执行，失败走
+    // 统一错误提示（不再弹「暂不支持」死路）。
     // 不用 TextEditingController（弹窗路由退场期间仍持有——提前
     // dispose 会触发 used-after-dispose）；onChanged 捕获最终文本。
     var input = '';

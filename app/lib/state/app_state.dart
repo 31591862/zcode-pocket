@@ -1759,15 +1759,21 @@ class AppState extends ChangeNotifier {
   static String buildMkdirCommand(String shellPath, String dirName) {
     final shell = shellPath.toLowerCase();
     if (shell.contains('pwsh') || shell.contains('powershell')) {
-      // PowerShell：命令**纯 ASCII**——PTY 输入是 UTF-8 而 Windows
-      // 控制台默认按 GBK 解码，直接打字中文会变乱码（2026-11-19 真机
-      // 实测：目录建成了乱码名）。目录名转 Unicode 码点在场内组装，
-      // 与终端编码彻底无关；-LiteralPath 防通配符展开。
+      // 2026-11-23 真机实锤：New-Item **没有 -LiteralPath 参数**（录入
+      // 后报「找不到与参数名称 'LiteralPath' 匹配」——此前多轮
+      // 「写入 OK 但目录没出现」的真凶之一）。改走 .NET API：
+      // CreateDirectory 幂等、无通配符/参数争议；ASCII 名单引号直出，
+      // 中文名转 Unicode 码点（PTY 输入 UTF-8 而 Windows 控制台默认
+      // GBK，直接打字中文会变乱码，2026-11-19 实测）。
+      if (dirName.codeUnits.every((c) => c < 128)) {
+        final quoted = "'" + dirName.replaceAll("'", "''") + "'";
+        return '[System.IO.Directory]::CreateDirectory($quoted) | Out-Null';
+      }
       final codes = dirName.runes
           .map((r) => '0x${r.toRadixString(16)}')
           .join(',');
-      return 'New-Item -ItemType Directory -Force -LiteralPath '
-          '(-join @($codes | ForEach-Object { [char]\$_ })) | Out-Null';
+      return '[System.IO.Directory]::CreateDirectory('
+          '(-join @($codes | ForEach-Object { [char]\$_ }))) | Out-Null';
     }
     if (shell.contains('cmd')) {
       // cmd：先切控制台到 UTF-8（输入解码随之切换），再建目录。
@@ -1795,14 +1801,62 @@ class AppState extends ChangeNotifier {
     // 无输出、一次启动即退，write 报 "Terminal owner has ended"），
     // 复用会话无意义，失败即换新会话重来。
     String? lastError;
+    // pwsh 启动崩溃证据（2026-11-23）：PowerShell 7 的更新通知在
+    // ConPTY 下 PadRight 负宽度崩进程——靠退出码/输出特征识别，
+    // 最终失败时给人话指引（设 POWERSHELL_UPDATECHECK=Off 或升级）。
+    String? crashEvidence;
+    final crashOutput = StringBuffer();
     for (var attempt = 0; attempt < 3; attempt++) {
       final create = await bridge.channels.call('terminal', 'create', [
-        <String, dynamic>{'cwd': parentPath, 'cols': 80, 'rows': 24},
+        // Windows：create 时直接给足尺寸（2026-11-23 实测：ConPTY 初始
+        // 宽度为 0 时 PowerShell 7 的 UpdateNotification 会
+        // PadRight(-17) 崩进程——80x24 默认档在 create 后 resize 也
+        // 救不回；大尺寸创建让 pwsh 启动时读到正常宽度）。
+        <String, dynamic>{
+          'cwd': parentPath,
+          'cols': 160,
+          'rows': 40,
+        },
       ], timeout: const Duration(seconds: 10));
       final id = create is Map ? create['id'] : null;
       if (id == null) throw StateError('无法启动终端会话');
+      // 终端输出诊断（2026-11-23）：订阅 onDynamicData 收集 PTY 回显/
+      // 报错——「写入成功但目录没出现」时据此判断命令是否被执行、
+      // pwsh 是否报错（手机端无终端 UI，这是唯一观测面）。
+      final terminalOutput = StringBuffer();
+      final cancelOutputEvent = bridge.channels.addEventListener(
+        'terminal',
+        'onDynamicData',
+        (event) {
+          if (terminalOutput.length < 4000) terminalOutput.write('$event');
+        },
+        arg: id,
+      );
+      final cancelExitEvent = bridge.channels.addEventListener(
+        'terminal',
+        'onDynamicExit',
+        (event) {
+          debugPrint(
+            '[mkdir] terminal EXIT code=$event attempt=${attempt + 1}',
+          );
+          crashEvidence ??= 'terminal exit=$event';
+        },
+        arg: id,
+      );
       final shellPath = create is Map ? '${create['shell'] ?? ''}' : '';
       final shell = shellPath.toLowerCase();
+      // ConPTY 初始窗口宽度可能为 0：PowerShell 7 启动时的 UpdateNotification
+      // 用 WindowWidth-17 做 PadRight → 负值崩溃（"Actual value was -17"，
+      // 2026-11-23 真机日志实锤），命令因此永不被执行。create 后立即
+      // resize 到正常尺寸，抢在 update check 之前修正宽度。
+      try {
+        await bridge.channels.call('terminal', 'resize', [
+          <String, dynamic>{'id': id, 'cols': 120, 'rows': 30},
+        ], timeout: const Duration(seconds: 5));
+        debugPrint('[mkdir] resize 120x30 OK');
+      } catch (e) {
+        debugPrint('[mkdir] resize ERR: $e');
+      }
       final isWinShell =
           shell.contains('pwsh') ||
           shell.contains('powershell') ||
@@ -1823,38 +1877,85 @@ class AppState extends ChangeNotifier {
       }
       try {
         // Windows shell 启动慢（pwsh profile 可能数秒）——先等再写；
-        // Windows 控制台行结束用 \r。
+        // Windows 控制台行结束用 \r。2026-11-23 4.0.0 实测「写入 OK
+        // 但目录没出现」：PSReadLine 就绪前输入可能被吞——先发一个
+        // 空回车唤醒，再等一拍后写正式命令。
         await Future<void>.delayed(
           isWinShell
-              ? const Duration(milliseconds: 1800)
+              ? const Duration(milliseconds: 2500)
               : const Duration(milliseconds: 150),
         );
+        if (isWinShell) {
+          try {
+            await bridge.channels.call('terminal', 'write', [
+              <String, dynamic>{'id': id, 'data': '\r'},
+            ], timeout: const Duration(seconds: 5));
+          } catch (_) {}
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
         try {
-          await bridge.channels.call('terminal', 'write', [
-            <String, dynamic>{
-              'id': id,
-              'data': isWinShell ? '$command\r' : '$command\n',
-            },
-          ], timeout: const Duration(seconds: 8));
+          if (isWinShell) {
+            // Windows：命令与回车分两次写（整行+回车同批会被
+            // PSReadLine 粘贴检测吞掉回车）；\r 即可提交——2026-11-23
+            // 真机多策略探测首次 submit-cr 即成功（此前失败的真正原因
+            // 是 New-Item 的 -LiteralPath 参数不存在，命令本身报错）。
+            // 命令文本不带换行，脱离粘贴窗口后再单独发回车。
+            Future<void> w(String data) => bridge.channels.call(
+              'terminal',
+              'write',
+              [
+                <String, dynamic>{'id': id, 'data': data},
+              ],
+              timeout: const Duration(seconds: 8),
+            );
+            await w(command);
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+            await w('\r');
+            await Future<void>.delayed(const Duration(milliseconds: 400));
+          } else {
+            await bridge.channels.call('terminal', 'write', [
+              <String, dynamic>{'id': id, 'data': '$command\n'},
+            ], timeout: const Duration(seconds: 8));
+          }
           debugPrint('[mkdir] write OK attempt=${attempt + 1}');
         } catch (e) {
           lastError = '$e';
           debugPrint('[mkdir] write ERR attempt=${attempt + 1}: $e');
           continue;
         }
-        // 轮询确认目录出现（不解析终端输出）。
-        for (var i = 0; i < 10; i++) {
+        // 轮询确认目录出现（不解析终端输出）。2026-11-23 4.0.0 实测：
+        // 单次 readDirectory 可能被桥重放/seq 抖动拖到 10s 超时——
+        // 每轮单独 try/catch + 3s 短超时，超时不算失败继续下一轮
+        // （总窗口 ~15s）。
+        for (var i = 0; i < 6; i++) {
           await Future<void>.delayed(const Duration(milliseconds: 250));
-          final listing = await readComputerDirectory(parentPath);
-          final entries = listing['entries'];
-          if (entries is List &&
-              entries.any((e) => e is Map && '${e['name']}' == dirName)) {
-            return;
+          try {
+            final listing = await readComputerDirectory(
+              parentPath,
+            ).timeout(const Duration(seconds: 3));
+            final entries = listing['entries'];
+            if (entries is List &&
+                entries.any((e) => e is Map && '${e['name']}' == dirName)) {
+              return;
+            }
+          } catch (e) {
+            debugPrint('[mkdir] verify poll $i err: $e');
           }
+          debugPrint(
+            '[mkdir] poll $i outLen=${terminalOutput.length}',
+          );
         }
         lastError = '创建未确认';
-        debugPrint('[mkdir] verify failed attempt=${attempt + 1}');
+        final outText = terminalOutput.toString();
+        debugPrint(
+          '[mkdir] verify failed attempt=${attempt + 1} '
+          'outLen=${outText.length} out='
+          '${outText.length > 500 ? outText.substring(outText.length - 500) : outText}',
+        );
       } finally {
+        crashOutput.write(terminalOutput.toString());
+        cancelOutputEvent();
+        cancelExitEvent();
         try {
           await bridge.channels.call('terminal', 'dispose', [
             <String, dynamic>{'id': id},
@@ -1863,6 +1964,20 @@ class AppState extends ChangeNotifier {
       }
     }
     debugPrint('[mkdir] giving up: $parentPath/$dirName last=$lastError');
+    // 崩溃特征：pwsh 更新通知 bug（ArgumentOutOfRangeException /
+    // PSHostUserInterface）或终端异常退出且命令未执行——给出可操作
+    // 指引而不是干巴巴的「创建未确认」。
+    final allOutput = crashOutput.toString();
+    final outputHints = allOutput.contains('ArgumentOutOfRangeException') ||
+        allOutput.contains('PSHostUserInterface') ||
+        allOutput.contains('UpdateNotification');
+    if (outputHints || crashEvidence != null) {
+      throw StateError(
+        '创建失败：该电脑的 PowerShell 终端在远程会话下启动异常。'
+        '请在 Windows 设置环境变量 POWERSHELL_UPDATECHECK=Off 后重启 ZCode，'
+        '或升级 PowerShell 后重试',
+      );
+    }
     throw StateError(lastError ?? '创建未确认，请返回重试');
   }
 

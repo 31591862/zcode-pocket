@@ -180,7 +180,8 @@ void main() {
     expect(find.text(r'D:\'), findsOneWidget, reason: '路径栏显示 D:\\');
   });
 
-  testWidgets('Windows：新建文件夹给出协议限制提示，不发起创建', (tester) async {
+  testWidgets('Windows：新建文件夹走正常输入并调用创建（2026-11-23 解锁）',
+      (tester) async {
     final app = _WinApp();
     await tester.pumpWidget(
       AppStateScope(
@@ -206,11 +207,14 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('dir-new-folder')));
     await tester.pumpAndSettle();
-    expect(find.text('暂不支持'), findsOneWidget);
-    expect(find.textContaining('请先在电脑上建好文件夹'), findsOneWidget);
-    await tester.tap(find.text('知道了'));
+    // 2026-11-23：官方 4.0.0 终端在 Windows 完整实现，PTY mkdir 方案
+    // 解锁——不再弹「暂不支持」死路，走正常输入对话框。
+    expect(find.text('暂不支持'), findsNothing);
+    expect(find.text('新建文件夹'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '123');
+    await tester.tap(find.text('创建'));
     await tester.pumpAndSettle();
-    expect(app.createdCalls, 0, reason: 'Windows 下不得发起 PTY 创建');
+    expect(app.createdCalls, 1, reason: 'Windows 允许 PTY 创建目录');
   });
 
   testWidgets('根目录无上级入口', (tester) async {
