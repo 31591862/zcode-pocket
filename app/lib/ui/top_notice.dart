@@ -206,7 +206,11 @@ class _TopNoticeCardState extends State<_TopNoticeCard>
               ignoring: widget.actionLabel == null,
               child: Container(
                 decoration: BoxDecoration(
-                  color: isDark ? kSettingsCardDark : kSettingsCardLight,
+                  // 底色对位抽屉「新建任务」按钮（tonalFilledStyle 的
+                  // secondaryContainer：浅=蓝 10%，深=白 10% 灰）——
+                  // 2026-11-23 用户拍板。单点切换：全库 141 处提示
+                  // 零调用改动。
+                  color: Theme.of(context).colorScheme.secondaryContainer,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
