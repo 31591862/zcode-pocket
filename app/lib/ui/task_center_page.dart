@@ -1033,7 +1033,6 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: _appBarLinkStatus(app, context),
-              onRefresh: app.refreshWorkspaces,
               onSearchToggle: () {
                 // 关闭复用 _closeSearch——原实现只清
                 // query，在飞防抖 300ms 后照常发一次全文 RPC（结果被守卫
@@ -1378,13 +1377,11 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
   /// 标题下副行（2026-11-20）：连接中/重连中/等待确认的瞬时状态——
   /// 会话页分支行同款位置，不占列表高度、不遮挡内容。
   final Widget? subtitle;
-  final VoidCallback onRefresh;
   final VoidCallback? onSearchToggle;
 
   const _GlassAppBar({
     required this.title,
     this.subtitle,
-    required this.onRefresh,
     this.onSearchToggle,
   });
 
@@ -1416,11 +1413,9 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
             tooltip: tr('搜索任务'),
             onPressed: onSearchToggle,
           ),
-        IconButton(
-          icon: const Icon(Icons.refresh),
-          tooltip: tr('刷新工作区列表'),
-          onPressed: onRefresh,
-        ),
+        // 刷新按钮退役（2026-11-23 用户拍板）：与下拉刷新完全同一功能
+        //（refreshWorkspaces），且无真实进行中反馈（Future 被 unawaited
+        // 包了一层，点了看不到任何动静）——统一收口到下拉刷新。
       ],
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1),
