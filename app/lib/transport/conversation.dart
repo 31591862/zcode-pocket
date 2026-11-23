@@ -2261,9 +2261,13 @@ abstract class _SubscriptionBase<T extends ChangeNotifier> {
     final id = _subscriptionId;
     if (id != null) {
       try {
-        await _transport._channels.call(_channel, _unsubscribeMethod, [
-          {..._wireScope, 'subscriptionId': id, ..._unsubscribeArgs},
-        ]);
+        // 未配对链路（重建连接窗口期）RPC 会入队等待——3s 超时兜底，
+        // 防 dispose 链被拖死（2026-11-23 用户实锤：重试卡加载）。
+        await _transport._channels
+            .call(_channel, _unsubscribeMethod, [
+              {..._wireScope, 'subscriptionId': id, ..._unsubscribeArgs},
+            ])
+            .timeout(const Duration(seconds: 3));
       } catch (_) {}
     }
     _fragments.clear();

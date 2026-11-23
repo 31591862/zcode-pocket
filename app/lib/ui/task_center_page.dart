@@ -2479,6 +2479,23 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
                   fontSize: AppType.uiCaption,
                 ),
               ),
+              // 原始错误小字（诊断用，2026-11-23）：桌面端返回的具体原因
+              // （workspace-bridge-error 明细等）此前只进日志——复现时
+              // 截图即可定位，不复现也能据此排查。
+              if ((app.workspaceErrorRaw ?? '').trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  app.workspaceErrorRaw!.trim(),
+                  key: const ValueKey('home-error-raw'),
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.colors.foregroundSubtle,
+                    fontSize: AppType.uiXs,
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Center(
                 child: OutlinedButton.icon(

@@ -65,6 +65,11 @@ class WorkspaceController {
   String? desktopAppVersion;
   bool workspaceOpening = false;
   String? workspaceError;
+
+  /// 原始错误串（诊断用）：人话档只进横幅，桌面端返回的具体原因
+  /// （workspace-bridge-error: {...} 等）透出到错误态小字，复现时截图
+  /// 即可定位（2026-11-23 用户「重试无限循环」排查）。
+  String? workspaceErrorRaw;
   bool siDormant = false;
   Timer? _siRetryTimer;
   bool _siRetrying = false;
@@ -135,6 +140,32 @@ class WorkspaceController {
     _onNotify();
   }
 
+  /// 工作区候选轮换（2026-11-23 用户「重试无限循环」实锤）：桌面端回
+  /// 「目标工作区不在当前桌面窗口中，无法创建 Web 远程控制 bridge」——
+  /// 恢复键可能指向桌面端已关闭的窗口 tab，重试同一目标永远失败。
+  /// 按列表顺序尝试其余工作区；成功即落位（switchWorkspace 内部会持久化
+  /// lastWorkspaceKey），全失败保留最后一个错误。
+  Future<bool> _openFallbackWorkspace(String failedKey) async {
+    for (final ws in workspaces) {
+      final key = workspaceKeyOf(ws);
+      if (key == null || key == failedKey) continue;
+      workspaceError = null;
+      workspaceErrorRaw = null;
+      _onNotify();
+      await switchWorkspace(ws);
+      if (workspaceError == null && _bridge != null) {
+        _onLog('[workspace] fallback opened $key (primary $failedKey rejected)');
+        return true;
+      }
+    }
+    // 全失败：把"桌面端无可用窗口"讲清楚（引导桌面端打开一个工作区）。
+    workspaceError = '打开工作区失败：桌面端当前没有可用的工作区窗口，'
+        '请先在电脑上打开一个工作区后重试';
+    workspaceErrorRaw = null;
+    _onNotify();
+    return false;
+  }
+
   void maybeScheduleWorkspaceRedrive() {
     if (_disposedProvider() || _redriveInFlight || _redriveTimer != null) return;
     if (_bridge != null || workspaceOpening) return;
@@ -177,11 +208,21 @@ class WorkspaceController {
     // 后续失败会重新写入分档文案）。
     if (workspaceError != null) {
       workspaceError = null;
+      workspaceErrorRaw = null;
       _onNotify();
     }
     final action = _lastOpenAction;
     if (action != null) {
       await action();
+      // 重放仍被桌面端拒绝（非超时/网络类）→ 自动换可用工作区，
+      // 结束「重试同一失效目标」的无限循环（2026-11-23 用户实锤）。
+      if (workspaceError != null &&
+          (workspaceErrorRaw?.contains('workspace-bridge-error') ?? false) &&
+          workspaces.length > 1) {
+        await _openFallbackWorkspace(
+          workspaceKeyOf(activeWorkspace ?? const {}) ?? '',
+        );
+      }
       return;
     }
     final ws = activeWorkspace;
@@ -310,7 +351,13 @@ class WorkspaceController {
       _onLog('[workspace] bootstrap abandoned: workspace switched while bootstrapping');
       return;
     }
+    final targetKey = workspaceKeyOf(target) ?? '';
     await switchWorkspace(target);
+    // 桌面端拒绝该目标（典型：不在当前桌面窗口中）→ 自动轮换候选，
+    // 不再让恢复路径死磕同一个失效 key（重启才好的根因）。
+    if (workspaceError != null && workspaces.length > 1) {
+      await _openFallbackWorkspace(targetKey);
+    }
   }
 
   /// [keepHomePreview]（2026-11-05 反馈②A）：跨工作区打开任务时为
@@ -719,6 +766,7 @@ class WorkspaceController {
       workspaceOpening = false;
       _lastOpenAction = null;
       _redriveAttempt = 0;
+      workspaceErrorRaw = null;
       _redriveTimer?.cancel();
       _redriveTimer = null;
       _onNotify();
@@ -748,6 +796,7 @@ class WorkspaceController {
       workspaceOpening = false;
       // 原始异常串只进日志（上方 _onLog）；横幅走人话档（
       workspaceError = _workspaceOpenErrorMessage(e);
+      workspaceErrorRaw = '$e';
       _onNotify();
       maybeScheduleWorkspaceRedrive();
     }
@@ -863,21 +912,37 @@ class WorkspaceController {
     _siRetryTimer?.cancel();
     _siRetryTimer = null;
     siDormant = false;
-    await _conversationRegistry.close(awaitWrites: awaitCacheWrites);
+    // 2026-11-23（用户实锤「点重试卡正在加载任务，只能杀 app」）：关闭
+    // 链各段加超时——半死 relay 上 unsubscribe/缓存写可能挂起（RPC 默认
+    // 30s/个），重建连接流程不能被拖死；超时即继续（资源由后续 dispose
+    // 兜底）。
+    await _conversationRegistry
+        .close(awaitWrites: awaitCacheWrites)
+        .timeout(const Duration(seconds: 3), onTimeout: () {
+          _onLog('[workspace] close registry timeout (continuing)');
+        });
     // 对抗审查 M2：si dispose / detach 的 await 窗口内新发起的会话注册
     // 会捕获已递增的 epoch 且 transport 仍是旧 conv（isStale 恒假）→
     // 挂上即将 dispose 的桥。会话注册一关闭就先断 transport 引用，窗口
     // 内的新注册直接走"no active workspace"失败。
     _conv = null;
-    await _flushDeviceCache(awaitWrites: awaitCacheWrites);
+    await _flushDeviceCache(
+      awaitWrites: awaitCacheWrites,
+    ).timeout(const Duration(seconds: 2), onTimeout: () {
+      _onLog('[workspace] flush device cache timeout (continuing)');
+    });
     final siSub = _sessionsIndex;
     _sessionsIndex = null;
-    await _taskCatalog.detach(
-      beforeTasksIndexDispose: () async {
-        await siSub?.dispose();
-      },
-      keepHomePreview: keepHomePreview,
-    );
+    await _taskCatalog
+        .detach(
+          beforeTasksIndexDispose: () async {
+            await siSub?.dispose();
+          },
+          keepHomePreview: keepHomePreview,
+        )
+        .timeout(const Duration(seconds: 3), onTimeout: () {
+          _onLog('[workspace] task catalog detach timeout (continuing)');
+        });
     _bridge?.dispose();
     _bridge = null;
     activeWorkspace = null;

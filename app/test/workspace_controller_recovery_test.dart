@@ -446,6 +446,48 @@ void main() {
     });
   });
 
+  group('工作区候选轮换（2026-11-23 重试无限循环实锤）', () {
+    test('bootstrap 目标被桌面端拒绝 → 自动换可用工作区（不再死磕失效 key）',
+        () async {
+      final h = _Harness(_offlineClient());
+      h.client.listResult = {
+        'workspaces': [
+          {'workspacePath': 'G:/dead', 'kind': 'local'},
+          {'workspacePath': 'G:/alive', 'kind': 'local'},
+        ],
+        'tasks': null,
+      };
+      final bridge = _StubBridge(conv: _FakeConv());
+      h.client.openImpl = (key) async {
+        if (key == 'G:/dead') {
+          throw StateError('workspace-bridge-error: 目标工作区不在当前桌面窗口中');
+        }
+        return bridge;
+      };
+      await h.controller.bootstrapWorkspace(h.client);
+      expect(h.controller.bridge, same(bridge), reason: '回退到可用工作区');
+      expect(h.client.openCalls, containsAll(['G:/dead', 'G:/alive']));
+      expect(h.controller.workspaceError, isNull);
+      await h.controller.close();
+    });
+
+    test('全部被拒 → 明确提示桌面端没有可用工作区窗口', () async {
+      final h = _Harness(_offlineClient());
+      h.client.listResult = {
+        'workspaces': [
+          {'workspacePath': 'G:/a', 'kind': 'local'},
+          {'workspacePath': 'G:/b', 'kind': 'local'},
+        ],
+        'tasks': null,
+      };
+      h.client.openImpl = (key) async =>
+          throw StateError('workspace-bridge-error: 目标工作区不在当前桌面窗口中');
+      await h.controller.bootstrapWorkspace(h.client);
+      expect(h.controller.workspaceError, contains('没有可用的工作区窗口'));
+      await h.controller.close();
+    });
+  });
+
   group('手动重试（2026-11-22 用户「点重试无效」）', () {
     test('错误态重试：重放期间错误即清（UI 回 loading），成功后台桥落位', () async {
       final h = _Harness(_offlineClient());

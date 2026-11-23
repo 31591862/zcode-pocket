@@ -354,6 +354,7 @@ class AppState extends ChangeNotifier {
 
   bool get workspaceOpening => _active?.workspaceOpening ?? false;
   String? get workspaceError => _active?.workspaceError;
+  String? get workspaceErrorRaw => _active?.workspaceErrorRaw;
 
   SessionsIndexState? get sessionsIndex => _active?.sessionsIndex;
   TaskListModel? get taskList => _active?.taskList;

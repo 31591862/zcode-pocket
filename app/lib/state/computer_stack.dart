@@ -196,6 +196,7 @@ class ComputerStack extends ChangeNotifier {
   bool get siDormant => _workspaceController.siDormant;
   set siDormant(bool value) => _workspaceController.siDormant = value;
   String? get workspaceError => _workspaceController.workspaceError;
+  String? get workspaceErrorRaw => _workspaceController.workspaceErrorRaw;
   set workspaceError(String? value) =>
       _workspaceController.workspaceError = value;
 
@@ -960,7 +961,13 @@ class ComputerStack extends ChangeNotifier {
 
   Future<void> _doSuspend() async {
     _workspaceController.cancelRedrive();
-    await _closeWorkspaceStack();
+    // 2026-11-23：suspend 各段超时兜底——半死链路上 close/dispose 可能
+    // 挂起，导致重建连接（retry 未配对路径）卡在「正在加载任务…」，
+    // 用户只能杀 app。超时即继续下一段（资源由 OS/GC 兜底）。
+    await _closeWorkspaceStack().timeout(
+      const Duration(seconds: 6),
+      onTimeout: () => _log('[stack] suspend close timeout (continuing)'),
+    );
     _client?.relay.stateListenable.removeListener(_onRelayState);
     await _failureSub?.cancel();
     _failureSub = null;
@@ -968,7 +975,10 @@ class ComputerStack extends ChangeNotifier {
     _workspaceListSub = null;
     final client = _client;
     _client = null;
-    await client?.dispose();
+    await (client?.dispose() ?? Future<void>.value()).timeout(
+      const Duration(seconds: 2),
+      onTimeout: () => _log('[stack] suspend client dispose timeout'),
+    );
     _bootstrapStarted = false;
     _cacheSeeded = false;
     workspaces = const [];

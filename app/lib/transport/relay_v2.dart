@@ -524,6 +524,11 @@ class RelayV2Client implements RelayConnection {
       final socket = IOWebSocketChannel.connect(
         config.wsUri(token),
         connectTimeout: timing.ackTimeout,
+        // 2026-11-23 断链自愈（用户实锤「杀了 app 重进才好」）：WS 层
+        // ping/pong——应用层半死（服务端已弃连接但 TCP 未断、deviceSid
+        // 槽位仍被旧连接占用）时 ping 收不到 pong，Dart 主动关闭底层
+        // socket → 服务端感知释放槽位，重建连接/重连才能真正生效。
+        pingInterval: const Duration(seconds: 10),
       );
       unawaited(socket.ready.catchError((_) {}));
       _socket = socket;
