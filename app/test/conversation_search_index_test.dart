@@ -20,28 +20,39 @@ List<Map<String, dynamic>> _rows() => [
 ];
 
 void main() {
-  test('提问/回复/工具输入输出计数，思考不搜，匹配保持原文与稳定锚点', () {
-    final matches = buildConversationSearchMatches(
-      buildChatItems(_rows()),
-      'needle',
-    );
-    expect(matches, hasLength(5));
+  test('提问/回复计数，思考与工具默认不搜，匹配保持原文与稳定锚点', () {
+    final items = buildChatItems(_rows());
+    // 2026-11-23 新默认：工具行不参与搜索（「含工具」开关才纳入）。
+    final defaults = buildConversationSearchMatches(items, 'needle');
+    expect(defaults, hasLength(3));
     expect(
-      matches.where((m) => m.kind == ConversationSearchKind.user),
+      defaults.where((m) => m.kind == ConversationSearchKind.tool),
+      isEmpty,
+    );
+    expect(
+      defaults.where((m) => m.kind == ConversationSearchKind.user),
       hasLength(2),
     );
     expect(
-      matches.where((m) => m.kind == ConversationSearchKind.tool),
-      hasLength(2),
-    );
-    expect(
-      matches.where((m) => m.kind == ConversationSearchKind.assistant),
+      defaults.where((m) => m.kind == ConversationSearchKind.assistant),
       hasLength(1),
     );
-    expect(matches.last.sourceText, 'Alpha NEEDLE');
-    expect(matches.last.anchorKey, 'turn-h1');
-    expect(matches.map((m) => m.identity).toSet(), hasLength(5));
-    expect(matches.first.snippet, contains('Needle needle'));
+    expect(defaults.last.sourceText, 'Alpha NEEDLE');
+    expect(defaults.last.anchorKey, 'turn-h1');
+    expect(defaults.map((m) => m.identity).toSet(), hasLength(3));
+    expect(defaults.first.snippet, contains('Needle needle'));
+
+    // 含工具开关：原计数语义（提问2+工具2+回复1）。
+    final withTools = buildConversationSearchMatches(
+      items,
+      'needle',
+      includeTools: true,
+    );
+    expect(withTools, hasLength(5));
+    expect(
+      withTools.where((m) => m.kind == ConversationSearchKind.tool),
+      hasLength(2),
+    );
   });
 
   test('字面匹配非重叠，空查询不索引，大小写不敏感', () {
@@ -126,6 +137,7 @@ void main() {
     final matches = buildConversationSearchMatches(
       buildChatItems(rows),
       'needle',
+      includeTools: true,
     );
     expect(matches.map((m) => m.rowId), containsAll([2, 3]));
     expect(
@@ -207,6 +219,7 @@ void main() {
       items,
       'needle',
       includeReasoning: false,
+      includeTools: true,
     );
     expect(withoutReasoning, hasLength(5));
     expect(
@@ -220,6 +233,7 @@ void main() {
       items,
       'needle',
       includeReasoning: true,
+      includeTools: true,
     );
     expect(withReasoning, hasLength(6));
     final reasoningMatches = withReasoning

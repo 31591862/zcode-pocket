@@ -33,6 +33,8 @@ class SearchTargetFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final active = rowId != null && rowId == activeRowId && targetKey != null;
     return DecoratedBox(
+      // 行级测试锚点（2026-11-23 搜索定位回归：矩形断言需要精确到目标行）。
+      key: rowId == null ? null : ValueKey('search-target-$rowId'),
       decoration: active
           ? BoxDecoration(
               // 视觉复核（2026-10-27）：纯 9% 底色在真机上不够醒目，

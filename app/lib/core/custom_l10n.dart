@@ -655,6 +655,7 @@ const _customEn = <String, String>{
   '工具': 'Tool',
   '正则': 'Regex',
   '含思考': 'Thinking',
+  '含工具': 'Tools',
   '正则表达式无效': 'Invalid regular expression',
   '正则表达式过于复杂': 'Regular expression too complex',
   '继续往前搜': 'Search earlier',

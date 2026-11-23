@@ -381,9 +381,12 @@ String? _toolSearchText(Map<String, dynamic> row) {
 String? _searchTextOf(
   Map<String, dynamic> row, {
   required bool includeReasoning,
+  required bool includeTools,
 }) => switch ('${row['kind']}') {
   'userInput' || 'assistantText' => '${row['text'] ?? ''}',
-  'toolCall' => _toolSearchText(row),
+  // 工具行默认不搜（2026-11-23 用户拍板：参数 JSON/命令/输出全文噪音
+  // 过大，主场景是找回对话内容）——「含工具」开关才纳入。
+  'toolCall' when includeTools => _toolSearchText(row),
   'reasoning' when includeReasoning => '${row['text'] ?? ''}',
   _ => null,
 };
@@ -391,15 +394,17 @@ String? _searchTextOf(
 ConversationSearchKind? _searchKindOf(
   Map<String, dynamic> row, {
   required bool includeReasoning,
+  required bool includeTools,
 }) => switch ('${row['kind']}') {
   'userInput' => ConversationSearchKind.user,
   'assistantText' => ConversationSearchKind.assistant,
-  'toolCall' => ConversationSearchKind.tool,
+  'toolCall' when includeTools => ConversationSearchKind.tool,
   'reasoning' when includeReasoning => ConversationSearchKind.reasoning,
   _ => null,
 };
 
-/// 主会话的提问/回复加上工具内容；[includeReasoning]=true 时同步索引思考块。
+/// 主会话的提问/回复；[includeReasoning]=true 时同步索引思考块；
+/// [includeTools]=true 时索引工具行（默认否，见 _searchTextOf）。
 /// - 默认模式：大小写不敏感，空格拆分为多词 AND 语义（单词与旧字面一致）；
 /// - [useRegex]=true：大小写不敏感正则匹配（非法正则返回空）。
 List<ConversationSearchMatch> buildConversationSearchMatches(
@@ -407,6 +412,7 @@ List<ConversationSearchMatch> buildConversationSearchMatches(
   String query, {
   bool useRegex = false,
   bool includeReasoning = false,
+  bool includeTools = false,
   RegExp? compiledRegex,
 }) {
   final trimmed = query.trim();
@@ -434,8 +440,16 @@ List<ConversationSearchMatch> buildConversationSearchMatches(
         : null;
     for (final row in rows) {
       final rowId = intOf(row['rowId']);
-      final kind = _searchKindOf(row, includeReasoning: includeReasoning);
-      final source = _searchTextOf(row, includeReasoning: includeReasoning);
+      final kind = _searchKindOf(
+        row,
+        includeReasoning: includeReasoning,
+        includeTools: includeTools,
+      );
+      final source = _searchTextOf(
+        row,
+        includeReasoning: includeReasoning,
+        includeTools: includeTools,
+      );
       if (rowId == null || rowId < 0 || kind == null || source == null) {
         continue;
       }
@@ -595,6 +609,7 @@ class ConversationSearchController {
   bool stalled = false;
   bool useRegex = false;
   bool includeReasoning = false;
+  bool includeTools = false;
   int rowLimit = conversationSearchRowLimit;
   String? regexError;
   String? error;
@@ -640,6 +655,7 @@ class ConversationSearchController {
     stalled = false;
     useRegex = false;
     includeReasoning = false;
+    includeTools = false;
     rowLimit = conversationSearchRowLimit;
     regexError = null;
     error = null;
@@ -670,6 +686,19 @@ class ConversationSearchController {
   void toggleIncludeReasoning() {
     if (_disposed || !isOpen) return;
     includeReasoning = !includeReasoning;
+    navigationId++;
+    locatedIdentity = null;
+    refresh(reset: true);
+    _onNotify();
+    final active = activeMatch;
+    if (active != null) _locate(active);
+  }
+
+  /// 「含工具」开关（2026-11-23 用户拍板默认关）：纳入工具行搜索
+  /// （工具名/参数 JSON/输出全文）。
+  void toggleIncludeTools() {
+    if (_disposed || !isOpen) return;
+    includeTools = !includeTools;
     navigationId++;
     locatedIdentity = null;
     refresh(reset: true);
@@ -717,6 +746,7 @@ class ConversationSearchController {
             controller.text,
             useRegex: useRegex,
             includeReasoning: includeReasoning,
+            includeTools: includeTools,
             compiledRegex: _compiledRegex,
           );
     activeIndex = reset
@@ -893,6 +923,7 @@ class ConversationSearchBar extends StatelessWidget {
   final int rowLimit;
   final bool useRegex;
   final bool includeReasoning;
+  final bool includeTools;
   final String? regexError;
   final String? error;
   final String? partialNotice;
@@ -904,6 +935,7 @@ class ConversationSearchBar extends StatelessWidget {
   final VoidCallback onRetry;
   final VoidCallback? onToggleRegex;
   final VoidCallback? onToggleIncludeReasoning;
+  final VoidCallback? onToggleTools;
   final VoidCallback? onLoadMore;
 
   const ConversationSearchBar({
@@ -918,6 +950,7 @@ class ConversationSearchBar extends StatelessWidget {
     this.rowLimit = conversationSearchRowLimit,
     this.useRegex = false,
     this.includeReasoning = false,
+    this.includeTools = false,
     this.regexError,
     required this.error,
     this.partialNotice,
@@ -929,6 +962,7 @@ class ConversationSearchBar extends StatelessWidget {
     required this.onRetry,
     this.onToggleRegex,
     this.onToggleIncludeReasoning,
+    this.onToggleTools,
     this.onLoadMore,
   });
 
@@ -1012,7 +1046,9 @@ class ConversationSearchBar extends StatelessWidget {
                 ),
               ],
             ),
-            if (onToggleRegex != null || onToggleIncludeReasoning != null)
+            if (onToggleRegex != null ||
+                onToggleIncludeReasoning != null ||
+                onToggleTools != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
                 child: Align(
@@ -1035,6 +1071,13 @@ class ConversationSearchBar extends StatelessWidget {
                           label: '含思考',
                           selected: includeReasoning,
                           onTap: onToggleIncludeReasoning!,
+                        ),
+                      if (onToggleTools != null)
+                        _SearchOptionChip(
+                          key: const ValueKey('conversation-search-tools'),
+                          label: '含工具',
+                          selected: includeTools,
+                          onTap: onToggleTools!,
                         ),
                     ],
                   ),

@@ -6,7 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Text;
-import 'package:flutter/rendering.dart' show RenderBox;
+import 'package:flutter/rendering.dart' show RenderAbstractViewport, RenderBox;
 import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 
 import '../core/localized_text.dart';
@@ -3814,6 +3814,14 @@ class _ConversationPageState extends State<ConversationPage>
     if (hadPending) unawaited(_pumpSearchHistory());
   }
 
+  /// 「含工具」开关（2026-11-23）：工具行默认不搜，打开后纳入工具名/
+  /// 参数 JSON/输出全文。
+  void _toggleConversationSearchIncludeTools() {
+    final hadPending = _flushPendingSearchChange();
+    _search.toggleIncludeTools();
+    if (hadPending) unawaited(_pumpSearchHistory());
+  }
+
   void _loadMoreConversationSearch() {
     _flushPendingSearchChange();
     _search.loadMoreHistory();
@@ -3822,6 +3830,33 @@ class _ConversationPageState extends State<ConversationPage>
   Future<void> _pumpSearchHistory() => _search.pumpHistory();
 
   String? get _searchPartialNotice => _search.partialNotice;
+
+  /// 把当前搜索目标行滚到视口上部（fraction≈15% 高度处）。
+  /// 反向锚定列表下 Scrollable.ensureVisible 的 alignment 落点不可控
+  /// （实测 0.65/0.8 都落到 65%-88%），改用 RenderAbstractViewport
+  /// .getOffsetToReveal 直算滚动偏移——滚动轴方向由实现换算。
+  /// 2026-11-23 用户 bug：定位落「底部之外一点」。
+  Future<void> _alignSearchTargetToViewport(
+    int navigation, {
+    double axisFraction = 0.85,
+  }) async {
+    if (!mounted || navigation != _searchNavigationId || !_scroll.hasClients) {
+      return;
+    }
+    final ctx = _searchTargetKey.currentContext;
+    final box = ctx?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final viewport = RenderAbstractViewport.of(box);
+    final reveal = viewport.getOffsetToReveal(box, axisFraction);
+    final pos = _scroll.position;
+    final next = reveal.offset.clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
+    if ((next - pos.pixels).abs() < 0.5) return;
+    _markProgrammatic();
+    pos.jumpTo(next);
+  }
 
   Future<void> _locateActiveSearchMatch(ConversationSearchMatch match) async {
     if (!mounted || !_scroll.hasClients) return;
@@ -3841,25 +3876,17 @@ class _ConversationPageState extends State<ConversationPage>
       }
       await WidgetsBinding.instance.endOfFrame;
       if (!mounted || navigation != _searchNavigationId) return;
-      final first = _searchTargetKey.currentContext;
-      if (first != null) {
-        await Scrollable.ensureVisible(
-          first,
-          // 反向视口方向翻转：1-0.35=0.65 等价旧正向 0.35 的视觉落点。
-          alignment: 0.65,
-          duration: Duration.zero,
-        );
-      }
+      // 2026-11-23 用户 bug（定位落「底部之外一点」）：反向列表 +
+      // 锚定重锚下 Scrollable.ensureVisible 的 alignment 落点不可控
+      // （实测 0.65/0.8 都被拉到视口 65%-88%）。改为**迭代校准**：
+      // 直接量目标行与视口的像素差，按差值滚动，最多 3 轮收敛到
+      // 视口上部 15%——与锚点/反向语义无关。
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || navigation != _searchNavigationId) return;
+      await _alignSearchTargetToViewport(navigation);
       await Future<void>.delayed(const Duration(milliseconds: 320));
       if (!mounted || navigation != _searchNavigationId) return;
-      final settled = _searchTargetKey.currentContext;
-      if (settled != null) {
-        await Scrollable.ensureVisible(
-          settled,
-          alignment: 0.35,
-          duration: Duration.zero,
-        );
-      }
+      await _alignSearchTargetToViewport(navigation);
     } finally {
       _followingReconcileGuard--;
     }
@@ -5320,6 +5347,7 @@ class _ConversationPageState extends State<ConversationPage>
                 rowLimit: _search.rowLimit,
                 useRegex: _search.useRegex,
                 includeReasoning: _search.includeReasoning,
+                includeTools: _search.includeTools,
                 regexError: _search.regexError,
                 error: _searchError,
                 partialNotice: _searchPartialNotice,
@@ -5332,6 +5360,7 @@ class _ConversationPageState extends State<ConversationPage>
                 onToggleRegex: _toggleConversationSearchRegex,
                 onToggleIncludeReasoning:
                     _toggleConversationSearchIncludeReasoning,
+                onToggleTools: _toggleConversationSearchIncludeTools,
                 onLoadMore: _loadMoreConversationSearch,
               ),
             // 桥降级/恢复期反馈（统一叙事的一部分）：会话页不再静默

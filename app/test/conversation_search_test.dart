@@ -131,13 +131,39 @@ void main() {
       find.byKey(const ValueKey('conversation-search-input')),
       'needle',
     );
-    await _pump(tester);
+    // 2026-11-23：工具行默认不搜——本用例含工具命中计数，先开「含工具」。
+    await tester.tap(find.byKey(const ValueKey('conversation-search-tools')));
+    await _pump(tester, 2);
     expect(find.text('1/3'), findsOneWidget);
     expect(find.byKey(const ValueKey('jump-bottom')), findsOneWidget);
 
+    // 定位落点（2026-11-23 用户 bug）：目标行必须完整在视口内，且落
+    // 视口上部（旧实现第二次精校准 alignment 0.35=视觉 65%，行稍长
+    // 命中词就在底部之外一点）。
+    void expectLocatedInUpperViewport(Finder rowFinder) {
+      final list = tester.getRect(find.byKey(const ValueKey('chat-scroll')));
+      final row = tester.getRect(rowFinder);
+      expect(
+        row.top,
+        greaterThanOrEqualTo(list.top - 1),
+        reason: '目标行顶部不得超出视口顶部',
+      );
+      expect(
+        row.bottom,
+        lessThanOrEqualTo(list.bottom + 1),
+        reason: '目标行底部不得超出视口底部（用户「底部之外一点」）',
+      );
+    }
+
+    expectLocatedInUpperViewport(
+      find.byKey(const ValueKey('search-target-2')),
+    );
     await tester.tap(find.byKey(const ValueKey('conversation-search-next')));
     await _pump(tester, 8);
     expect(find.text('2/3'), findsOneWidget);
+    expectLocatedInUpperViewport(
+      find.byKey(const ValueKey('search-target-3')),
+    );
     await tester.tap(
       find.byKey(const ValueKey('conversation-search-previous')),
     );
@@ -160,6 +186,63 @@ void main() {
     expect(find.byKey(const ValueKey('jump-bottom')), findsOneWidget);
   });
 
+  testWidgets('长会话搜索定位落视口上部（2026-11-23 底部之外 bug）',
+      (tester) async {
+    tester.view.physicalSize = const Size(375, 806);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    // 多回合夹具（每 2 行一个回合）：保证列表可滚动；mid-turn 的
+    // assistantText 单回合收起态列表 maxScrollExtent=0 无法定位。
+    final rows = <Map<String, dynamic>>[
+      {'rowId': 1, 'kind': 'turnHeader', 'state': 'completedSuccess'},
+      for (var i = 2; i < 40; i++)
+        if (i == 20)
+          {'rowId': i, 'kind': 'userInput', 'text': 'middle needle'}
+        else if (i.isEven)
+          {'rowId': i, 'kind': 'userInput', 'text': 'question $i'}
+        else
+          {'rowId': i, 'kind': 'assistantText', 'text': 'filler answer $i ' * 4},
+    ];
+    final app = _SearchApp(rows, [], 's-search-long-locate');
+    await tester.pumpWidget(_host(app));
+    await _pump(tester);
+    // 先翻到列表中段（模拟用户在历史中间发起搜索）：目标行已构建，
+    // 定位校准有测量对象（懒列表视口外的行不构建）。
+    final scrollable = find
+        .descendant(
+          of: find.byKey(const ValueKey('chat-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final pos = tester.state<ScrollableState>(scrollable).position;
+    expect(pos.maxScrollExtent, greaterThan(0), reason: '夹具必须可滚动');
+    pos.jumpTo(pos.maxScrollExtent * 0.5);
+    await _pump(tester);
+    await tester.tap(find.byKey(const ValueKey('conversation-search-entry')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('conversation-search-input')),
+      'needle',
+    );
+    // 两次定位（首帧 + 320ms 精校准）都要跑完。
+    await _pump(tester, 8);
+    final list = tester.getRect(find.byKey(const ValueKey('chat-scroll')));
+    // 目标行正文（搜索高亮预览）矩形——定位落点一等公民。
+    final target = tester.getRect(
+      find.textContaining('middle needle').last,
+    );
+    expect(target.top, greaterThanOrEqualTo(list.top - 1),
+        reason: '目标行顶部不得超出视口顶部');
+    expect(
+      target.top,
+      lessThan(list.top + list.height * 0.5),
+      reason: '长会话定位应落视口上部（旧实现精校准 0.35=视觉 65% '
+          '→ 命中词在底部之外一点）',
+    );
+    expect(target.bottom, lessThanOrEqualTo(list.bottom + 1),
+        reason: '目标行底部不得超出视口底部');
+  });
+
   testWidgets('工具命中临时展开详情，关闭后恢复原折叠态', (tester) async {
     tester.view.physicalSize = const Size(375, 806);
     tester.view.devicePixelRatio = 1.0;
@@ -175,7 +258,8 @@ void main() {
       find.byKey(const ValueKey('conversation-search-input')),
       'terminal needle',
     );
-    await _pump(tester);
+    await tester.tap(find.byKey(const ValueKey('conversation-search-tools')));
+    await _pump(tester, 2);
     expect(find.text('1/1'), findsOneWidget);
     final output = find.descendant(
       of: find.byKey(const ValueKey('turn-h1')),
@@ -330,7 +414,8 @@ void main() {
       find.byKey(const ValueKey('conversation-search-input')),
       'target-needle',
     );
-    await _pump(tester);
+    await tester.tap(find.byKey(const ValueKey('conversation-search-tools')));
+    await _pump(tester, 2);
     expect(find.text('1/2'), findsOneWidget);
     ScrollPosition outputPosition() {
       final states = tester.stateList<ScrollableState>(
@@ -389,7 +474,9 @@ void main() {
       find.byKey(const ValueKey('conversation-search-input')),
       'hidden agent needle',
     );
-    await _pump(tester);
+    await tester.tap(find.byKey(const ValueKey('conversation-search-tools')));
+    // locate 含 320ms 延迟定位 + 两段对齐——跑完再收尾，防 pending timer。
+    await _pump(tester, 10);
     final card = find.byKey(const ValueKey('turn-h1'));
     expect(
       find.descendant(
@@ -522,6 +609,7 @@ void main() {
     final matches = buildConversationSearchMatches(
       buildChatItems(_conversation()),
       'needle',
+      includeTools: true,
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -545,6 +633,7 @@ void main() {
               onRetry: () {},
               onToggleRegex: () {},
               onToggleIncludeReasoning: () {},
+              onToggleTools: () {},
               onLoadMore: () {},
             ),
           ),
@@ -555,6 +644,7 @@ void main() {
     expect(find.text('Search messages and tools'), findsOneWidget);
     expect(find.text('Regex'), findsOneWidget);
     expect(find.text('Thinking'), findsOneWidget);
+    expect(find.text('Tools'), findsOneWidget);
     expect(find.text('Search earlier'), findsOneWidget);
     expect(
       find.text(
