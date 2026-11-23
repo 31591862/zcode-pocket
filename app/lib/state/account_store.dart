@@ -178,6 +178,27 @@ class AccountStore {
     }
   }
 
+  /// 桌面端昵称同步（2026-11-24 实验）：按账号 id 更新官方昵称，
+  /// 幂等（无变化不落盘；id 未命中静默——账号归属不明确时不猜）。
+  /// 返回是否真正写入（true=有变化并落盘；未命中/无变化返回 false）。
+  Future<bool> syncOfficialName(String id, String name) async {
+    final trimmed = name.trim();
+    if (id.isEmpty || trimmed.isEmpty) return false;
+    final list = await _readListRaw();
+    final idx = list.indexWhere((a) => a.id == id);
+    if (idx < 0) return false;
+    final existing = list[idx];
+    if (existing.officialName == trimmed) return false;
+    list[idx] = StoredAccount(
+      id: existing.id,
+      provider: existing.provider,
+      label: existing.label,
+      officialName: trimmed,
+    );
+    await _writeListRaw(list);
+    return true;
+  }
+
   Future<void> _writeListRaw(List<StoredAccount> list) => _write(
     _listKey,
     jsonEncode([
@@ -252,7 +273,15 @@ class AccountStore {
       final a = list[i];
       if (a.id != accountId) continue;
       if (a.label == trimmed) return;
-      list[i] = StoredAccount(id: a.id, provider: a.provider, label: trimmed);
+      // 重命名只改备注名——officialName 必须原样保留（2026-11-24 用户
+      // 实锤：重命名后再清空，昵称被一起清掉 → 账号管理页回退 provider、
+      // 首页回退短码）。
+      list[i] = StoredAccount(
+        id: a.id,
+        provider: a.provider,
+        label: trimmed,
+        officialName: a.officialName,
+      );
       changed = true;
       break;
     }

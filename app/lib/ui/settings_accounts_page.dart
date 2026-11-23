@@ -193,13 +193,21 @@ class _SettingsAccountsPageState extends State<SettingsAccountsPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  // multi-account-ux-1 批1：备注名优先（如「公司订阅」），
-                  // 未设置回退 provider；备注名是用户自定内容不翻译。
+                  // multi-account-ux-1 批1：备注名优先（如「公司订阅」）。
+                  // 2026-11-24 用户拍板：未重命名时默认显示官方昵称
+                  // （桌面端 oauth 同步/登录收割），无昵称再回落 provider。
+                  // 备注名/昵称均为用户内容不翻译。
                   account.label.trim().isNotEmpty
                       ? account.label.trim()
-                      : (account.provider.isEmpty ? '未知账号' : account.provider),
+                      : (account.officialName.trim().isNotEmpty
+                            ? account.officialName.trim()
+                            : (account.provider.isEmpty
+                                  ? '未知账号'
+                                  : account.provider)),
                   translate:
-                      account.label.trim().isEmpty && account.provider.isEmpty,
+                      account.label.trim().isEmpty &&
+                      account.officialName.trim().isEmpty &&
+                      account.provider.isEmpty,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(

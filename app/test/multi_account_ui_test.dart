@@ -183,7 +183,7 @@ void main() {
       of: find.byKey(const ValueKey('account-acc-a')),
       matching: find.text('bigmodel'),
     );
-    expect(title, findsOneWidget, reason: '账号标题按 provider 回退渲染');
+    expect(title, findsOneWidget, reason: '无昵称时账号标题按 provider 回退渲染');
     final rp = tester.renderObject<RenderParagraph>(title);
     // 单行判定：1.3×（14×1.3≈18.2px）单行高度远低于 30；断词两行则 ~48。
     expect(

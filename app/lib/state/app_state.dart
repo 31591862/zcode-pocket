@@ -588,6 +588,87 @@ class AppState extends ChangeNotifier {
     refreshActiveAccountLabel();
     notifyListeners();
     _updateForegroundText();
+    // 桌面端昵称同步（2026-11-24 实验）：栈变化是"桥就绪/重连"的统一
+    // 汇合点——在线态拉一次 oauth.restoreCachedSession（2 分钟节流）。
+    unawaited(_maybeSyncAccountNicknameFromDesktop());
+  }
+
+  /// 桌面端昵称同步（2026-11-24 实验）：官方 oauth.restoreCachedSession
+  /// 返回桌面端已登录账号的 UserInfo（{id, username, displayName,
+  /// avatarUrl}）——手机 WebView 登录收割的替代/补充来源。旧桌面端无
+  /// oauth 通道时调用报错，静默跳过（不影响任何功能）。
+  DateTime? _lastNicknameSyncAt;
+
+  Future<void> _maybeSyncAccountNicknameFromDesktop() async {
+    final stack = _active;
+    if (stack == null) {
+      _log('[account] nickname sync: no active stack');
+      return;
+    }
+    if (stack.computeStatus() != LinkPhase.online) {
+      _log('[account] nickname sync: stack not online '
+          '(${stack.computeStatus()})');
+      return;
+    }
+    final now = DateTime.now();
+    if (_lastNicknameSyncAt != null &&
+        now.difference(_lastNicknameSyncAt!) < const Duration(minutes: 2)) {
+      return;
+    }
+    _lastNicknameSyncAt = now;
+    await syncAccountNicknameFromDesktop();
+  }
+
+  /// 拉取桌面端账号昵称并写入本机账号档案（officialName）。匹配优先
+  /// 桌面 UserInfo.id（与本机 deriveAccountId 同源时精准）；未命中时
+  /// 回退当前栈档案的 accountId（该栈即由该账号配对）。
+  Future<void> syncAccountNicknameFromDesktop() async {
+    final bridge = this.bridge;
+    if (bridge == null) {
+      _log('[account] nickname sync: no bridge');
+      return;
+    }
+    try {
+      final res = await bridge.channels.call(
+        Channels.oauth,
+        'restoreCachedSession',
+        const <Object?>[],
+        timeout: const Duration(seconds: 10),
+      );
+      _log('[account] oauth session: $res');
+      if (res is! Map) {
+        _log('[account] nickname sync: session not a map');
+        return;
+      }
+      final name = '${res['displayName'] ?? res['username'] ?? ''}'.trim();
+      if (name.isEmpty) {
+        _log('[account] nickname sync: empty name in session');
+        return;
+      }
+      var targetId = '${res['id'] ?? ''}'.trim();
+      if (targetId.isEmpty) {
+        final p = _active?.profile;
+        targetId = p is AccountV2Profile ? (p.accountId ?? '') : '';
+        _log('[account] nickname sync: id empty -> profile fallback $targetId');
+      }
+      if (targetId.isEmpty) {
+        _log('[account] nickname sync: no target id');
+        return;
+      }
+      final written = await accountStore.syncOfficialName(targetId, name);
+      if (!written) {
+        final ids = (await accountStore.listAccounts()).map((a) => a.id).toList();
+        _log('[account] nickname sync: no match for id=$targetId '
+            'known=$ids');
+        return;
+      }
+      refreshActiveAccountLabel();
+      notifyListeners();
+      _log('[account] nickname synced from desktop: $name');
+    } catch (e) {
+      // 旧桌面端（<4.0）无 oauth 通道 / 未登录：静默。
+      _log('[account] nickname sync skipped: $e');
+    }
   }
 
   // ------------------------------------------------------ 电量日志（第三段后补）
