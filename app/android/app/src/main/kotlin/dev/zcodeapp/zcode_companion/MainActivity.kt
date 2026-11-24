@@ -146,6 +146,8 @@ class MainActivity : FlutterActivity() {
         AppLockPlugin.bind(flutterEngine, this)
         // PDF 产物预览通道（pdf-preview-collect-1）：系统内置 PdfRenderer 逐页渲染。
         pdfBindGeneration = PdfRendererPlugin.bind(flutterEngine, this)
+        // 图片保存到相册通道（2026-11-24 图片查看器下载按钮）。
+        MediaSavePlugin.bind(flutterEngine, this)
         readExtras(intent)
         // companion/test 通道（名字沿用历史测试缝）：现承载
         // 生产功能——长按图标快捷入口（冷启动 getLaunchArgs + 热启动

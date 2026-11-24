@@ -14,6 +14,7 @@ import 'package:flutter/material.dart' hide Text;
 import '../core/localized_text.dart';
 import '../core/payload_guard.dart';
 import '../core/theme.dart';
+import 'image_viewer.dart';
 
 /// row.display 是否为可渲染的图片组。
 bool hasDisplayImages(Map<String, dynamic> row) {
@@ -56,35 +57,10 @@ Uint8List? _bytesOf(int rowId, int index, String base64) {
   }
 }
 
-/// 大图弹窗（展开态缩略图 / 收起态成果条共用）。
+/// 大图查看（展开态缩略图 / 收起态成果条共用）：全屏查看器
+/// （2026-11-24 用户参考样式——黑底+顶部悬浮按钮+文件名+分享）。
 void openDisplayImage(BuildContext context, Uint8List bytes) {
-  showDialog<void>(
-    context: context,
-    builder: (dialogContext) => Dialog(
-      insetPadding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Text('截图', style: TextStyle(fontSize: AppType.uiCaption)),
-          ),
-          Flexible(
-            child: InteractiveViewer(
-              maxScale: 4,
-              child: RepaintBoundary(
-                child: Image.memory(bytes, gaplessPlayback: true),
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    ),
-  );
+  showImageViewer(context, bytes: bytes, title: tr('截图'));
 }
 
 /// 工具行内缩略图条（展开态，每行工具各自渲染）。

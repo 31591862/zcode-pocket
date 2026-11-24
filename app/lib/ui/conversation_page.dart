@@ -59,6 +59,7 @@ import 'conversation_search.dart';
 import 'conversation_view_store.dart';
 import 'workflow_runs_page.dart';
 import 'goal_panel.dart';
+import 'image_viewer.dart';
 import 'interaction_banner.dart';
 import 'subagent_list_sheet.dart';
 import 'motion.dart';
@@ -4885,6 +4886,55 @@ class _ConversationPageState extends State<ConversationPage>
   /// entityId=消息id}+attachmentIndex 成对，image 可 ref-only）。
   /// 工具结果 ref（toolCall 行输出）不在授权面——previewRefNotAuthorized
   /// 是官方设计边界（阶段 2 遗留 定论， 批）。
+  /// 图片附件缩略图字节（2026-11-24）：页面级缓存（含失败占位）+
+  /// 在飞去重——懒列表滚动/流式重建反复请求不重复打桥。
+  final _attachmentThumbCache = <String, Uint8List?>{};
+  final _attachmentThumbInflight = <String, Future<Uint8List?>>{};
+
+  Future<Uint8List?> _attachmentThumbBytes(
+    Map<String, dynamic> row,
+    int index,
+  ) {
+    final sessionId = _sessionId;
+    if (sessionId == null) return Future.value(null);
+    final list = _attachmentsOf(row);
+    if (index < 0 || index >= list.length) return Future.value(null);
+    final att = list[index];
+    final ref = '${att['previewRef'] ?? att['ref'] ?? ''}';
+    if (ref.isEmpty) return Future.value(null);
+    final key = '$sessionId|${row['rowId']}|$index|$ref';
+    if (_attachmentThumbCache.containsKey(key)) {
+      return Future.value(_attachmentThumbCache[key]);
+    }
+    return _attachmentThumbInflight.putIfAbsent(key, () async {
+      try {
+        final rowId = row['rowId'];
+        final entityId = '${row['entityId'] ?? ''}';
+        final target = (rowId is int && entityId.isNotEmpty)
+            ? {'rowId': rowId, 'entityId': entityId}
+            : null;
+        final data = await AppStateScope.of(context).attachmentRead(
+          sessionId,
+          ref,
+          target: target,
+          attachmentIndex: target != null ? index : null,
+        );
+        final bytes = Uint8List.fromList(data.bytes);
+        if (_attachmentThumbCache.length > 32) {
+          _attachmentThumbCache.remove(_attachmentThumbCache.keys.first);
+        }
+        _attachmentThumbCache[key] = bytes;
+        return bytes;
+      } catch (_) {
+        // 失败缓存占位（缩略图显示 broken 图标；点开大图仍有统一错误提示）。
+        _attachmentThumbCache[key] = null;
+        return null;
+      } finally {
+        _attachmentThumbInflight.remove(key);
+      }
+    });
+  }
+
   Future<void> _openAttachmentAt(Map<String, dynamic> row, int index) async {
     final sessionId = _sessionId;
     if (sessionId == null) return;
@@ -4986,51 +5036,9 @@ class _ConversationPageState extends State<ConversationPage>
       // 固定字节与 provider 实例：会话流式更新若触发弹层重建，不能每次
       // 都 new 一个 MemoryImage（新 List 身份=缓存 miss→重新解码闪白）。
       final imageBytes = Uint8List.fromList(data.bytes);
-      final imageProvider = MemoryImage(imageBytes);
-      showDialog<void>(
-        context: context,
-        builder: (dialogContext) => Dialog(
-          insetPadding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(10),
-                child: Text(
-                  fileName,
-                  style: const TextStyle(fontSize: AppType.uiCaption),
-                ),
-              ),
-              Flexible(
-                child: InteractiveViewer(
-                  maxScale: 4,
-                  child: RepaintBoundary(
-                    child: Image(
-                      image: imageProvider,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) => Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Text(
-                          '非图片附件（${data.mediaType ?? '未知类型'}，'
-                          '${data.bytes.length} 字节）',
-                          style: TextStyle(
-                            fontSize: AppType.uiCaption,
-                            color: context.colors.foregroundSubtle,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('关闭'),
-              ),
-            ],
-          ),
-        ),
-      );
+      // 全屏查看器（2026-11-24 用户参考样式）：固定字节实例避免弹层
+      // 随流式重建换 MemoryImage 身份而重新解码闪白。
+      showImageViewer(context, bytes: imageBytes, title: fileName);
     } catch (e) {
       if (mounted) {
         TopNotice.show(
@@ -6767,6 +6775,10 @@ class _ConversationPageState extends State<ConversationPage>
                       attachments: _attachmentsOf(item.row),
                       onLongPress: () => _showRowActions(item.row),
                       onAttachment: (i) => _openAttachmentAt(item.row, i),
+                      // 图片附件缩略图（2026-11-24）：异步读字节，页面
+                      // 级缓存/去重。
+                      attachmentImageBytes: (i) =>
+                          _attachmentThumbBytes(item.row, i),
                       // ④ 提交配置溯源：变化点徽标。
                       submitConfig: item.submitConfig,
                       showConfigBadge: item.showConfigBadge,

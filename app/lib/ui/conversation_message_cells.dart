@@ -9,6 +9,7 @@ import '../core/theme.dart';
 import '../state/app_state.dart';
 import '../state/app_state_scope.dart';
 import 'app_widgets.dart';
+import 'attachment_thumb.dart';
 import 'conversation_search.dart' show findSearchMatchRanges;
 import 'conversation_session_opener.dart';
 import 'file_preview.dart';
@@ -636,6 +637,10 @@ class UserBubble extends StatelessWidget {
 
   /// 点按第 index 个附件（页面侧持行上下文构造官方 target）。
   final void Function(int index)? onAttachment;
+
+  /// 图片附件缩略图字节读取（2026-11-24 用户拍板：图片不再显示回形针
+  /// chip 而显示缩略图；页面侧带缓存/去重；null/缺席回退原 chip）。
+  final Future<Uint8List?> Function(int index)? attachmentImageBytes;
   final bool searchReveal;
 
   /// 验收#11（Bug H）：搜索激活时提问同享词级高亮（此前仅
@@ -654,6 +659,7 @@ class UserBubble extends StatelessWidget {
     this.attachments = const [],
     this.onLongPress,
     this.onAttachment,
+    this.attachmentImageBytes,
     this.searchReveal = false,
     this.searchQuery,
     this.searchUseRegex = false,
@@ -815,6 +821,21 @@ class UserBubble extends StatelessWidget {
               // 官方行字段为 fileName（camelCase，attachment-ref.ts）；
               // filename 兜底兼容旧投影/测试夹具。
               for (var i = 0; i < attachments.length; i++)
+                if (attachmentImageBytes != null &&
+                    '${attachments[i]['mime'] ?? ''}'
+                        .toLowerCase()
+                        .startsWith('image/'))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: AttachmentThumb(
+                      key: ValueKey('attachment-thumb-${attachments[i]['ref']}'),
+                      load: () => attachmentImageBytes!(i),
+                      fileName:
+                          '${attachments[i]['fileName'] ?? attachments[i]['filename'] ?? ''}',
+                      onTap: () => onAttachment?.call(i),
+                    ),
+                  )
+                else
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: InkWell(
