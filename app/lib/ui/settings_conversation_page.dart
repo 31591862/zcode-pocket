@@ -4,6 +4,7 @@ import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/channel_client.dart';
+import 'app_widgets.dart';
 
 /// 对话设置子页（2026-10-20）：显示工具调用开关 + 运行中收到
 /// 新消息选择器——两项原样自 settings_page 一级页迁入（文案/存储 key/
@@ -23,7 +24,7 @@ class SettingsConversationPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: context.colors.background,
       appBar: AppBar(
-        title: const Text('对话', style: TextStyle(fontSize: AppType.uiLg)),
+        title: const Text('对话与首页', style: TextStyle(fontSize: AppType.uiLg)),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(height: 1, color: context.colors.border),
@@ -34,6 +35,7 @@ class SettingsConversationPage extends StatelessWidget {
         builder: (context, _) => ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           children: [
+            const AppSectionHeader('对话'),
             // 工具调用显示开关（需求池 #1——用户要求工具活动显示与否可
             // 配置，参照桌面端设置里的工具组折叠开关）。
             SwitchListTile(
@@ -150,6 +152,21 @@ class SettingsConversationPage extends StatelessWidget {
                 );
                 if (picked != null) await app.changeFollowupMode(picked);
               },
+            ),
+            const AppSectionHeader('首页'),
+            SwitchListTile(
+              key: const ValueKey('settings-show-other-computers'),
+              secondary: const Icon(Icons.devices_other_outlined, size: 20),
+              title: const Text(
+                '首页显示其他电脑任务',
+                style: TextStyle(fontSize: AppType.uiBase),
+              ),
+              subtitle: const Text(
+                '来自本地缓存快照（可能过期，会标注缓存时间）；不额外连接电脑',
+                style: TextStyle(fontSize: AppType.uiCaption),
+              ),
+              value: app.uiPrefs.showOtherComputers,
+              onChanged: (v) => app.uiPrefs.setShowOtherComputers(v),
             ),
           ],
         ),

@@ -60,6 +60,8 @@ class TaskCatalog {
   bool _tasksIndexSnapshotLogged = false;
   TaskListModel? _taskList;
   BridgeSession? _attachedBridge;
+  void Function()? _broadcastUnsub;
+  Timer? _projectsBroadcastDebounce;
 
   List<Map<String, dynamic>> projects = const [];
   List<Map<String, dynamic>> projectTasks = const [];
@@ -69,6 +71,7 @@ class TaskCatalog {
   List<Map<String, dynamic>> archivedTasks = const [];
   List<Map<String, dynamic>> workspaceTasks = const [];
   int _loadProjectsGeneration = 0;
+  int projectsVersion = 0;
 
   TaskListModel? get taskList => _taskList;
   TasksIndexSubscription? get tasksIndex => _tasksIndex;
@@ -132,9 +135,54 @@ class TaskCatalog {
 
   void attachBridge(BridgeSession bridge) {
     if (identical(_attachedBridge, bridge)) return;
+    _detachBroadcastListener();
     _attachedBridge?.recovered.removeListener(_onBridgeRecoveredReloadTasks);
     _attachedBridge = bridge;
     bridge.recovered.addListener(_onBridgeRecoveredReloadTasks);
+    _resubscribeBroadcast(bridge);
+  }
+
+  /// 订阅桌面端 state:projects 广播（官方 webRemoteProjectTreeActivity.ts:23）：
+  /// 桌面拖动侧栏顺序或交互待处理变化时广播 state:projects，手机即时重拉
+  /// readTree 同步最新 projectOrder 与任务状态。桥断线重开（_swap 新
+  /// ChannelClient）后也必须重订，否则旧 ChannelClient dispose 后推送永久失灵。
+  void _resubscribeBroadcast(BridgeSession bridge) {
+    _detachBroadcastListener();
+    try {
+      _broadcastUnsub = bridge.channels.addEventListener(
+        Channels.broadcast,
+        'onMessage',
+        (event) {
+          if (_disposedProvider() || !identical(_bridgeProvider(), bridge)) {
+            return;
+          }
+          if (event is Map && event['channel'] == 'state:projects') {
+            _projectsBroadcastDebounce?.cancel();
+            _projectsBroadcastDebounce = Timer(
+              const Duration(milliseconds: 250),
+              () {
+                if (!_disposedProvider() &&
+                    identical(_bridgeProvider(), bridge)) {
+                  unawaited(loadProjects());
+                }
+              },
+            );
+          }
+        },
+      );
+    } catch (_) {
+      // 极简测试桩未实现事件监听时容忍降级。
+    }
+  }
+
+  void _detachBroadcastListener() {
+    _projectsBroadcastDebounce?.cancel();
+    _projectsBroadcastDebounce = null;
+    final unsub = _broadcastUnsub;
+    _broadcastUnsub = null;
+    try {
+      unsub?.call();
+    } catch (_) {}
   }
 
   /// 拆除订阅与模型（早前批次：demo/测试收尾——tasks-index 订阅
@@ -142,6 +190,8 @@ class TaskCatalog {
   /// 目录随栈生命周期由进程退出回收，不经此路）。订阅 dispose 的定时器
   /// 取消在同步段完成，调用方无需 await。
   void dispose() {
+    _loadProjectsGeneration++;
+    _detachBroadcastListener();
     final ti = _tasksIndex;
     _tasksIndex = null;
     unawaited(ti?.dispose() ?? Future<void>.value());
@@ -154,12 +204,14 @@ class TaskCatalog {
   }
 
   void _onBridgeRecoveredReloadTasks() {
+    final bridge = _attachedBridge;
+    if (bridge != null) {
+      // 桥重开会 _swap 新 ChannelClient，旧广播监听已随旧通道 dispose，需立刻重订。
+      _resubscribeBroadcast(bridge);
+    }
     if (_taskList != null) unawaited(loadTaskIndex());
-    // 恢复边沿两类数据收敛对称：桥短暂断链期间
-    // loadProjects 失败会置 readTreeStatus='failed'——桥恢复后任务三列表
-    // 自动重拉而项目树不会，侧栏停留 tabs 兜底+失败提示直到手动刷新。
-    // 仅失败态重拉（ok/loading 态无需）。
-    if (readTreeStatus == 'failed') unawaited(loadProjects());
+    // 桥断连期间桌面侧栏顺序或项目树可能已变更，恢复后无条件重拉收敛。
+    if (bridge != null) unawaited(loadProjects());
   }
 
   void storeWorkspaceTasks(dynamic tasks) {
@@ -222,8 +274,11 @@ class TaskCatalog {
     // 校验"更新鲜"——15s 超时窗口内慢的旧请求后到覆盖新树（瞬时错树，
     // 下一次拉取才自愈）。旧代际结果整体丢弃。
     final generation = ++_loadProjectsGeneration;
-    readTreeStatus = 'loading';
-    _onNotify();
+    final hadProjects = projects.isNotEmpty;
+    if (!hadProjects) {
+      readTreeStatus = 'loading';
+      _onNotify();
+    }
     try {
       final res = await bridge.channels.call(Channels.project, 'readTree', [
         {'includeDeleted': true, 'includeDeletedTasks': true},
@@ -240,8 +295,12 @@ class TaskCatalog {
         onLog: _onLog,
       );
       final parsed = parseProjectTree(res);
-      projects = visibleProjectsOf(parsed.projects);
+      projects = applyDesktopProjectOrder(
+        visibleProjectsOf(parsed.projects),
+        parsed.projectOrder,
+      );
       projectTasks = parsed.tasks;
+      projectsVersion++;
       readTreeStatus = 'ok';
       refreshActiveProject();
       _onLog(
@@ -251,10 +310,14 @@ class TaskCatalog {
       _onCacheWrite();
       _onNotify();
     } catch (e) {
-      if (generation != _loadProjectsGeneration) return;
+      if (_disposedProvider() ||
+          !identical(_bridgeProvider(), bridge) ||
+          generation != _loadProjectsGeneration) {
+        return;
+      }
       readTreeStatus = 'failed';
-      _onNotify();
       _onLog('[projects] readTree failed: $e（侧栏退回工作区 tabs 列表）');
+      _onNotify();
     }
   }
 
@@ -733,6 +796,8 @@ class TaskCatalog {
     // 在飞拉取代际失效（状态层批）：detach 后旧响应不得再落到任何模型
     // （桥已换/窗口已关），并复位后台暂停标志等下次开桥重新订阅。
     _taskIndexGeneration++;
+    _loadProjectsGeneration++;
+    _detachBroadcastListener();
     _pausedForBackground = false;
     final tiSub = _tasksIndex;
     _tasksIndex = null;

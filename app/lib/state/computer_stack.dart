@@ -632,6 +632,8 @@ class ComputerStack extends ChangeNotifier {
   /// 可见项目在前，存在未归类任务时追加「任务」伪项目（默认工作区）。
   List<Map<String, dynamic>> sidebarEntries() => _taskCatalog.sidebarEntries();
 
+  int get projectsVersion => _taskCatalog.projectsVersion;
+
   /// 未归类任务全集（updatedAt 降序）——「任务」列表页数据源。
   List<Map<String, dynamic>> unclassifiedTasks() =>
       _taskCatalog.unclassifiedTasks();

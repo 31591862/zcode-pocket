@@ -617,6 +617,14 @@ const _customEn = <String, String>{
   '账号下还没有电脑在线\n请在电脑端 ZCode 开启手机连接（3.16+），或用同一账号登录桌面端': 'No computers online for this account\nEnable phone connection in ZCode on your computer (3.16+), or sign in to the desktop with the same account',
   '重命名电脑': 'Rename computer',
   '保存': 'Save',
+  '添加账号': 'Add account',
+  '备注名（可选）': 'Label (optional)',
+  '如 主号、备用': 'e.g. Primary, Backup',
+  '移除该账号': 'Remove account',
+  '切换官方套餐来源': 'Switch official plan source',
+  '已清空，点保存将关闭外部订阅，或点下方重新添加':
+      'Empty. Tap Save to disable external quotas, or add one below.',
+  '最多可添加 20 个外部订阅账号': 'Up to 20 external quota accounts are supported',
   '没有匹配的项目': 'No matching projects',
   '当前工作区': 'Current workspace',
   '无项目对话': 'No-project conversation',
@@ -1132,6 +1140,208 @@ const _customEn = <String, String>{
   '读取输出失败，已保留上次内容': 'Failed to read output; last content kept',
   '输出暂不可用（任务记录不在内存中）': 'Output unavailable (task record not in memory)',
   '当前桌面版本不支持查看输出': 'This desktop version does not support viewing output',
+  // v1.0.10：项目排序跟随桌面 + 已保存工作流一键启动 + 首页用量速览与外部订阅额度。
+  '恢复跟随桌面': 'Follow desktop',
+  '已恢复跟随桌面顺序': 'Restored desktop project order',
+  '默认跟随桌面端侧栏顺序；按住右侧手柄拖动可改为本机自定义顺序':
+      'Follows desktop sidebar order by default; drag handles to set a custom order on this device',
+  '当前为本机自定义顺序；拖动可继续调整，或点右上角恢复跟随桌面':
+      'Using a custom order on this device; drag to reorder or tap above to follow desktop',
+  '已保存工作流': 'Saved workflows',
+  '正在加载已保存工作流…': 'Loading saved workflows…',
+  '当前桌面端版本不支持已保存工作流，请升级桌面端后再试':
+      'This desktop version does not support saved workflows. Upgrade desktop and retry.',
+  '加载已保存工作流失败，请确认桌面端在线后重试':
+      'Failed to load saved workflows. Check desktop connection and retry.',
+  '暂无已保存工作流': 'No saved workflows',
+  '在桌面端运行并保存工作流后，可在此一键启动':
+      'Save a workflow on desktop to launch it here with one tap',
+  '当前项目': 'Current project',
+  '全局工作流': 'Global workflows',
+  '运行': 'Run',
+  '开始运行': 'Start run',
+  '此参数为必填项': 'This parameter is required',
+  '请输入有效数字': 'Enter a valid number',
+  '请输入有效的 JSON 格式': 'Enter valid JSON',
+  '当前未连接到活跃工作区，请先打开工作区后再试':
+      'No active workspace connected. Open a workspace and retry.',
+  '当前桌面端环境未启用动态工作流功能':
+      'Dynamic workflows are not enabled on this desktop.',
+  '工作流名称格式无效': 'Invalid workflow name',
+  '未找到该工作流，请刷新列表后重试':
+      'Workflow not found. Refresh the list and retry.',
+  '工作流参数校验未通过，请检查填写内容':
+      'Workflow arguments failed validation. Check your input.',
+  '工作流脚本编译失败，请在桌面端检查脚本内容':
+      'Workflow script failed to compile. Check the script on desktop.',
+  '会话忙，请稍后重试': 'Session is busy. Try again shortly.',
+  '工作流启动失败，请稍后重试': 'Failed to start workflow. Try again later.',
+  '启动工作流失败，请稍后重试': 'Failed to start workflow. Try again later.',
+  '用量速览': 'Usage quick view',
+  '刷新额度': 'Refresh quota',
+  '配置外部订阅额度': 'Configure external quotas',
+  '官方': 'Official',
+  '正在拉取官方额度…': 'Fetching official quota…',
+  '桌面离线，暂无法读取官方订阅额度':
+      'Desktop offline — official subscription quota unavailable',
+  '未连接该账号电脑，连上后自动缓存':
+      'No online computer for this account — caches automatically when connected',
+  '直连': 'Direct',
+  '官方套餐来源': 'Official plan source',
+  // v1.0.10 设置页瘦身（4 组具象结构）+ 更新说明弹层（What's New）。
+  '账号与功能': 'Account & features',
+  '多账号登录、备注与切换': 'Sign in, rename, and switch between accounts',
+  '定义、启停与模型覆盖（与桌面端同步）':
+      'Create, toggle, and override models (synced with desktop)',
+  '套餐剩余额度、历史趋势与用量统计': 'Plan quota, history trends, and usage stats',
+  '通用': 'General',
+  '外观与语言': 'Appearance & language',
+  '深浅主题与界面语言': 'Theme appearance and app language',
+  '对话与首页': 'Chat & home',
+  '工具调用展示、代码高亮、提问自动采纳与首页多电脑任务':
+      'Tool display, code highlight, auto-resolve, and other-computer tasks',
+  '审批、任务完成等后台提醒开关与通知记录':
+      'Approval and task completion alerts, plus notification ledger',
+  '语音听写与自动整理指令配置': 'Speech dictation and automatic prompt polishing',
+  '冷启动与后台切回验证（系统锁屏 / PIN）、防截屏':
+      'Require unlock on launch/resume (system lock / PIN) and screen privacy',
+  '未开启': 'Off',
+  '软件更新、更新说明、清除缓存与开源许可':
+      'Updates, release notes, clear cache, and open-source licenses',
+  '首页': 'Home',
+  '更新与说明': 'Updates & release notes',
+  '本版更新说明': 'What’s new in this version',
+  '更新说明': 'What’s new',
+  '点击查看大图': 'Tap to zoom',
+  '知道了': 'Got it',
+  '首页用量速览、已保存工作流一键启动与设置页精简':
+      'Home usage quick view, one-tap saved workflows, and streamlined settings',
+  '首页「用量速览」与多账号聚合':
+      'Home Usage Quick View & multi-account aggregation',
+  '首页顶栏新增用量速览，同屏查看官方 GLM Coding Plan、激活态 Start Plan 福利包（桌面离线也可直连查看）与多账号缓存；点右上角 + 可自定义排序、显隐，并按需添加外部套餐额度查询（支持 Kimi Coding、OpenCode Go、GLM Coding Plan 直连、小米 MiMo Token Plan、Ollama Cloud、Command Code，查询方式与开源工具 cc-switch 的实现同类；仅查剩余额度，订阅与模型配置请在桌面端完成）。':
+      'Quickly view official GLM Coding Plan, active Start Plan bonus packs (direct even when desktop is offline), and multi-account cache from the home top bar. Tap + to reorder, toggle, or add external quota lookups (Kimi Coding, OpenCode Go, GLM Coding Plan direct, Xiaomi MiMo Token Plan, Ollama Cloud, Command Code — the same approach as the open-source cc-switch tool; quota tracking only; manage subscriptions on desktop).',
+  '已保存工作流一键启动': 'One-tap saved workflows',
+  '任务主页右上角菜单新增「已保存工作流」，按当前项目与全局分类浏览，支持无参一键运行或填写参数校验后直接启动。':
+      'Open Saved workflows from the home menu to browse project and global workflows, launch directly, or fill validated arguments.',
+  '模型「视觉」标签对齐桌面与工作流分组':
+      'Desktop-aligned Vision badges & grouped workflow models',
+  '四处模型选择弹层的「视觉」标签紧跟模型名称右侧并提亮深色对比度；工作流模型列表支持按提供方/套餐折叠分组。':
+      'Vision badges now sit right next to model names with improved dark-mode contrast; workflow model pickers group by provider and plan.',
+  '项目顺序默认跟随桌面端': 'Project order follows desktop by default',
+  '主页项目默认同步桌面侧栏拖动顺序，仍保留本机拖动微调与「恢复跟随桌面」一键复位。':
+      'Home projects follow your desktop sidebar order live, while keeping local drag reorder and a one-tap Reset to desktop order option.',
+  '设置页结构精简': 'Streamlined Settings layout',
+  '重组为「账号与功能 / 通用 / 安全 / 关于」四组清晰入口，外观与语言、更新开关收进二级页，一屏直达不杂乱。':
+      'Reorganized into four clear sections (Account & features, General, Security, About), tucking appearance and update switches into subpages.',
+  '小窗模式白屏修复': 'Small-window blank screen fixed',
+  '部分机型把应用挂到系统小窗后整页空白、只剩悬浮按钮；现已修正被错误放大的顶部安全区，小窗内可正常使用。':
+      'On some devices the app showed a blank page with only the floating button in the system small window; the oversized top safe area is now corrected, so the app works normally in small windows.',
+  '读取官方订阅额度失败，可点右上角重试':
+      'Failed to load official quota. Tap refresh above to retry.',
+  '当前账号暂无官方套餐额度数据': 'No official coding plan quota for this account',
+  '每周配额': 'Weekly quota',
+  'MCP 额度': 'MCP quota',
+  '今日累计': 'Today total',
+  '今日峰值': 'Today peak',
+  '外部订阅': 'External',
+  '外部额度': 'External',
+  '正在查询外部订阅额度…': 'Fetching external subscription quotas…',
+  '正在查询外部额度…': 'Fetching external quotas…',
+  '外部额度查询（可选）': 'External quota lookups (optional)',
+  '仅查剩余额度，订阅与模型配置请在桌面端完成':
+      'Quota tracking only; manage subscriptions and models on desktop',
+  '添加外部额度查询': 'Add external quota lookup',
+  '最多可添加 20 个外部额度查询': 'Up to 20 external quota lookups allowed',
+  '正在获取模型目录…': 'Loading model catalog…',
+  '闲时': 'Off-peak',
+  '高速': 'Fast',
+  '速': 'Fast',
+  '卡': 'Card',
+  '包': 'Plan',
+  '包月': 'Monthly',
+  '试用': 'Trial',
+  '专业': 'Pro',
+  '超大': 'Max',
+  '轻量': 'Lite',
+  '配置 Kimi / OpenCode Go 等外部订阅额度':
+      'Configure Kimi / OpenCode Go external quotas',
+  '查看完整用量统计': 'View full usage stats',
+  '外部订阅额度配置': 'External subscription quotas',
+  'API Key 仅加密保存在本机，手机直连对应官方 HTTPS 接口查询，留空即关闭该项。':
+      'API keys are encrypted on-device and sent only to the provider’s HTTPS endpoint. Leave blank to disable.',
+  '留空不启用': 'Leave blank to disable',
+  '接口地址（可选）': 'Base URL (optional)',
+  '7 天额度': '7-day quota',
+  '5 小时滚动': '5-hour rolling',
+  '每周额度': 'Weekly quota',
+  '每月额度': 'Monthly quota',
+  '接口地址无效（仅支持 HTTPS 地址）': 'Invalid endpoint URL (HTTPS only)',
+  'API Key 失效或未授权（401）': 'API key invalid or unauthorized (401)',
+  '请求被拒绝（403），可能被风控拦截或 Key 无权限':
+      'Request forbidden (403) — blocked or insufficient permissions',
+  '用量接口不存在（404），请检查接口地址':
+      'Usage endpoint not found (404) — check base URL',
+  '请求超时，请检查网络后重试': 'Request timed out. Check your network and retry.',
+  '返回数据格式无法识别': 'Unrecognized response format',
+  '网络连接失败，请稍后重试': 'Network connection failed. Try again later.',
+  '查询失败，请稍后重试': 'Query failed. Try again later.',
+  '查询失败': 'Query failed',
+  '请确认使用的是 Kimi Coding API Key（kimi.com/code/console）':
+      'Verify your Kimi Coding API key (kimi.com/code/console)',
+  '请确认使用的是 OpenCode Go API Key（opencode.ai/auth）':
+      'Verify your OpenCode Go API key (opencode.ai/auth)',
+  'GLM Coding Plan 直连': 'GLM Coding Plan (direct)',
+  '小米 MiMo Token Plan': 'Xiaomi MiMo Token Plan',
+  '本期额度': 'Current-period credits',
+  '请确认使用的是智谱 GLM Coding Plan API Key（国际版账号请把接口地址改为 https://api.z.ai）':
+      'Verify your Zhipu GLM Coding Plan API key (international accounts: change the base URL to https://api.z.ai)',
+  '请确认使用的是小米 MiMo Token Plan API Key（tp- 开头；sk- 开头是按量付费 Key）':
+      'Verify your Xiaomi MiMo Token Plan API key (starts with tp-; sk- keys are pay-as-you-go)',
+  '请确认使用的是 Ollama Cloud API Key（ollama.com/settings/keys）':
+      'Verify your Ollama Cloud API key (ollama.com/settings/keys)',
+  '请确认使用的是 Command Code API Key（该接口为官方命令行工具的私有路由，可能变动）':
+      'Verify your Command Code API key (this endpoint is the official CLI’s private route and may change)',
+  '• 查询方式与开源工具 cc-switch 的实现同类：直连各家官方额度接口，只读取额度数据。':
+      '• Queries work the same way as the open-source cc-switch tool: direct calls to each provider’s official quota endpoint, reading quota data only.',
+  '已归档的任务': 'Archived tasks',
+  '加密存储写入失败，请重试': 'Failed to save to secure storage. Please retry.',
+  'API Key 格式无效（含换行或非法字符）':
+      'Invalid API key format (contains newline or illegal characters)',
+  '桌面端未登录官方账号，无法读取套餐额度':
+      'Desktop is not signed in to an official account',
+  '官方额度服务暂时不可用，请稍后刷新':
+      'Official quota service is temporarily unavailable; try refreshing later',
+  '正在启动工作流，请稍候': 'Starting workflow, please wait',
+  '部分工作流列表加载失败，下拉可重试':
+      'Part of the workflow list failed to load; pull down to retry',
+  '自定义与添加额度': 'Customize & add quotas',
+  '自定义用量速览': 'Customize Quota Quick View',
+  '恢复默认': 'Reset defaults',
+  '显示与顺序': 'Display & order',
+  '拖动左侧手柄调整顺序，开关控制是否展示':
+      'Drag the handle to reorder; toggle switches to show or hide',
+  '拖动左侧手柄调整顺序': 'Drag to reorder',
+  '有福利包时自动显示': 'Shown automatically when active',
+  '官方套餐': 'Official plan',
+  '自动': 'Auto',
+  '来源': 'Source',
+  '外部订阅账号（可选）': 'External subscriptions (optional)',
+  '添加外部订阅账号': 'Add external subscription',
+  '安全说明 · 直连官网，开源可审':
+      'Security · Direct to official API, open-source',
+  '• 仅手机直连对应官网 HTTPS 接口（禁止重定向），不经中继服务器，也不记录日志。':
+      '• Connects directly from your phone over HTTPS (redirects disabled); never passes through relay servers or logs keys.',
+  '• API Key 加密存于系统钥匙串且关闭云备份；输入框已禁用键盘联想；建议优先使用可随时吊销的专用 Key。':
+      '• Stored encrypted in device keychain with cloud backup off; keyboard suggestions disabled; prefer a dedicated revocable key.',
+  '• 查询代码完全开源在 external_quota.dart，可自行或交给 AI 核对。':
+      '• Full query logic is open-source in external_quota.dart so you (or your AI) can audit it anytime.',
+  '复制源码链接': 'Copy source URL',
+  '已复制源码链接': 'Source URL copied',
+  '粘贴对应平台 API Key': 'Paste provider API key',
+  '已隐藏全部额度卡片，可点右上角 + 自定义':
+      'All quota cards are hidden. Tap + in the top right to customize.',
+  '当前未启用官方套餐，可点右上角 + 自定义显示':
+      'No active official plan found. Tap + in the top right to customize.',
 };
 
 final _customPatterns = <_L10nPattern>[
@@ -1722,4 +1932,77 @@ final _customPatterns = <_L10nPattern>[
   }),
   // 审查轮2 ：加载失败整串（此前 tr('加载失败：')+err 片段拼接永不命中）。
   _L10nPattern(RegExp(r'^加载失败：([\s\S]+)$'), 'Load failed: {msg}', {'msg': 1}),
+  // v1.0.10 动态参数串。
+  _L10nPattern(
+    RegExp(r'^恢复失败，请重试：([\s\S]+)$'),
+    'Failed to restore, please retry: {e}',
+    {'e': 1},
+  ),
+  _L10nPattern(RegExp(r'^(\d+) 个参数$'), '{count} args', {'count': 1}),
+  _L10nPattern(
+    RegExp(r'^另有 (\d+) 个工作流文件解析失败，请在桌面端检查$'),
+    '{count} workflow file(s) failed to parse; check on desktop',
+    {'count': 1},
+  ),
+  _L10nPattern(RegExp(r'^运行 ([\s\S]+)$'), 'Run {name}', {'name': 1}),
+  _L10nPattern(
+    RegExp(r'^服务返回异常（HTTP (\d+)）$'),
+    'Service error (HTTP {code})',
+    {'code': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^([\s\S]+) 接口地址必须为有效的 HTTPS 地址$'),
+    '{name} base URL must be a valid HTTPS URL',
+    {'name': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^请填写「([\s\S]+)」的 API Key，或清空/删除该项$'),
+    'Enter an API key for “{name}”, or clear/remove this entry',
+    {'name': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^将直连：([\s\S]+)（仅 GET，禁重定向）$'),
+    'Direct GET (no redirects): {url}',
+    {'url': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^保存失败，请重试：([\s\S]+)$'),
+    'Save failed, please retry: {e}',
+    {'e': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^5 小时请求数 剩余 ([\s\S]+) / ([\s\S]+)$'),
+    '5h requests remaining {rem} / {lim}',
+    {'rem': 1, 'lim': 2},
+  ),
+  _L10nPattern(
+    RegExp(r'^5 小时请求数 剩余 ([\s\S]+)$'),
+    '5h requests remaining {rem}',
+    {'rem': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^剩余 ([0-9.]+%)$'),
+    '{pct} left',
+    {'pct': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^更新于 ([0-9:]+)$'),
+    'Updated at {t}',
+    {'t': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^顺序保存失败，请重试：([\s\S]+)$'),
+    'Failed to save order, please retry: {e}',
+    {'e': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^已更新到 v([\s\S]+)$'),
+    'Updated to v{ver}',
+    {'ver': 1},
+  ),
+  _L10nPattern(
+    RegExp(r'^查看 v([\s\S]+) 新增功能与体验优化$'),
+    'See what’s new in v{ver}',
+    {'ver': 1},
+  ),
 ];

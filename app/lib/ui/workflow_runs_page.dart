@@ -12,6 +12,15 @@ import '../core/theme.dart';
 import '../platform/capabilities.dart';
 import '../transport/conversation.dart' show ConfigOption, ConfigOptionValue;
 import 'artifact_pdf_page.dart' show ArtifactPdfPage;
+import 'composer_panels.dart'
+    show
+        groupDisambigSuffix,
+        isPlanProvider,
+        modelValueShowsVision,
+        planBadgeOf,
+        providerGroupKey,
+        providerShortLabel;
+import 'model_vision_badge.dart' show ModelVisionBadge;
 import 'turn_model.dart' show toolInputArgs;
 import 'workflow_dashboards.dart';
 import '../state/app_state.dart';
@@ -2243,7 +2252,9 @@ class _AmendRunSettingsSheetState extends State<_AmendRunSettingsSheet> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadModels());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadModels();
+    });
   }
 
   @override
@@ -2253,6 +2264,7 @@ class _AmendRunSettingsSheetState extends State<_AmendRunSettingsSheet> {
   }
 
   Future<void> _loadModels() async {
+    if (!mounted) return;
     try {
       final opts = await AppStateScope.of(context).modelSelectionOptions();
       if (!mounted) return;
@@ -2276,87 +2288,261 @@ class _AmendRunSettingsSheetState extends State<_AmendRunSettingsSheet> {
     return provider.isEmpty ? m.name : '$provider ${m.name}';
   }
 
+  bool _modelSheetOpening = false;
+
   Future<void> _pickModel() async {
+    if (_modelSheetOpening) return;
+    _modelSheetOpening = true;
+    try {
+      await _pickModelInner();
+    } finally {
+      _modelSheetOpening = false;
+    }
+  }
+
+  Future<void> _pickModelInner() async {
     final models = _models ?? const <ConfigOptionValue>[];
+    // 工作流配置弹层按提供方/套餐分组（与会话/子代理弹层同源），
+    // 消除同名 GLM-5.3 一行有「视觉」一行无时缺来源托底的误读。
+    final groups = <String, List<ConfigOptionValue>>{};
+    for (final m in models) {
+      groups.putIfAbsent(providerGroupKey(m), () => []).add(m);
+    }
+    final groupMeta = <String, ({String label, String badge})>{};
+    for (final e in groups.entries) {
+      groupMeta[e.key] = (
+        label: providerShortLabel(e.value.first),
+        badge: planBadgeOf(e.value.first),
+      );
+    }
+    final collisions = <String, int>{};
+    for (final m in groupMeta.values) {
+      final k = '${m.label}|${m.badge}';
+      collisions[k] = (collisions[k] ?? 0) + 1;
+    }
+    if (collisions.values.any((n) => n > 1)) {
+      final seenCk = <String, int>{};
+      for (final k in groups.keys.toList()) {
+        final meta = groupMeta[k]!;
+        final ck = '${meta.label}|${meta.badge}';
+        if ((collisions[ck] ?? 0) > 1) {
+          final nth = (seenCk[ck] ?? 0) + 1;
+          seenCk[ck] = nth;
+          groupMeta[k] = (
+            label: '${meta.label}·${groupDisambigSuffix(k, nth)}',
+            badge: meta.badge,
+          );
+        }
+      }
+    }
+    final planKeys = groups.keys
+        .where((k) => isPlanProvider(groups[k]!.first))
+        .toList()
+      ..sort((a, b) => groupMeta[a]!.label.compareTo(groupMeta[b]!.label));
+    final otherKeys = groups.keys
+        .where((k) => !isPlanProvider(groups[k]!.first))
+        .toList();
+    final ordered = <MapEntry<String, List<ConfigOptionValue>>>[
+      for (final k in [...planKeys, ...otherKeys]) MapEntry(k, groups[k]!),
+    ];
+    // 与输入框/子代理弹层对齐：默认仅展开当前选中模型所在组（无选中则展开首组），其余折叠。
+    final selectedGroup = _modelValue == null
+        ? null
+        : ordered
+              .where((g) => g.value.any((v) => v.value == _modelValue))
+              .map((g) => g.key)
+              .firstOrNull;
+    final defaultOpen = ordered.isEmpty
+        ? null
+        : selectedGroup ?? ordered.first.key;
+    final collapsedByGroup = <String, bool>{};
+    bool isCollapsed(String key) =>
+        collapsedByGroup[key] ?? (key != defaultOpen);
+
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      tr('子代理模型'),
-                      style: TextStyle(
-                        fontSize: AppType.uiSm,
-                        fontWeight: FontWeight.w600,
-                        color: context.colors.foregroundSubtle,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final c = sheetContext.colors;
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          tr('子代理模型'),
+                          style: TextStyle(
+                            fontSize: AppType.uiSm,
+                            fontWeight: FontWeight.w600,
+                            color: c.foregroundSubtle,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                ListTile(
-                  key: const ValueKey('amend-model-default'),
-                  dense: true,
-                  title: Text(tr('会话模型（回默认）')),
-                  subtitle: Text(
-                    tr('不再单独指定，跟随会话当前模型'),
-                    style: TextStyle(
-                      fontSize: AppType.uiXs,
-                      color: context.colors.foregroundSubtlest,
-                    ),
-                  ),
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    setState(() {
-                      _modelDirty = true;
-                      _modelValue = null;
-                    });
-                  },
-                ),
-                for (final m in models)
-                  ListTile(
-                    key: ValueKey('amend-model-${m.value}'),
-                    dense: true,
-                    title: Text(
-                      m.name,
-                      translate: false,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      setState(() {
-                        _modelDirty = true;
-                        _modelValue = m.value;
-                      });
-                    },
-                  ),
-                if (models.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      tr('模型目录暂不可用，仍可直接回默认'),
-                      style: TextStyle(
-                        fontSize: AppType.uiCaption,
-                        color: context.colors.foregroundSubtle,
+                    ListTile(
+                      key: const ValueKey('amend-model-default'),
+                      dense: true,
+                      title: Text(tr('会话模型（回默认）')),
+                      subtitle: Text(
+                        tr('不再单独指定，跟随会话当前模型'),
+                        style: TextStyle(
+                          fontSize: AppType.uiXs,
+                          color: c.foregroundSubtlest,
+                        ),
                       ),
+                      trailing: SizedBox(
+                        width: 26,
+                        child: _modelDirty && _modelValue == null
+                            ? Icon(Icons.check, size: 18, color: c.brandAccent)
+                            : null,
+                      ),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        setState(() {
+                          _modelDirty = true;
+                          _modelValue = null;
+                        });
+                      },
                     ),
-                  ),
-              ],
+                    for (final g in ordered) ...[
+                      InkWell(
+                        key: ValueKey('amend-model-group-${g.key}'),
+                        onTap: () => setSheetState(() {
+                          collapsedByGroup[g.key] = !isCollapsed(g.key);
+                        }),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 16, 4),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isCollapsed(g.key)
+                                    ? Icons.expand_more
+                                    : Icons.expand_less,
+                                size: 18,
+                                color: c.foregroundSubtle,
+                              ),
+                              const SizedBox(width: 2),
+                              Flexible(
+                                child: Text(
+                                  groupMeta[g.key]!.label,
+                                  translate: false,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: AppType.uiCaption,
+                                    fontWeight: FontWeight.w600,
+                                    color: c.foregroundSubtle,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: c.brandAccent.withValues(
+                                    alpha: AppAlpha.faint,
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.sm,
+                                  ),
+                                ),
+                                child: Text(
+                                  groupMeta[g.key]!.badge,
+                                  translate: false,
+                                  style: TextStyle(
+                                    fontSize: AppType.uiXs,
+                                    color: c.brandAccentBright,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${g.value.length}',
+                                style: TextStyle(
+                                  fontSize: AppType.uiXs,
+                                  color: c.foregroundSubtle,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (!isCollapsed(g.key))
+                        for (final m in g.value)
+                          ListTile(
+                            key: ValueKey('amend-model-${m.value}'),
+                            dense: true,
+                            contentPadding: const EdgeInsets.only(
+                              left: 28,
+                              right: 16,
+                            ),
+                            // 视觉标签紧跟模型名右侧（对齐桌面端）；✓ 独居行尾。
+                            title: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    m.name,
+                                    translate: false,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (modelValueShowsVision(m)) ...[
+                                  const SizedBox(width: 6),
+                                  const ModelVisionBadge(),
+                                ],
+                              ],
+                            ),
+                            trailing: SizedBox(
+                              width: 26,
+                              child: _modelValue == m.value
+                                  ? Icon(
+                                      Icons.check,
+                                      size: 18,
+                                      color: c.brandAccent,
+                                    )
+                                  : null,
+                            ),
+                            onTap: () {
+                              Navigator.of(sheetContext).pop();
+                              setState(() {
+                                _modelDirty = true;
+                                _modelValue = m.value;
+                              });
+                            },
+                          ),
+                    ],
+                    if (models.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          tr('模型目录暂不可用，仍可直接回默认'),
+                          style: TextStyle(
+                            fontSize: AppType.uiCaption,
+                            color: c.foregroundSubtle,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -2412,18 +2598,21 @@ class _AmendRunSettingsSheetState extends State<_AmendRunSettingsSheet> {
         (_modelDirty || _concurrencyDirty) && !_concurrencyInvalid && !_saving;
     // 审查轮2 ：保存在途禁止拖拽/返回键关闭——否则退出动画窗口内
     // accepted 分支的二次 pop 会吃掉 run 详情页（探针实证）。
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     return PopScope(
       canPop: !_saving,
       child: SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.7,
-          ),
-          child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-              child: Column(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: (MediaQuery.sizeOf(context).height - bottomInset) * 0.75,
+            ),
+            child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -2639,6 +2828,7 @@ class _AmendRunSettingsSheetState extends State<_AmendRunSettingsSheet> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

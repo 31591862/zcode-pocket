@@ -14,9 +14,11 @@ import 'composer_panels.dart'
         groupDisambigSuffix,
         isPlanProvider,
         modelDedupKey,
+        modelValueShowsVision,
         planBadgeOf,
         providerGroupKey,
         providerShortLabel;
+import 'model_vision_badge.dart' show ModelVisionBadge;
 
 // 优化批 #3：异常→人话映射（原始异常仍在调用方 debugPrint 留痕）。
 String friendlyError(Object e) {
@@ -216,20 +218,12 @@ class _SubagentsPageState extends State<SubagentsPage> {
         final dyn = o as dynamic;
         if (!'${dyn.id}'.toLowerCase().contains('model')) continue;
         for (final v in dyn.options) {
+          // 目录条目整体携带（value/名称/provider 分组与套餐元数据/视觉
+          // 事实全出自 ConfigOptionValue.toRaw 单源）——此前逐字段手抄
+          // 漏过 provider 元数据致模型选择只能平铺，不再各处补字段。
           models.add({
-            'value': v.value,
-            'name': v.name,
+            ...v.toRaw(),
             'thoughtLevels': v.modelThoughtLevels,
-            // 1.0.9 验收：provider 元数据此前被剥掉——模型选择只能
-            // 平铺。保留分组/徽标/短名四字段，供 _SubagentModelSheet
-            // 复用 composer 的 provider 分组纯函数族。
-            if (v.modelProviderId != null)
-              'modelProviderId': v.modelProviderId,
-            if (v.modelProviderName != null)
-              'modelProviderName': v.modelProviderName,
-            if (v.modelAccessMode != null) 'modelAccessMode': v.modelAccessMode,
-            if (v.modelAccessAccountType != null)
-              'modelAccessAccountType': v.modelAccessAccountType,
           });
           for (final level in v.modelThoughtLevels) {
             thought.add('$level');
@@ -1244,20 +1238,40 @@ class _SubagentModelSheetState extends State<_SubagentModelSheet> {
           padding: const EdgeInsets.only(left: 24, top: 9, bottom: 9, right: 8),
           child: Row(
             children: [
+              // 视觉标签紧跟模型名右侧（对齐桌面端）；长名省略号让位，✓ 独居行尾。
               Expanded(
-                child: Text(
-                  v.name,
-                  translate: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: AppType.uiBase,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    color: selected ? c.brandAccent : c.foreground,
-                  ),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        v.name,
+                        translate: false,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppType.uiBase,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          color: selected ? c.brandAccent : c.foreground,
+                        ),
+                      ),
+                    ),
+                    if (modelValueShowsVision(v)) ...[
+                      const SizedBox(width: 6),
+                      const ModelVisionBadge(),
+                    ],
+                  ],
                 ),
               ),
-              if (selected)
-                Icon(Icons.check, size: 16, color: c.brandAccent),
+              const SizedBox(width: 6),
+              // 尾槽恒占位（选中/非选中同宽）。
+              SizedBox(
+                width: 16,
+                child: selected
+                    ? Icon(Icons.check, size: 16, color: c.brandAccent)
+                    : null,
+              ),
             ],
           ),
           ),
@@ -1426,18 +1440,11 @@ class _AgentEditorSheetState extends State<_AgentEditorSheet> {
         final id = '${dyn.id}'.toLowerCase();
         if (!id.contains('model')) continue;
         for (final v in dyn.options) {
+          // 目录条目整体携带（同页面 _loadCatalog：ConfigOptionValue.toRaw
+          // 单源，分组/套餐/视觉事实不逐字段手抄）。
           models.add({
-            'value': v.value,
-            'name': v.name,
+            ...v.toRaw(),
             'providerId': v.modelProviderId,
-            // 1.0.9 验收：provider 分组元数据（分组键/徽标/短名）。
-            if (v.modelProviderId != null)
-              'modelProviderId': v.modelProviderId,
-            if (v.modelProviderName != null)
-              'modelProviderName': v.modelProviderName,
-            if (v.modelAccessMode != null) 'modelAccessMode': v.modelAccessMode,
-            if (v.modelAccessAccountType != null)
-              'modelAccessAccountType': v.modelAccessAccountType,
             'thoughtLevels': v.modelThoughtLevels,
           });
           for (final level in v.modelThoughtLevels) {

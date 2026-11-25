@@ -182,6 +182,8 @@ class DemoScript {
     });
 
     // --- 工作流 ---
+    reg('zcode-agent', 'listSavedWorkflows', (p) =>
+        demoSavedWorkflows('${p['scope'] ?? 'project'}'));
     reg('zcode-agent', 'conversationWorkflowRunsV4', (_) => demoWorkflowRuns());
     reg('zcode-agent', 'conversationWorkflowRunEventsV4', (p) =>
         demoWorkflowRunEvents('${p['runId'] ?? ''}'));
@@ -262,7 +264,16 @@ class DemoScript {
     reg('project', 'moveTask', (_) => {'ok': true});
 
     // --- 用量 ---
-    reg('usage-stats', 'getEntitlementSnapshot', (_) => demoEntitlementSnapshot());
+    reg('usage-stats', 'getEntitlementSnapshot', (p) {
+      final access = p['accountAccess'];
+      final family = access is Map && '${access['accountType'] ?? ''}' == 'zai'
+          ? 'zai'
+          : 'bigmodel';
+      final planKind = access is Map && '${access['mode'] ?? ''}' == 'start-plan'
+          ? 'start-plan'
+          : 'individual-coding-plan';
+      return demoEntitlementSnapshot(family: family, planKind: planKind);
+    });
     reg('usage-stats', 'getCodingPlanUsageSnapshot', (p) =>
         demoCodingPlanUsageSnapshot('${p['range'] ?? '7d'}'));
     reg('usage-stats', 'getAppUsageSnapshot', (p) =>
@@ -438,10 +449,31 @@ class DemoScript {
       'sendText' => _handleSendText(p),
       'stop' => _handleStop(p),
       'resolveInteraction' => _handleResolveInteraction(p),
+      'startSavedWorkflow' => _handleStartSavedWorkflow(p),
       _ => {
         'status': 'accepted',
         if (_snapshots['${envelope is Map ? envelope['sessionId'] : ''}'] != null)
           'revisionAtDecision': 7,
+      },
+    };
+  }
+
+  Map<String, dynamic> _handleStartSavedWorkflow(Map p) {
+    final envelope = p['envelope'] as Map;
+    final sid = '${envelope['sessionId'] ?? ''}';
+    final payload = envelope['payload'];
+    final name = payload is Map ? '${payload['name'] ?? 'workflow'}' : 'workflow';
+    if (sid.isNotEmpty) {
+      _schedule(const Duration(milliseconds: 250), () {
+        _startReplay(sid, '已启动已保存工作流：$name');
+      });
+    }
+    return {
+      'status': 'accepted',
+      'result': {
+        'type': 'startSavedWorkflow',
+        'runId': 'run-demo-$name',
+        'toolCallId': 'tc-demo-wf',
       },
     };
   }

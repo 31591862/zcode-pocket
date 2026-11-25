@@ -47,9 +47,11 @@ void main() {
       expect(quotaRemainingPercent(null), 0);
       expect(quotaRemainingPercent({}), 0);
     });
-    test('越界钳制', () {
+    test('越界钳制与非有限值', () {
       expect(quotaRemainingPercent({'percentage': 130}), 0);
       expect(quotaRemainingPercent({'percentage': -5}), 100);
+      expect(quotaRemainingPercent({'percentage': double.nan}), 0);
+      expect(quotaRemainingPercent({'percentage': double.infinity}), 0);
     });
   });
 
@@ -89,13 +91,21 @@ void main() {
     test('11 小时 45 分钟（示例）', () {
       expect(formatDurationMs((11 * 60 + 45) * 60000), '11 小时 45 分钟');
     });
-    test('分钟级与不足 1 分钟', () {
+    test('分钟级、整小时与非正值', () {
       expect(formatDurationMs(42 * 60000), '42 分钟');
+      expect(formatDurationMs(3 * 3600000), '3 小时');
       expect(formatDurationMs(30000), '不足 1 分钟');
+      expect(formatDurationMs(0), '不足 1 分钟');
+      expect(formatDurationMs(-5000), '不足 1 分钟');
     });
   });
 
   group('formatResetTime（官方 adaptive：当日 HH:mm）', () {
+    test('当日 → HH:mm', () {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day, 15, 30);
+      expect(formatResetTime(today.millisecondsSinceEpoch), '15:30');
+    });
     test('非当日 → MM-dd HH:mm', () {
       final t = DateTime.now().subtract(const Duration(days: 1));
       final s = formatResetTime(t.millisecondsSinceEpoch);
@@ -108,10 +118,19 @@ void main() {
   });
 
   group('formatPlanName（官方 bigmodelUsageQuotaMapper.ts:81-84）', () {
-    test('level 非空 → GLM Coding + 首字母大写其余小写', () {
+    test('level 非空 → 规范化命名（去重复前缀、兼容多词与 Start Plan）', () {
       expect(formatPlanName(level: 'pro', productName: 'x'), 'GLM Coding Pro');
       expect(formatPlanName(level: 'PRO'), 'GLM Coding Pro');
       expect(formatPlanName(level: 'Max'), 'GLM Coding Max');
+      expect(formatPlanName(level: 'coding-plan'), 'GLM Coding Plan');
+      expect(formatPlanName(level: 'coding_plan'), 'GLM Coding Plan');
+      expect(formatPlanName(level: 'codingplan'), 'GLM Coding Plan');
+      expect(formatPlanName(level: 'Coding Plan'), 'GLM Coding Plan');
+      expect(formatPlanName(level: 'GLM Coding Pro'), 'GLM Coding Pro');
+      expect(formatPlanName(level: 'start-plan'), 'Start Plan');
+      expect(formatPlanName(level: 'Start Plan'), 'Start Plan');
+      expect(formatPlanName(level: 'start'), 'Start Plan');
+      expect(formatPlanName(level: 'pro-max'), 'GLM Coding Pro Max');
     });
     test('level 空 → productName 原样回退（不加前缀）', () {
       expect(

@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show Completer, unawaited;
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../core/external_quota.dart';
+import '../core/official_account_quota.dart';
 import '../core/oem_vendor.dart'
     show kQrPreviewAuto, normalizeQrPreviewMode;
 import '../transport/id.dart' show generateUuid;
@@ -43,6 +45,10 @@ class UiPrefs extends ChangeNotifier {
 
   /// 扫码实时预览模式偏好（qr-preview-oem-1）：auto|preview|no_preview。
   static const _keyQrPreviewMode = 'ui.qrPreviewMode';
+
+  /// 外部订阅额度配置（JSON {providerId: {apiKey, baseUrl?}}，存于
+  /// FlutterSecureStorage 硬件加密区，默认空）。
+  static const _keyExternalQuotas = 'ui.externalQuotas';
 
   static const _keyFollowupMode = 'ui.followupMode'; // queue|guide
   static const _keyVoiceApiKey = 'ui.voiceApiKey';
@@ -108,6 +114,9 @@ class UiPrefs extends ChangeNotifier {
   /// marketing-claim-1：本安装的设备标识（官方营销投放 X-Device-Mid，
   /// UUID）——懒生成懒读（营销拉取时才用），不进启动并行读清单。
   static const _keyDeviceMid = 'ui.deviceMid';
+  static const _keyUsageQuickLayout = 'ui.usageQuickLayout';
+  static const _keyOfficialQuotaCache = 'ui.officialQuotaCache';
+  static const _keyLastSeenWhatsNewVersion = 'ui.lastSeenWhatsNewVersion';
 
   final FlutterSecureStorage _storage;
   bool _showToolCalls = true;
@@ -129,6 +138,10 @@ class UiPrefs extends ChangeNotifier {
   bool _showOtherComputers = false;
   Map<String, int> _quotaReminders = {};
   Map<String, List<String>> _projectOrders = {};
+  Map<String, ExternalQuotaProviderConfig> _externalQuotas = {};
+  UsageQuickLayoutPrefs _usageQuickLayout = UsageQuickLayoutPrefs.defaults;
+  Map<String, CachedOfficialQuota> _officialQuotaCache = {};
+  String? _lastSeenWhatsNewVersion;
 
   /// "审批提醒"（阶段 3 第二段）：开=安卓前台服务保连接常驻（后台也
   /// 实时通知）；关（默认）=退后台约 90 秒断开连接，回前台秒连。
@@ -213,23 +226,31 @@ class UiPrefs extends ChangeNotifier {
   String? get lastThought => _lastThought;
 
 
+  /// 按键串行化的写盘队列（防并发 set/clear 同键乱序覆盖磁盘）。
+  final Map<String, Future<bool>> _persistQueues = {};
+
   /// （2026-10-24 修复批）：偏好写失败哨兵——统一 write/delete+catch+
   /// 留痕（此前 12 处 catch(_){} 静默回跳，偏好写失败零信号；内存值仍
   /// 生效，仅本次会话丢失持久化）。
   /// 返回 false=写/删失败（异常吞掉但上浮成败——发布预审：调用方须据
   /// 此决定是否删旧键，防「材料写失败+旧键删除成功」把唯一副本删光）。
-  Future<bool> _persist(String key, String? value) async {
-    try {
-      if (value == null) {
-        await _storage.delete(key: key);
-      } else {
-        await _storage.write(key: key, value: value);
+  Future<bool> _persist(String key, String? value) {
+    final prev = _persistQueues[key] ?? Future<bool>.value(true);
+    final next = prev.then((_) async {
+      try {
+        if (value == null) {
+          await _storage.delete(key: key);
+        } else {
+          await _storage.write(key: key, value: value);
+        }
+        return true;
+      } catch (e) {
+        debugPrint('[prefs] write-fail key=$key: $e');
+        return false;
       }
-      return true;
-    } catch (e) {
-      debugPrint('[prefs] write-fail key=$key: $e');
-      return false;
-    }
+    });
+    _persistQueues[key] = next;
+    return next;
   }
 
   Future<void>? _loadInFlight;
@@ -282,6 +303,10 @@ class UiPrefs extends ChangeNotifier {
         _storage.read(key: _keyAppLockPinMaterial), // 28
         _storage.read(key: _keyTaskHeadsUp), // 29
         _storage.read(key: _keyQrPreviewMode), // 30
+        _storage.read(key: _keyExternalQuotas), // 31
+        _storage.read(key: _keyUsageQuickLayout), // 32
+        _storage.read(key: _keyOfficialQuotaCache), // 33
+        _storage.read(key: _keyLastSeenWhatsNewVersion), // 34
       ];
       final reads = await Future.wait(
         readFutures.map(
@@ -412,6 +437,79 @@ class UiPrefs extends ChangeNotifier {
         }
       } catch (e) {
         debugPrint('[prefs] project-orders decode-fail: $e');
+      }
+      try {
+        final eq = reads[31];
+        if (eq != null && eq.isNotEmpty) {
+          final decoded = jsonDecode(eq);
+          final parsed = <String, ExternalQuotaProviderConfig>{};
+          void addDeduped(ExternalQuotaProviderConfig? cfg, int idx) {
+            if (cfg == null) return;
+            if (parsed.length >= kMaxExternalQuotaEntries) return;
+            final uid = _uniqueExternalQuotaId(parsed, cfg.id, cfg.providerId, idx);
+            parsed[uid] = uid == cfg.id
+                ? cfg
+                : ExternalQuotaProviderConfig(
+                    id: uid,
+                    providerId: cfg.providerId,
+                    apiKey: cfg.apiKey,
+                    baseUrl: cfg.baseUrl,
+                    label: cfg.label,
+                  );
+          }
+          if (decoded is List) {
+            // v2 多账号有序列表格式：[{id, providerId, label?, apiKey, baseUrl?}]
+            for (var i = 0; i < decoded.length; i++) {
+              addDeduped(
+                ExternalQuotaProviderConfig.fromJson('ext-$i', decoded[i]),
+                i,
+              );
+            }
+          } else if (decoded is Map) {
+            // v1 单槽位格式向后兼容：{providerId: {apiKey, baseUrl?}}
+            var idx = 0;
+            for (final e in decoded.entries) {
+              final pid = '${e.key}'.trim();
+              if (pid.isEmpty) continue;
+              addDeduped(
+                ExternalQuotaProviderConfig.fromJson(pid, e.value),
+                idx++,
+              );
+            }
+          }
+          _externalQuotas = parsed;
+        }
+      } catch (e) {
+        debugPrint('[prefs] external-quotas decode-fail: $e');
+      }
+      try {
+        final uql = reads[32];
+        if (uql != null && uql.isNotEmpty) {
+          _usageQuickLayout = UsageQuickLayoutPrefs.fromJson(jsonDecode(uql));
+        }
+      } catch (e) {
+        debugPrint('[prefs] usage-quick-layout decode-fail: $e');
+      }
+      try {
+        final oqc = reads[33];
+        if (oqc != null && oqc.isNotEmpty) {
+          final decoded = jsonDecode(oqc);
+          if (decoded is List) {
+            final parsed = <String, CachedOfficialQuota>{};
+            for (final item in decoded) {
+              if (parsed.length >= kMaxCachedOfficialQuotaAccounts) break;
+              final snap = CachedOfficialQuota.fromJson(item);
+              if (snap != null) parsed[snap.accountId] = snap;
+            }
+            _officialQuotaCache = parsed;
+          }
+        }
+      } catch (e) {
+        debugPrint('[prefs] official-quota-cache decode-fail: $e');
+      }
+      final seenVer = reads[34]?.trim();
+      if (seenVer != null && seenVer.isNotEmpty) {
+        _lastSeenWhatsNewVersion = seenVer;
       }
     } catch (e) {
       // 读取失败按默认值走，不阻塞启动（留痕不再静默）。
@@ -765,10 +863,325 @@ class UiPrefs extends ChangeNotifier {
   }
 
   /// 写入某电脑的项目顺序（ids 只含真实项目；「任务」伪项目恒排末尾，
-  /// 由展示层保证，不进偏好）。
-  Future<void> setProjectOrder(String deviceSid, List<String> ids) async {
-    _projectOrders = {..._projectOrders, deviceSid: List.of(ids)};
+  /// 由展示层保证，不进偏好）。写盘失败时回滚内存态并返回 false。
+  Future<bool> setProjectOrder(String deviceSid, List<String> ids) async {
+    final prev = _projectOrders;
+    final next = {..._projectOrders, deviceSid: List.of(ids)};
+    _projectOrders = next;
     notifyListeners();
-    await _persist(_keyProjectOrders, jsonEncode(_projectOrders));
+    final ok = await _persist(_keyProjectOrders, jsonEncode(_projectOrders));
+    if (!ok && identical(_projectOrders, next)) {
+      _projectOrders = prev;
+      notifyListeners();
+    }
+    return ok;
   }
+
+  /// 清除某电脑的本地自定义项目顺序，恢复默认跟随桌面端 projectOrder。
+  /// 写/删盘失败时回滚内存态并返回 false，避免重启复活旧覆盖。
+  Future<bool> clearProjectOrder(String deviceSid) async {
+    if (!_projectOrders.containsKey(deviceSid)) return true;
+    final prev = _projectOrders;
+    final next = Map<String, List<String>>.of(_projectOrders)..remove(deviceSid);
+    _projectOrders = next;
+    notifyListeners();
+    final ok = await _persist(
+      _keyProjectOrders,
+      _projectOrders.isEmpty ? null : jsonEncode(_projectOrders),
+    );
+    if (!ok && identical(_projectOrders, next)) {
+      _projectOrders = prev;
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  /// 外部订阅额度配置（不可变视图；按条目 id 为键，支持同平台多账号）。
+  Map<String, ExternalQuotaProviderConfig> get externalQuotas =>
+      Map.unmodifiable(_externalQuotas);
+
+  /// 外部订阅账号有序列表（支持同平台多账号展示与编辑）。
+  List<ExternalQuotaProviderConfig> get externalQuotaEntries =>
+      List.unmodifiable(_externalQuotas.values);
+
+  /// 按条目 id 查找配置；未命中时回退匹配首个同 providerId 条目（兼容单槽位读取）。
+  ExternalQuotaProviderConfig? externalQuotaConfig(String idOrProviderId) {
+    final direct = _externalQuotas[idOrProviderId];
+    if (direct != null) return direct;
+    for (final cfg in _externalQuotas.values) {
+      if (cfg.providerId == idOrProviderId) return cfg;
+    }
+    return null;
+  }
+
+  bool get hasExternalQuotas => _externalQuotas.isNotEmpty;
+
+  /// 「用量速览」卡片顺序、显隐与官方来源偏好。
+  UsageQuickLayoutPrefs get usageQuickLayout => _usageQuickLayout;
+
+  /// 最近一次已看过版本更新说明的 SemVer（如 '1.0.10'）。
+  String? get lastSeenWhatsNewVersion => _lastSeenWhatsNewVersion;
+
+  Future<void> setLastSeenWhatsNewVersion(String version) async {
+    final v = version.trim();
+    if (v.isEmpty || _lastSeenWhatsNewVersion == v) return;
+    _lastSeenWhatsNewVersion = v;
+    notifyListeners();
+    await _persist(_keyLastSeenWhatsNewVersion, v);
+  }
+
+  /// 各 ZCode 账号最近一次实时拉取的 GLM Coding Plan 摘要缓存（离线账号只读展示）。
+  Map<String, CachedOfficialQuota> get officialQuotaCache =>
+      Map.unmodifiable(_officialQuotaCache);
+
+  CachedOfficialQuota? officialQuotaFor(String accountId) =>
+      _officialQuotaCache[accountId.trim()];
+
+  /// 按账号递增的缓存移除纪元：在途拉取在发起前捕获该值，若落盘前账号被删除/401
+  /// 清理（纪元推进），则拒绝写入以防复活已删账号缓存。
+  final Map<String, int> _officialCacheEpoch = {};
+
+  int officialQuotaCacheEpoch(String accountId) =>
+      _officialCacheEpoch[accountId.trim()] ?? 0;
+
+  Future<void> _officialQuotaCacheSerial = Future<void>.value();
+
+  Future<void> _runOfficialCacheMutation(Future<void> Function() action) {
+    final prev = _officialQuotaCacheSerial;
+    final completer = Completer<void>();
+    _officialQuotaCacheSerial = prev.then((_) async {
+      try {
+        await action();
+        completer.complete();
+      } catch (e, st) {
+        completer.completeError(e, st);
+      }
+    });
+    return completer.future;
+  }
+
+  /// 缓存指定账号最近一次实时拉取的 Coding Plan 摘要（不含敏感凭据；最多保留 10 个账号）。
+  Future<void> saveOfficialQuotaCache(
+    CachedOfficialQuota snapshot, {
+    int? expectedEpoch,
+  }) => _runOfficialCacheMutation(() async {
+    final id = snapshot.accountId.trim();
+    if (id.isEmpty || snapshot.windows.isEmpty) return;
+    if (expectedEpoch != null && (_officialCacheEpoch[id] ?? 0) != expectedEpoch) {
+      return;
+    }
+    final next = Map<String, CachedOfficialQuota>.from(_officialQuotaCache);
+    next[id] = snapshot;
+    if (next.length > kMaxCachedOfficialQuotaAccounts) {
+      final sorted = next.values.toList()
+        ..sort((a, b) => b.cachedAtMs.compareTo(a.cachedAtMs));
+      next
+        ..clear()
+        ..addEntries(
+          sorted
+              .take(kMaxCachedOfficialQuotaAccounts)
+              .map((s) => MapEntry(s.accountId, s)),
+        );
+    }
+    _officialQuotaCache = next;
+    final payload = jsonEncode([
+      for (final s in _officialQuotaCache.values) s.toJson(),
+    ]);
+    await _persist(_keyOfficialQuotaCache, payload);
+  });
+
+  /// 删除指定账号的 Coding Plan 本地摘要缓存（账号移除或 401 清理时联动调用）。
+  /// 无论当前是否命中缓存均递增纪元，阻断并发在途请求事后复活。
+  Future<void> removeOfficialQuotaCache(String accountId) =>
+      _runOfficialCacheMutation(() async {
+        final id = accountId.trim();
+        if (id.isEmpty) return;
+        _officialCacheEpoch[id] = (_officialCacheEpoch[id] ?? 0) + 1;
+        if (!_officialQuotaCache.containsKey(id)) return;
+        final next = Map<String, CachedOfficialQuota>.from(_officialQuotaCache)
+          ..remove(id);
+        _officialQuotaCache = next;
+        notifyListeners();
+        final payload = _officialQuotaCache.isEmpty
+            ? null
+            : jsonEncode([
+                for (final s in _officialQuotaCache.values) s.toJson(),
+              ]);
+        await _persist(_keyOfficialQuotaCache, payload);
+      });
+
+  /// 更新「用量速览」自定义偏好（恢复默认时删除存储键；失败回滚内存）。
+  Future<bool> setUsageQuickLayout(UsageQuickLayoutPrefs layout) =>
+      _runExternalQuotasMutation(() => _setUsageQuickLayoutLocked(layout));
+
+  Future<bool> _setUsageQuickLayoutLocked(UsageQuickLayoutPrefs layout) async {
+    final prev = _usageQuickLayout;
+    _usageQuickLayout = layout;
+    notifyListeners();
+    final payload = layout.isDefault ? null : jsonEncode(layout.toJson());
+    final ok = await _persist(_keyUsageQuickLayout, payload);
+    if (!ok) {
+      _usageQuickLayout = prev;
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  /// 原子串行保存外部订阅账号与速览展示偏好：任一步写盘失败则完整回滚内存与前一步写入。
+  Future<bool> saveUsageQuickSettings({
+    required List<ExternalQuotaProviderConfig> externalEntries,
+    required UsageQuickLayoutPrefs layout,
+  }) => _runExternalQuotasMutation(() async {
+    final prevQuotas = _externalQuotas;
+    final prevLayout = _usageQuickLayout;
+    final okQuotas = await _replaceExternalQuotasLocked(externalEntries);
+    if (!okQuotas) return false;
+    final okLayout = await _setUsageQuickLayoutLocked(layout);
+    if (!okLayout) {
+      // 布局写盘失败：尝试将外部订阅也回滚到旧态，保持两端一致。
+      _externalQuotas = prevQuotas;
+      _usageQuickLayout = prevLayout;
+      notifyListeners();
+      final prevPayload = prevQuotas.isEmpty
+          ? null
+          : jsonEncode([for (final v in prevQuotas.values) v.toJson()]);
+      await _persist(_keyExternalQuotas, prevPayload);
+      return false;
+    }
+    return true;
+  });
+
+  Future<void> _externalQuotasSerial = Future<void>.value();
+
+  Future<T> _runExternalQuotasMutation<T>(Future<T> Function() action) {
+    final prev = _externalQuotasSerial;
+    final completer = Completer<T>();
+    _externalQuotasSerial = prev.then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (e, st) {
+        completer.completeError(e, st);
+      }
+    });
+    return completer.future;
+  }
+
+  static String _uniqueExternalQuotaId(
+    Map<String, ExternalQuotaProviderConfig> existing,
+    String candidate,
+    String pid,
+    int index,
+  ) {
+    var id = candidate.trim();
+    if (id.isNotEmpty && !existing.containsKey(id)) return id;
+    if (id.isEmpty) id = '${pid}_$index';
+    if (!existing.containsKey(id)) return id;
+    var suffix = 2;
+    while (existing.containsKey('$id-$suffix')) {
+      suffix++;
+    }
+    return '$id-$suffix';
+  }
+
+  /// 原子替换全部外部订阅账号配置（自动跳过空 Key；全部清空时删除存储键；
+  /// 最多保留 [kMaxExternalQuotaEntries] 条）。全方法串行化防止并发写与
+  /// 回滚相互覆写；写盘失败时回滚内存态并返回 false。
+  Future<bool> replaceExternalQuotas(
+    List<ExternalQuotaProviderConfig> entries,
+  ) => _runExternalQuotasMutation(() => _replaceExternalQuotasLocked(entries));
+
+  Future<bool> _replaceExternalQuotasLocked(
+    List<ExternalQuotaProviderConfig> entries,
+  ) async {
+    final prev = _externalQuotas;
+    final next = <String, ExternalQuotaProviderConfig>{};
+    for (var i = 0; i < entries.length; i++) {
+      final e = entries[i];
+      final key = e.apiKey.trim();
+      final pid = e.providerId.trim();
+      if (key.isEmpty || pid.isEmpty) continue;
+      if (next.length >= kMaxExternalQuotaEntries) {
+        return false;
+      }
+      final id = _uniqueExternalQuotaId(next, e.id, pid, i);
+      next[id] = ExternalQuotaProviderConfig(
+        id: id,
+        providerId: pid,
+        apiKey: key,
+        baseUrl: e.baseUrl.trim(),
+        label: e.label.trim(),
+      );
+    }
+    _externalQuotas = next;
+    notifyListeners();
+    final payload = _externalQuotas.isEmpty
+        ? null
+        : jsonEncode([for (final v in _externalQuotas.values) v.toJson()]);
+    final ok = await _persist(_keyExternalQuotas, payload);
+    if (!ok) {
+      _externalQuotas = prev;
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  /// 保存或清除单个外部订阅账号的配置（apiKey 留空即删除该项）。
+  /// 未传 [entryId] 时，优先匹配首个同 [providerId] 的现有条目，避免多账号下
+  /// 静默新建重复槽位或删除失效；写盘失败时回滚内存态防重开丢 Key。
+  Future<bool> setExternalQuotaConfig(
+    String providerId, {
+    required String apiKey,
+    String baseUrl = '',
+    String label = '',
+    String? entryId,
+  }) => _runExternalQuotasMutation(() async {
+    final pid = providerId.trim();
+    if (pid.isEmpty) return false;
+    String targetId;
+    if (entryId != null && entryId.trim().isNotEmpty) {
+      targetId = entryId.trim();
+    } else {
+      ExternalQuotaProviderConfig? matched;
+      for (final cfg in _externalQuotas.values) {
+        if (cfg.providerId == pid) {
+          matched = cfg;
+          break;
+        }
+      }
+      targetId = matched?.id ?? pid;
+    }
+    final trimmedKey = apiKey.trim();
+    final nextList = <ExternalQuotaProviderConfig>[];
+    var replaced = false;
+    for (final cfg in _externalQuotas.values) {
+      if (cfg.id == targetId) {
+        replaced = true;
+        if (trimmedKey.isNotEmpty) {
+          nextList.add(
+            ExternalQuotaProviderConfig(
+              id: targetId,
+              providerId: pid,
+              apiKey: trimmedKey,
+              baseUrl: baseUrl.trim(),
+              label: label.trim(),
+            ),
+          );
+        }
+      } else {
+        nextList.add(cfg);
+      }
+    }
+    if (!replaced && trimmedKey.isNotEmpty) {
+      nextList.add(
+        ExternalQuotaProviderConfig(
+          id: targetId,
+          providerId: pid,
+          apiKey: trimmedKey,
+          baseUrl: baseUrl.trim(),
+          label: label.trim(),
+        ),
+      );
+    }
+    return _replaceExternalQuotasLocked(nextList);
+  });
 }

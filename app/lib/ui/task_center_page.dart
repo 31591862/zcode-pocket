@@ -12,6 +12,7 @@ import '../core/breakpoints.dart';
 import '../core/payload_guard.dart' show intOf;
 import '../core/system_inset.dart';
 import '../core/theme.dart';
+import '../core/whats_new.dart';
 import 'workflow_dashboards.dart' show workflowRunStatusWord;
 import 'conversation_message_cells.dart'
     show buildSearchHighlightSpans;
@@ -27,6 +28,9 @@ import 'login_page.dart';
 import 'marketing_claim_card.dart';
 import 'status_badge.dart';
 import 'archived_tasks_page.dart';
+import 'saved_workflows_page.dart';
+import 'usage_quick_sheet.dart';
+import 'whats_new_sheet.dart';
 import 'automation_page.dart';
 import 'conversation_page.dart';
 import 'pairing_page.dart';
@@ -337,6 +341,11 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
   void _onAppChangedForSid() {
     final app = _appRef;
     if (app == null || !mounted) return;
+    if (!_whatsNewHandled && !_whatsNewChecking) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_maybeShowWhatsNew());
+      });
+    }
     final sid = app.activeProfile?.deviceSid;
     if (sid == _lastSeenDeviceSid) return;
     _lastSeenDeviceSid = sid;
@@ -351,6 +360,104 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     });
   }
 
+  bool _whatsNewHandled = false;
+  bool _whatsNewChecking = false;
+  bool _launchNavInFlight = false;
+
+  void _scheduleWhatsNewRetry() {
+    if (!mounted || _whatsNewHandled || _whatsNewChecking) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_maybeShowWhatsNew());
+    });
+  }
+
+  void _onAppLockChangedForWhatsNew() {
+    final app = _appRef;
+    if (app == null || !mounted || _whatsNewHandled) return;
+    if (!app.appLock.locked) {
+      _scheduleWhatsNewRetry();
+    }
+  }
+
+  Future<void> _maybeShowWhatsNew() async {
+    if (_whatsNewHandled ||
+        _whatsNewChecking ||
+        _launchNavInFlight ||
+        !mounted) {
+      return;
+    }
+    final app = _appRef ?? AppStateScope.maybeOf(context);
+    if (app == null ||
+        app.suppressWhatsNew ||
+        !app.loaded ||
+        !app.uiPrefs.loaded) {
+      return;
+    }
+    if (app.appLock.locked ||
+        app.pendingOpenTask != null ||
+        app.pendingShortcutAction != null) {
+      return;
+    }
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+
+    _whatsNewChecking = true;
+    try {
+      String? versionName;
+      try {
+        final info = await const MethodChannel(
+          'companion/appinfo',
+        ).invokeMethod<Map<dynamic, dynamic>>('get');
+        final raw = info?['versionName'];
+        if (raw is String && raw.trim().isNotEmpty) {
+          versionName = raw.trim();
+        }
+      } catch (_) {
+        versionName = null;
+      }
+      if (!mounted) return;
+      final hasExistingSetup = app.freshInstallAtLoad
+          ? false
+          : (app.profiles.isNotEmpty ||
+                await app.accountStore.hasAccount.catchError((_) => true));
+      if (!mounted) return;
+      final action = decideWhatsNewAction(
+        appVersion: versionName,
+        lastSeenVersion: app.uiPrefs.lastSeenWhatsNewVersion,
+        hasExistingSetup: hasExistingSetup,
+      );
+      switch (action) {
+        case WhatsNewAction.none:
+          _whatsNewHandled = true;
+          return;
+        case WhatsNewAction.recordOnly:
+          _whatsNewHandled = true;
+          unawaited(
+            app.uiPrefs.setLastSeenWhatsNewVersion(kCurrentWhatsNew.version),
+          );
+          return;
+        case WhatsNewAction.showPopup:
+          // 异步等待后再次确认未锁屏、未被深链/快捷入口/路由抢占。
+          final stillCurrent = ModalRoute.of(context)?.isCurrent ?? true;
+          if (app.appLock.locked ||
+              _launchNavInFlight ||
+              !stillCurrent ||
+              app.pendingOpenTask != null ||
+              app.pendingShortcutAction != null) {
+            return;
+          }
+          _whatsNewHandled = true;
+          await showWhatsNewSheet(context).whenComplete(() {
+            unawaited(
+              app.uiPrefs.setLastSeenWhatsNewVersion(kCurrentWhatsNew.version),
+            );
+          });
+      }
+    } finally {
+      _whatsNewChecking = false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -360,6 +467,9 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
       _appRef = app;
       _lastSeenDeviceSid = app.activeProfile?.deviceSid;
       app.addListener(_onAppChangedForSid);
+      app.uiPrefs.addListener(_scheduleWhatsNewRetry);
+      app.appLock.addListener(_onAppLockChangedForWhatsNew);
+      unawaited(_maybeShowWhatsNew());
     });
   }
 
@@ -431,6 +541,8 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
   void dispose() {
     _searchDebounce?.cancel();
     _appRef?.removeListener(_onAppChangedForSid);
+    _appRef?.uiPrefs.removeListener(_scheduleWhatsNewRetry);
+    _appRef?.appLock.removeListener(_onAppLockChangedForWhatsNew);
     super.dispose();
   }
 
@@ -808,16 +920,16 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     // （build 内不做导航副作用），消费后清空防重放。
     if (app.pendingOpenTask != null) {
       final target = app.pendingOpenTask!;
-      // 欠账盘点 接线修复（2026-11-08）：pendingOpenTask 在此清空，
-      // 而会话页的 pendingDeepLinkTarget getter 依赖它——晚于此读取
-      // 恒 null=深链浮层永不弹（Explore 核查实锤）。先捕获 atMs 随
-      // 导航参数透传（waitForWorkspace 同款模式），不再依赖全局时序。
       final deepAt = app.pendingDeepLinkAt;
-      // 归属随 pendingDeepLinkTaskId 走（pendingOpenTask 即将被清，
-      // 全局 getter 不再依赖它）。
       app.pendingOpenTask = null;
+      _launchNavInFlight = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _openFromNotification(target, deepLinkAtMs: deepAt);
+        if (!mounted) return;
+        unawaited(
+          _openFromNotification(target, deepLinkAtMs: deepAt).whenComplete(() {
+            _launchNavInFlight = false;
+          }),
+        );
       });
     }
     // 长按图标快捷入口（6.6①）：new_task 直开新建弹层；
@@ -827,22 +939,36 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
     if (shortcut != null) {
       if (shortcut == 'new_task') {
         app.pendingShortcutAction = null;
+        _launchNavInFlight = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(_newSession());
+          if (!mounted) return;
+          unawaited(
+            _newSession().whenComplete(() => _launchNavInFlight = false),
+          );
         });
       } else {
         final card = _shortcutRecentCard(app);
         if (card != null) {
           app.pendingShortcutAction = null;
+          _launchNavInFlight = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) unawaited(_openSession(card));
+            if (!mounted) return;
+            unawaited(
+              _openSession(card).whenComplete(() => _launchNavInFlight = false),
+            );
           });
         } else {
           final cross = _shortcutRecentCrossTask(app);
           if (cross != null) {
             app.pendingShortcutAction = null;
+            _launchNavInFlight = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) unawaited(_openCrossWorkspaceTask(cross));
+              if (!mounted) return;
+              unawaited(
+                _openCrossWorkspaceTask(
+                  cross,
+                ).whenComplete(() => _launchNavInFlight = false),
+              );
             });
           } else if (app.taskList != null) {
             app.pendingShortcutAction = null;
@@ -974,9 +1100,8 @@ class _TaskCenterPageState extends State<TaskCenterPage> {
                         '${app.activeAccountLabel}',
               subtitle: '任务主页',
               onTitleTap: () => showProfilesSheet(context),
-              // 顶栏刷新同样联动福利卡（marketing-claim-review-1，审查
-              // ④低-5：仅下拉联动时顶栏刷新漏营销）；搜索路径仍纯任务。
-              onRefresh: () => refreshWorkspacesWithMarketing(app),
+              // 首页顶栏原刷新按钮与全列表下拉刷新重复，改为「用量速览」入口。
+              onUsageQuickView: () => showUsageQuickSheet(context),
               onSettings: openSettings,
               onAutomations: openAutomations,
               onSearchToggle: () {
@@ -1294,7 +1419,7 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTitleTap;
-  final VoidCallback onRefresh;
+  final VoidCallback onUsageQuickView;
   final VoidCallback? onSettings;
   final VoidCallback? onSearchToggle;
 
@@ -1306,7 +1431,7 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.title,
     required this.subtitle,
     required this.onTitleTap,
-    required this.onRefresh,
+    required this.onUsageQuickView,
     this.onSettings,
     this.onSearchToggle,
     this.onAutomations,
@@ -1351,6 +1476,8 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
                         Flexible(
                           child: Text(
                             title,
+                            translate: false,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
@@ -1361,6 +1488,7 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
                     if (subtitle.isNotEmpty)
                       Text(
                         subtitle,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: AppType.uiXs,
@@ -1395,9 +1523,10 @@ class _GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
             onPressed: onSettings,
           ),
         IconButton(
-          icon: const Icon(Icons.refresh),
-          tooltip: tr('刷新工作区列表'),
-          onPressed: onRefresh,
+          key: const ValueKey('usage-quick-entry'),
+          icon: const Icon(Icons.data_usage),
+          tooltip: tr('用量速览'),
+          onPressed: onUsageQuickView,
         ),
       ],
       bottom: PreferredSize(
@@ -1978,7 +2107,13 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
             tooltip: tr('更多'),
             icon: const Icon(Icons.more_vert, size: 20),
             onSelected: (value) {
-              if (value == 'order') {
+              if (value == 'workflows') {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const SavedWorkflowsPage(),
+                  ),
+                );
+              } else if (value == 'order') {
                 showProjectOrderSheet(context);
               } else if (value == 'archived') {
                 Navigator.of(context).push(
@@ -1987,6 +2122,7 @@ class _TaskHomeViewState extends State<_TaskHomeView> {
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'workflows', child: Text('已保存工作流')),
               PopupMenuItem(value: 'order', child: Text('项目排序')),
               PopupMenuItem(value: 'archived', child: Text('已归档的任务')),
             ],
@@ -5087,12 +5223,12 @@ Future<void> showNewTaskSheet(
   );
 }
 
-/// 项目排序弹层（2026-10-26 拍板③，官方 preferences.reorder 同语义=
-/// 本地偏好不同步）：竖排拖动调序（官方桌面拖拽手感），拖完即存、
-/// 完成关闭。「任务」伪项目不参与（恒排尾部）。
+/// 项目排序弹层（默认跟随桌面端 3.19+/4.0.0 readTree.projectOrder；拖动
+/// 调整后保存为本机自定义顺序，提供「恢复跟随桌面」一键复位）：竖排拖动
+/// 调序，拖完即存、完成关闭。「任务」伪项目不参与（恒排尾部）。
 Future<void> showProjectOrderSheet(BuildContext context) {
   final app = AppStateScope.of(context);
-  final entries = app.sidebarProjects
+  List<Map<String, dynamic>> currentEntries() => app.sidebarProjects
       .where((p) => '${p['id'] ?? ''}' != conversationsPseudoProjectId)
       .toList();
   return showModalBottomSheet<void>(
@@ -5100,22 +5236,71 @@ Future<void> showProjectOrderSheet(BuildContext context) {
     showDragHandle: true,
     isScrollControlled: true,
     builder: (_) => SafeArea(
-      child: _ProjectOrderSheet(entries: entries, onSaved: app.setProjectOrder),
+      child: _ProjectOrderSheet(
+        entries: currentEntries(),
+        hasCustomOrder: app.hasCustomProjectOrder,
+        onSaved: app.setProjectOrder,
+        onResetDesktop: app.clearProjectOrder,
+        readCurrentEntries: currentEntries,
+      ),
     ),
   );
 }
 
 class _ProjectOrderSheet extends StatefulWidget {
   final List<Map<String, dynamic>> entries;
+  final bool hasCustomOrder;
   final Future<void> Function(List<String> ids) onSaved;
-  const _ProjectOrderSheet({required this.entries, required this.onSaved});
+  final Future<void> Function() onResetDesktop;
+  final List<Map<String, dynamic>> Function() readCurrentEntries;
+  const _ProjectOrderSheet({
+    required this.entries,
+    required this.hasCustomOrder,
+    required this.onSaved,
+    required this.onResetDesktop,
+    required this.readCurrentEntries,
+  });
 
   @override
   State<_ProjectOrderSheet> createState() => _ProjectOrderSheetState();
 }
 
 class _ProjectOrderSheetState extends State<_ProjectOrderSheet> {
-  late final List<Map<String, dynamic>> _items = List.of(widget.entries);
+  late List<Map<String, dynamic>> _items = List.of(widget.entries);
+  late bool _hasCustomOrder = widget.hasCustomOrder;
+  bool _resetting = false;
+  int _savingCount = 0;
+  bool get _savingOrder => _savingCount > 0;
+  String? _inlineMessage;
+  bool _inlineIsError = false;
+
+  Future<void> _resetToDesktop() async {
+    if (_resetting || _savingOrder) return;
+    setState(() {
+      _resetting = true;
+      _inlineMessage = null;
+      _inlineIsError = false;
+    });
+    try {
+      await widget.onResetDesktop();
+      if (!mounted) return;
+      setState(() {
+        _items = List.of(widget.readCurrentEntries());
+        _hasCustomOrder = false;
+        _inlineMessage = '已恢复跟随桌面顺序';
+        _inlineIsError = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _inlineMessage = '恢复失败，请重试：$e';
+          _inlineIsError = true;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _resetting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -5128,48 +5313,90 @@ class _ProjectOrderSheetState extends State<_ProjectOrderSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
-            child: Text(
-              '调整项目顺序',
-              style: TextStyle(
-                fontSize: AppType.uiBase,
-                fontWeight: FontWeight.w600,
-                color: context.colors.foreground,
-              ),
+            padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '调整项目顺序',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppType.uiBase,
+                      fontWeight: FontWeight.w600,
+                      color: context.colors.foreground,
+                    ),
+                  ),
+                ),
+                if (_hasCustomOrder)
+                  TextButton(
+                    key: const ValueKey('project-order-reset-desktop'),
+                    onPressed: (_resetting || _savingOrder)
+                        ? null
+                        : _resetToDesktop,
+                    child: const Text('恢复跟随桌面'),
+                  ),
+              ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              '按住右侧手柄拖动调整；顺序保存在本机（与桌面端各自独立）',
+              _hasCustomOrder
+                  ? '当前为本机自定义顺序；拖动可继续调整，或点右上角恢复跟随桌面'
+                  : '默认跟随桌面端侧栏顺序；按住右侧手柄拖动可改为本机自定义顺序',
               style: TextStyle(
                 fontSize: AppType.uiXs,
                 color: context.colors.foregroundSubtle,
               ),
             ),
           ),
+          if (_inlineMessage != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              child: Text(
+                _inlineMessage!,
+                key: const ValueKey('project-order-feedback'),
+                style: TextStyle(
+                  fontSize: AppType.uiXs,
+                  color: _inlineIsError
+                      ? context.colors.destructive
+                      : context.colors.brandAccentBright,
+                ),
+              ),
+            ),
           Flexible(
             child: ReorderableListView(
               shrinkWrap: true,
               padding: const EdgeInsets.symmetric(vertical: 8),
               onReorder: (oldIndex, newIndex) {
-                // messenger 在同步段捕获（：落盘失败不
-                // 静默丢单；跨 async gap 用 State.context 会被 lint 拦）。
-                final messenger = ScaffoldMessenger.maybeOf(context);
                 setState(() {
                   if (newIndex > oldIndex) newIndex -= 1;
                   final item = _items.removeAt(oldIndex);
                   _items.insert(newIndex, item);
+                  _hasCustomOrder = true;
+                  _savingCount++;
+                  _inlineMessage = null;
+                  _inlineIsError = false;
                 });
+                final snapshotIds = [
+                  for (final e in _items) '${e['id'] ?? ''}',
+                ];
                 () async {
                   try {
-                    await widget.onSaved([
-                      for (final e in _items) '${e['id'] ?? ''}',
-                    ]);
+                    await widget.onSaved(snapshotIds);
                   } catch (e) {
-                    messenger?.showSnackBar(
-                      SnackBar(content: Text('顺序保存失败，请重试：$e')),
-                    );
+                    if (mounted) {
+                      setState(() {
+                        _items = List.of(widget.readCurrentEntries());
+                        _inlineMessage = '顺序保存失败，请重试：$e';
+                        _inlineIsError = true;
+                      });
+                    }
+                  } finally {
+                    if (mounted) {
+                      setState(() => _savingCount = (_savingCount - 1).clamp(0, 999));
+                    }
                   }
                 }();
               },
@@ -5194,10 +5421,13 @@ class _ProjectOrderSheetState extends State<_ProjectOrderSheet> {
                     ),
                     trailing: ReorderableDragStartListener(
                       index: i,
-                      child: Icon(
-                        Icons.drag_handle,
-                        size: 20,
-                        color: context.colors.foregroundSubtle,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Icon(
+                          Icons.drag_handle,
+                          size: 20,
+                          color: context.colors.foregroundSubtle,
+                        ),
                       ),
                     ),
                   ),

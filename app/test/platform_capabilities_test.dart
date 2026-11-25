@@ -129,16 +129,16 @@ void main() {
       app = _GatedApp(prefs);
     });
 
-    testWidgets('Android：软件更新/应用内更新两行在场（原样）', (tester) async {
+    testWidgets('Android：关于页内软件更新/应用内更新两行在场', (tester) async {
       await _onPlatform(TargetPlatform.android, () async {
         await _pump(tester, app, const SettingsPage());
-        await tester.scrollUntilVisible(find.text('软件更新'), 200);
+        final about = find.byKey(const ValueKey('settings-about'));
+        await tester.scrollUntilVisible(about, 200);
+        await tester.ensureVisible(about);
+        await tester.pumpAndSettle();
+        await tester.tap(about);
+        await tester.pumpAndSettle();
         expect(find.text('软件更新'), findsOneWidget);
-        // 开关行在入口行下方，再滚一步进构建区。
-        await tester.scrollUntilVisible(
-          find.byKey(const ValueKey('settings-update-in-app')),
-          200,
-        );
         expect(
           find.byKey(const ValueKey('settings-update-in-app')),
           findsOneWidget,
@@ -146,12 +146,16 @@ void main() {
       });
     });
 
-    testWidgets('iOS：两行整体隐藏（结构性不可行项不留假开关）', (tester) async {
+    testWidgets('iOS：关于页内软件更新/应用内更新两行整体隐藏（结构性不可行项不留假开关）', (tester) async {
       await _onPlatform(TargetPlatform.iOS, () async {
         await _pump(tester, app, const SettingsPage());
-        // 滚到更新行区域下方（应用锁在安全组，位于更新两行之后），
-        // 证明该区域已构建后缺席才成立。
-        await tester.scrollUntilVisible(find.text('应用锁'), 200);
+        final about = find.byKey(const ValueKey('settings-about'));
+        await tester.scrollUntilVisible(about, 200);
+        await tester.ensureVisible(about);
+        await tester.pumpAndSettle();
+        await tester.tap(about);
+        await tester.pumpAndSettle();
+        expect(find.text('本版更新说明'), findsOneWidget);
         expect(find.text('软件更新'), findsNothing);
         expect(
           find.byKey(const ValueKey('settings-update-in-app')),

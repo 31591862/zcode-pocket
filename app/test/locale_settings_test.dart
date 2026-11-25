@@ -100,11 +100,14 @@ void main() {
     );
     expect(find.text('设置'), findsOneWidget);
     final theme = prefs.themeMode;
+    // v1.0.10 设置页瘦身：主题与语言收进「外观与语言」二级页。
+    await tester.tap(find.byKey(const ValueKey('settings-appearance')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('locale-en-US')));
     await tester.pump();
     expect(prefs.localePreference, 'en-US');
     expect(L10n.resolvedLocale, 'en-US');
-    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Appearance & language'), findsOneWidget);
     expect(find.text('Language'), findsOneWidget);
     expect(find.text('System'), findsNWidgets(2));
     expect(prefs.localePreference, 'en-US');
@@ -112,7 +115,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('locale-zh-CN')));
     await tester.pump();
-    expect(find.text('设置'), findsOneWidget);
+    expect(find.text('外观与语言'), findsOneWidget);
     expect(find.text('语言'), findsOneWidget);
     expect(prefs.themeMode, theme);
   });

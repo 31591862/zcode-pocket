@@ -15,6 +15,9 @@ import 'package:zcode_pocket/transport/rpc_frame_transport.dart';
 import 'package:zcode_pocket/ui/conversation_page.dart';
 import 'package:zcode_pocket/ui/workflow_runs_page.dart';
 
+import 'real_font_snapshot.dart';
+import 'vision_badge_fixture.dart';
+
 /// 工作流 run 查询族 + 闲时任务卡（workflow-runs-1，2026-10-30 用户拍板
 /// 「更新工作流及闲时执行部分」）：官方 v4 只读族（workflowRuns/Events/
 /// Artifacts/ArtifactRead）+ OffPeakCreate 工具行卡片（官方
@@ -215,9 +218,9 @@ class _WfApp extends AppState {
   }
 }
 
-Widget _host(AppState app, Widget home) => AppStateScope(
+Widget _host(AppState app, Widget home, {ThemeData? theme}) => AppStateScope(
   app: app,
-  child: MaterialApp(theme: buildAppTheme(), home: home),
+  child: MaterialApp(theme: theme ?? buildAppTheme(), home: home),
 );
 
 Future<void> _pump(WidgetTester tester, Widget widget) async {
@@ -880,6 +883,69 @@ const _wfControlStoppedRun = {
   ],
 };
 
+/// 配置弹层模型行「视觉」标签用例：目录条目带图片输入事实与接入类型
+/// （modelSelectionRawOptions 的产出形状）。
+class _WfVisionApp extends _WfControlApp {
+  _WfVisionApp({
+    required super.runsResult,
+    required super.detailResult,
+    required super.artifactText,
+  });
+
+  @override
+  Future<List<dynamic>> modelSelectionOptions() async => [
+    ConfigOption.fromMap(const {
+      'id': 'model',
+      'name': '模型',
+      'type': 'select',
+      'options': [
+        {
+          'value': 'zai-plan/glm-5.3',
+          'name': 'GLM-5.3',
+          'modelProviderName': '智谱',
+          'modelProviderId': 'zai-plan',
+          'modelAccessType': 'zhipu-account',
+          'modelAccessMode': 'individual-coding-plan',
+          'modelSupportsImage': true,
+        },
+        {
+          'value': 'zai-plan/glm-5.3-flash',
+          'name': 'GLM-5.3-Flash',
+          'modelProviderName': '智谱',
+          'modelProviderId': 'zai-plan',
+          'modelAccessType': 'zhipu-account',
+          'modelAccessMode': 'individual-coding-plan',
+          'modelSupportsImage': true,
+        },
+        {
+          'value': 'ocg/claude-sonnet-4.5',
+          'name': 'Claude Sonnet 4.5',
+          'modelProviderName': 'OCG',
+          'modelProviderId': 'ocg',
+          'modelAccessType': 'api-key',
+          'modelSupportsImage': true,
+        },
+        {
+          'value': 'ocg/glm-5.3',
+          'name': 'GLM-5.3',
+          'modelProviderName': 'OCG',
+          'modelProviderId': 'ocg',
+          'modelAccessType': 'api-key',
+          'modelSupportsImage': true,
+        },
+        {
+          'value': 'ocg/deepseek-v3',
+          'name': 'DeepSeek V3',
+          'modelProviderName': 'OCG',
+          'modelProviderId': 'ocg',
+          'modelAccessType': 'api-key',
+          'modelSupportsImage': false,
+        },
+      ],
+    }),
+  ];
+}
+
 const _wfControlDetail = {
   'events': [
     {'sequence': 1, 'type': 'run.started', 'payload': {}},
@@ -896,6 +962,9 @@ Future<void> _openDetail(WidgetTester tester) async {
 }
 
 void controlTests() {
+  // 真字体渲染采集（字体不可得的机器=跳过，仅跑断言）。
+  setUpAll(loadRealFonts);
+
   test('fault 人话：capabilityUnsupported/恢复词表/配置词表/未知回退', () {
     expect(
       workflowCommandFaultText('fault.command.capabilityUnsupported', ''),
@@ -1000,6 +1069,92 @@ void controlTests() {
       findsOneWidget,
       reason: '词表人话，不裸露 reasonCode',
     );
+  });
+
+  testWidgets('配置弹层模型行「视觉」标签：目录事实→行内标签；套餐 GLM-5.3 例外', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 806);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final app = _WfVisionApp(
+      runsResult: const {
+        'runs': [
+          {
+            'runId': 'run-live1',
+            'toolCallId': 'tc-l1',
+            'label': '并发审查',
+            'status': 'running',
+            'updatedAt': 2,
+          },
+        ],
+      },
+      detailResult: _wfControlDetail,
+      artifactText: '',
+    );
+    app.seedProjection(const [
+      {'runId': 'run-live1', 'status': 'running'},
+    ]);
+    // 真字体主题 + 根截图边界：供人工目检的渲染采集（断言不受影响）。
+    await _pump(
+      tester,
+      RepaintBoundary(
+        key: realFontShotKey,
+        child: _host(
+          app,
+          const WorkflowRunsPage(sessionId: 's1'),
+          theme: reviewTheme(Brightness.light),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('workflow-run-run-live1')));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.byKey(const ValueKey('workflow-run-config')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('amend-model-row')));
+    await tester.pumpAndSettle();
+
+    Finder badgeIn(String value) => find.descendant(
+      of: find.byKey(ValueKey('amend-model-$value')),
+      matching: find.text('视觉'),
+    );
+    expect(badgeIn('zai-plan/glm-5.3'), findsNothing,
+        reason: '官方展示例外：套餐接入下的 glm-5.3 不标');
+    expect(badgeIn('zai-plan/glm-5.3-flash'), findsOneWidget);
+    // ③：按提供方/套餐分组，且默认仅展开首组/当前选中组，其余分组折叠。
+    expect(find.byKey(const ValueKey('amend-model-group-zai-plan')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amend-model-group-ocg')), findsOneWidget);
+    expect(find.byKey(const ValueKey('amend-model-ocg/glm-5.3')), findsNothing);
+    // 展开 OCG 分组后验证其下模型行与标签位置。
+    await tester.tap(find.byKey(const ValueKey('amend-model-group-ocg')));
+    await tester.pumpAndSettle();
+    expect(badgeIn('ocg/claude-sonnet-4.5'), findsOneWidget);
+    expect(badgeIn('ocg/glm-5.3'), findsOneWidget,
+        reason: '例外只限套餐接入——API 渠道的 glm-5.3 照标');
+    expect(badgeIn('ocg/deepseek-v3'), findsNothing);
+    expect(find.text('视觉'), findsNWidgets(3));
+    // 标签紧跟模型名右侧（不再靠最右对齐）。
+    expectVisionBadgeFollowsModelName(
+      tester,
+      'amend-model-zai-plan/glm-5.3-flash',
+      'GLM-5.3-Flash',
+    );
+    expectVisionBadgeFollowsModelName(
+      tester,
+      'amend-model-ocg/glm-5.3',
+      'GLM-5.3',
+    );
+    // 再次点 OCG 组头收起，再点恢复。
+    await tester.tap(find.byKey(const ValueKey('amend-model-group-ocg')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('amend-model-ocg/glm-5.3')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('amend-model-group-ocg')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('amend-model-ocg/glm-5.3')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await snapWithRealFonts(tester, 'model-vision-workflow-light-zh');
   });
 
   testWidgets('批C：运行中 run 出「配置」；三态保存（模型值+并发值）', (tester) async {

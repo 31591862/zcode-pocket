@@ -44,6 +44,20 @@ void main() {
     );
   });
 
+  test('MainActivity 必须显式 resizeableActivity="true"（小窗/分屏适配）', () {
+    final manifest = File('android/app/src/main/AndroidManifest.xml')
+        .readAsStringSync();
+    final block = _nodeBlock(manifest, 'activity');
+    expect(block, isNotNull, reason: 'manifest 缺 <activity> 节点');
+    // 只认节点内的真实属性（节点归属解析，注释里出现同串不得假绿）。
+    expect(
+      block!.contains(RegExp(r'android:resizeableActivity="true"')),
+      isTrue,
+      reason: '按厂商小窗/分屏适配建议显式声明；targetSdk ≥ 24 时默认即为 '
+          'true，缺失等于把判定交还给 ROM',
+    );
+  });
+
   test('应用内更新安装链路三件套（in-app-update-1）', () {
     final manifest = File('android/app/src/main/AndroidManifest.xml')
         .readAsStringSync();

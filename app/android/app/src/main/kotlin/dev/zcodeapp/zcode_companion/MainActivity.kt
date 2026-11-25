@@ -137,6 +137,10 @@ class MainActivity : FlutterActivity() {
         )
         window.decorView.setOnApplyWindowInsetsListener { _, insets ->
             notifyChannel.invokeMethod("systemInsetChanged", bottomSystemInsetDp(insets))
+            // 小窗顶栏高度直推（2026-11-25）：Dart 根层据此钳制异常顶部
+            // padding——Flutter 引擎在 Android 15+ 把 captionBar 全部矩形的
+            // 最大 bottom 当作顶部安全区，部分 ROM 的小窗因此整页白屏。
+            notifyChannel.invokeMethod("captionInsetChanged", topCaptionDp(insets))
             insets
         }
         // 系统语音识别通道（2026-10-28 语音泛用批）：标准 SpeechRecognizer
@@ -445,6 +449,9 @@ class MainActivity : FlutterActivity() {
                     // 丢失（候选 06 真机实证：钮位✓遮挡仍在=恒 0）。
                     "currentSystemInset" ->
                         result.success(bottomSystemInsetDp(window.decorView.rootWindowInsets))
+                    // 小窗顶栏高度主动拉取（同上：首推丢失兜底）。
+                    "currentCaptionInset" ->
+                        result.success(topCaptionDp(window.decorView.rootWindowInsets))
                     // 厂商原始串回传（notify-guide-oem-1）：Dart 侧规范化
                     // 出档位并切换引导文案（oem_vendor.dart）——原生只透传，
                     // 保持两端唯一真值在 Dart（可测）。
@@ -550,6 +557,15 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             false
         }
+    }
+
+    /// 小窗顶栏高度（captionBar 的 top inset，逻辑 dp）——listener 推送与
+    /// Dart 主动拉取共用。captionBar() 类型自 API 30；更低版本无小窗语义
+    /// 返回 0。
+    private fun topCaptionDp(insets: android.view.WindowInsets?): Float {
+        if (insets == null || Build.VERSION.SDK_INT < 30) return 0f
+        return insets.getInsets(android.view.WindowInsets.Type.captionBar()).top /
+            resources.displayMetrics.density
     }
 
     /// 底部安全区（systemBars∪navBars∪cutout 最大值，逻辑 dp）——

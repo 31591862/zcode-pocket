@@ -1,11 +1,22 @@
 // 项目排序（2026-10-26 拍板③，官方 preferences.reorder 同语义=本地
 // 偏好不同步）：纯函数序应用 + 排序弹层拖动保存 + chip 行尾显式入口。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcode_pocket/core/l10n.dart';
 import 'package:zcode_pocket/core/theme.dart';
 import 'package:zcode_pocket/state/app_state.dart';
 import 'package:zcode_pocket/state/app_state_scope.dart';
+import 'package:zcode_pocket/state/task_catalog.dart';
+import 'package:zcode_pocket/state/ui_prefs.dart';
+import 'package:zcode_pocket/transport/channel_client.dart';
+import 'package:zcode_pocket/transport/companion_client.dart';
+import 'package:zcode_pocket/transport/conversation.dart';
 import 'package:zcode_pocket/transport/project_tree.dart';
+import 'package:zcode_pocket/transport/rpc_frame_transport.dart';
 import 'package:zcode_pocket/ui/task_center_page.dart';
 
 class _OrderApp extends AppState {
@@ -47,13 +58,97 @@ class _OrderApp extends AppState {
   List<Map<String, dynamic>> get projectTasks => workspaceTasks;
 
   List<String>? savedIds;
+  bool cleared = false;
+  bool failSave = false;
+
+  @override
+  bool get hasCustomProjectOrder => order.isNotEmpty;
 
   @override
   Future<void> setProjectOrder(List<String> ids) async {
+    if (failSave) throw StateError('disk_full');
     savedIds = ids;
     order = ids;
     notifyListeners();
   }
+
+  @override
+  Future<void> clearProjectOrder() async {
+    if (failSave) throw StateError('disk_full');
+    cleared = true;
+    order = const [];
+    notifyListeners();
+  }
+}
+
+class _OrderChannel extends ChannelClient {
+  _OrderChannel(this.onCall) : super(sendBody: (_) {});
+  final Future<dynamic> Function(String channel, String method, List<Object?> args)
+  onCall;
+  final List<({String channel, String event, void Function(dynamic) cb})>
+  listeners = [];
+
+  @override
+  Future<dynamic> call(
+    String channel,
+    String method,
+    List<Object?> args, {
+    Duration timeout = const Duration(seconds: 30),
+  }) => onCall(channel, method, args);
+
+  @override
+  void Function() addEventListener(
+    String channel,
+    String event,
+    void Function(dynamic event) onEvent, {
+    Object? arg,
+  }) {
+    final entry = (channel: channel, event: event, cb: onEvent);
+    listeners.add(entry);
+    return () => listeners.remove(entry);
+  }
+
+  void emitEvent(String channel, String event, dynamic data) {
+    for (final l in List.of(listeners)) {
+      if (l.channel == channel && l.event == event) {
+        l.cb(data);
+      }
+    }
+  }
+}
+
+class _OrderBridge implements BridgeSession {
+  _OrderBridge(this.channel);
+  _OrderChannel channel;
+  @override
+  Map<String, dynamic>? get projectIntent => null;
+  @override
+  Map<String, dynamic>? get taskIntent => null;
+  @override
+  final ValueNotifier<String?> degraded = ValueNotifier(null);
+  @override
+  final ValueNotifier<int> recovered = ValueNotifier(0);
+  @override
+  Future<void> waitHealthy({
+    Duration timeout = const Duration(seconds: 45),
+  }) async {}
+  @override
+  Map<String, dynamic> get bridge => const {};
+  @override
+  RpcFrameTransport get transport => throw UnimplementedError();
+  @override
+  ChannelClient get channels => channel;
+  @override
+  String? get workspaceKey => 'ws-order';
+  @override
+  String? get initialTaskId => null;
+  @override
+  ConversationTransport conversation(
+    Map<String, dynamic> scope, {
+    void Function(String line)? onLog,
+  }) => ConversationTransport(session: this, scope: scope);
+  @override
+  void dispose() {}
 }
 
 Widget _host(AppState app) => AppStateScope(
@@ -120,5 +215,275 @@ void main() {
     expect(groupY('p-3') < groupY('p-1'), isTrue);
     expect(groupY('p-1') < groupY('p-4'), isTrue,
         reason: '项目组按新顺序即时重排');
+
+    // 再次打开排序弹层：出现「恢复跟随桌面」，点击后复位回桌面基线顺序。
+    await tester.tap(find.byKey(const ValueKey('home-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('项目排序'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('project-order-reset-desktop')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('project-order-reset-desktop')));
+    await tester.pumpAndSettle();
+    expect(app.cleared, isTrue);
+    expect(
+      find.byKey(const ValueKey('project-order-reset-desktop')),
+      findsNothing,
+    );
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(groupY('p-1') < groupY('p-2'), isTrue, reason: '恢复跟随桌面顺序');
   });
+
+  test('parseProjectTree + applyDesktopProjectOrder：桌面侧栏顺序默认生效', () {
+    final parsed = parseProjectTree({
+      'projects': [
+        {'id': 'p-1', 'name': '一', 'hostId': 'local', 'position': 0},
+        {'id': 'p-2', 'name': '二', 'hostId': 'local', 'position': 1},
+        {'id': 'p-3', 'name': '三', 'hostId': 'remote-a', 'position': 2},
+        {'id': 'p-new', 'name': '新', 'position': 3},
+      ],
+      'tasks': const [],
+      'projectOrder': [
+        {'hostId': 'remote-a', 'projectId': 'p-3'},
+        {'hostId': 'local', 'projectId': 'p-2'},
+        {'hostId': '', 'projectId': 'p-1'},
+        {'hostId': 'local', 'projectId': 'p-2'},
+        {'hostId': 'local', 'projectId': 'p-1'},
+      ],
+    });
+    expect(parsed.projectOrder.length, 3);
+    final entries = [
+      ...visibleProjectsOf(parsed.projects),
+      conversationsPseudoProject(),
+    ];
+    final ordered = applyDesktopProjectOrder(entries, parsed.projectOrder);
+    expect(
+      ordered.map((e) => e['id']),
+      ['p-3', 'p-2', 'p-1', 'p-new', conversationsPseudoProjectId],
+      reason: '精确匹配 (hostId, id) 排在前，新增项目保原序在后，任务伪项目恒尾',
+    );
+    expect(applyDesktopProjectOrder(entries, const []), same(entries));
+
+    // 无 hostId 时唯一 projectId 兜底命中；多 host 同 id 不错配。
+    final uniqueFallback = applyDesktopProjectOrder(
+      [
+        {'id': 'p-1', 'name': '一'},
+        {'id': 'p-2', 'name': '二'},
+      ],
+      const [(hostId: 'local', projectId: 'p-2')],
+    );
+    expect(uniqueFallback.map((e) => e['id']), ['p-2', 'p-1']);
+
+    final ambiguous = applyDesktopProjectOrder(
+      [
+        {'id': 'same', 'hostId': 'host-b', 'name': 'B'},
+        {'id': 'other', 'hostId': 'local', 'name': 'Other'},
+        {'id': 'same', 'hostId': 'host-a', 'name': 'A'},
+      ],
+      const [
+        (hostId: 'host-a', projectId: 'same'),
+        (hostId: 'local', projectId: 'other'),
+      ],
+    );
+    expect(
+      ambiguous.map((e) => '${e['hostId']}:${e['id']}'),
+      ['host-a:same', 'local:other', 'host-b:same'],
+      reason: '带明确不同 hostId 的未排名项目不得跨 host 抢占同名 projectId 排名',
+    );
+  });
+
+  test('TaskCatalog：loadProjects 应用桌面 projectOrder + state:projects 广播与 bridge.recovered 重订', () async {
+    var desktopOrder = [
+      {'hostId': 'local', 'projectId': 'p-2'},
+      {'hostId': 'local', 'projectId': 'p-1'},
+    ];
+    _OrderChannel buildChannel() => _OrderChannel((channel, method, args) async {
+      if (channel == Channels.project && method == 'readTree') {
+        return {
+          'projects': [
+            {'id': 'p-1', 'name': '一', 'hostId': 'local', 'position': 0},
+            {'id': 'p-2', 'name': '二', 'hostId': 'local', 'position': 1},
+          ],
+          'tasks': const [],
+          'projectOrder': desktopOrder,
+        };
+      }
+      return null;
+    });
+    final ch1 = buildChannel();
+    final bridge = _OrderBridge(ch1);
+    final catalog = TaskCatalog(
+      bridgeProvider: () => bridge,
+      conversationProvider: () => null,
+      activeWorkspaceProvider: () => null,
+      workspacesProvider: () => const [],
+      disposedProvider: () => false,
+      onLog: (_) {},
+      onNotify: () {},
+      onCacheWrite: () {},
+      onTaskListChanged: () {},
+      onTaskListRebuilt: (_) {},
+    );
+    addTearDown(catalog.dispose);
+
+    catalog.attachBridge(bridge);
+    await catalog.loadProjects();
+    expect(catalog.projects.map((p) => p['id']), ['p-2', 'p-1']);
+    final v1 = catalog.projectsVersion;
+
+    // 模拟桌面端拖动侧栏顺序并广播 state:projects
+    desktopOrder = [
+      {'hostId': 'local', 'projectId': 'p-1'},
+      {'hostId': 'local', 'projectId': 'p-2'},
+    ];
+    ch1.emitEvent(Channels.broadcast, 'onMessage', {'channel': 'state:projects'});
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    expect(catalog.projects.map((p) => p['id']), ['p-1', 'p-2']);
+    expect(catalog.projectsVersion, greaterThan(v1));
+
+    // 模拟桥断线重开：旧 ChannelClient 销毁并 swap 为全新 ChannelClient + recovered++
+    final ch2 = buildChannel();
+    bridge.channel = ch2;
+    desktopOrder = [
+      {'hostId': 'local', 'projectId': 'p-2'},
+      {'hostId': 'local', 'projectId': 'p-1'},
+    ];
+    bridge.recovered.value++;
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(catalog.projects.map((p) => p['id']), ['p-2', 'p-1'],
+        reason: '桥恢复后即使原 readTreeStatus==ok 也需收敛断连期间的新桌面顺序');
+
+    // 桥恢复后新 ChannelClient 上的 state:projects 广播仍能触发实时同步
+    desktopOrder = [
+      {'hostId': 'local', 'projectId': 'p-1'},
+      {'hostId': 'local', 'projectId': 'p-2'},
+    ];
+    ch2.emitEvent(Channels.broadcast, 'onMessage', {'channel': 'state:projects'});
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    expect(catalog.projects.map((p) => p['id']), ['p-1', 'p-2'],
+        reason: '桥恢复后必须重订新 ChannelClient 的 state:projects 广播');
+  });
+
+  test('UiPrefs.setProjectOrder / clearProjectOrder 写删盘失败时回滚内存态并返回 false', () async {
+    final storage = _FlakyOrderStorage();
+    final prefs = UiPrefs(storage: storage);
+    await prefs.load();
+
+    expect(await prefs.setProjectOrder('dev-1', ['p-2', 'p-1']), isTrue);
+    expect(prefs.projectOrder('dev-1'), ['p-2', 'p-1']);
+
+    storage.failWrite = true;
+    expect(await prefs.setProjectOrder('dev-1', ['p-1', 'p-2']), isFalse);
+    expect(prefs.projectOrder('dev-1'), ['p-2', 'p-1'], reason: '写盘失败必须回滚内存');
+
+    storage.failDelete = true;
+    expect(await prefs.clearProjectOrder('dev-1'), isFalse);
+    expect(prefs.projectOrder('dev-1'), ['p-2', 'p-1'], reason: '删盘失败必须回滚内存');
+  });
+
+  testWidgets('排序弹层内联状态/失败提示 + 英文与窄屏 320dp 1.3 字号无缺译无溢出', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    final app = _OrderApp()..order = ['p-2', 'p-1', 'p-3', 'p-4'];
+    await tester.pumpWidget(_host(app));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('home-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('项目排序'));
+    await tester.pumpAndSettle();
+
+    // 模拟恢复失败 → 弹层内联错误提示
+    app.failSave = true;
+    await tester.tap(find.byKey(const ValueKey('project-order-reset-desktop')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('恢复失败'), findsOneWidget);
+
+    // 恢复正常 → 点击「恢复跟随桌面」出现内联确认文案
+    app.failSave = false;
+    await tester.tap(find.byKey(const ValueKey('project-order-reset-desktop')));
+    await tester.pumpAndSettle();
+    expect(find.text('已恢复跟随桌面顺序'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // 英文模式无缺译无溢出
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    L10n.setTestLocale('en-US');
+    L10n.collectMissing = true;
+    addTearDown(L10n.resetForTest);
+    app.order = ['p-2', 'p-1', 'p-3', 'p-4'];
+    await tester.tap(find.byKey(const ValueKey('home-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Project order'));
+    await tester.pumpAndSettle();
+    expect(find.text('Follow desktop'), findsOneWidget);
+    expect(L10n.missingTranslations, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _FlakyOrderStorage extends FlutterSecureStorage {
+  _FlakyOrderStorage()
+    : super(
+        iOptions: const IOSOptions(
+          accessibility: KeychainAccessibility.first_unlock_this_device,
+        ),
+      );
+
+  final Map<String, String> data = {};
+  bool failWrite = false;
+  bool failDelete = false;
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => data[key];
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (failWrite) throw PlatformException(code: 'IO', message: 'write failed');
+    if (value == null) {
+      data.remove(key);
+    } else {
+      data[key] = value;
+    }
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (failDelete) throw PlatformException(code: 'IO', message: 'delete failed');
+    data.remove(key);
+  }
 }

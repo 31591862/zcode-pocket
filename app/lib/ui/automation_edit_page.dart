@@ -1,11 +1,22 @@
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart' hide Text;
 
+import '../core/l10n.dart' show L10n, tr;
 import '../core/localized_text.dart';
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/automation_client.dart';
+import '../transport/conversation.dart'
+    show ConfigOptionValue, modelSelectionRawOptions;
 import 'app_widgets.dart';
+import 'composer_panels.dart'
+    show
+        groupDisambigSuffix,
+        isPlanProvider,
+        planBadgeOf,
+        providerGroupKey,
+        providerShortLabel;
+import 'model_vision_badge.dart';
 
 /// 定时任务编辑页（2026-11-05 反馈：此前只可查看——官方
 /// updateAutomation（zcodeAgentPluginParams.ts:216-228）完整支持编辑，
@@ -50,8 +61,17 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
   bool _modelCleared = false;
 
   /// 模型目录（modelSelectionView 拉取）：(providerId, 短标签, modelId,
-  /// 思考档列表)。
-  List<({String pid, String label, String model, List<String> levels})>?
+  /// 思考档列表, 是否显示「视觉」标签, 完整 ConfigOptionValue 供统一分组与套餐徽标)。
+  List<
+    ({
+      String pid,
+      String label,
+      String model,
+      List<String> levels,
+      bool vision,
+      ConfigOptionValue option,
+    })
+  >?
   _catalog;
   bool _catalogLoading = false;
 
@@ -71,43 +91,50 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
     _selProvider = e.provider.isEmpty ? null : e.provider;
     _selModel = e.model.isEmpty ? null : e.model;
     _selThought = e.thoughtLevel.isEmpty ? null : e.thoughtLevel;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCatalog());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadCatalog();
+    });
   }
 
   Future<void> _loadCatalog() async {
+    if (!mounted) return;
     final app = AppStateScope.of(context);
     if (app.bridge == null) return;
     setState(() => _catalogLoading = true);
     try {
       final view = await app.modelSelectionView();
-      final providers = view?['providers'];
-      final out = <({String pid, String label, String model, List<String> levels})>[];
-      if (providers is List) {
-        for (final p in providers) {
-          if (p is! Map) continue;
-          final pid = '${p['providerId'] ?? ''}';
-          if (pid.isEmpty) continue;
-          final label = _providerLabel(pid, '${p['providerName'] ?? ''}');
-          final models = p['models'];
-          if (models is! List) continue;
-          for (final m in models) {
-            if (m is! Map) continue;
-            final mid = '${m['modelId'] ?? ''}';
-            if (mid.isEmpty) continue;
-            final config = m['config'];
-            final specs = config is Map ? config['optionSpecs'] : null;
-            final rl = specs is Map ? specs['reasoningLevel'] : null;
-            final vals = rl is Map ? rl['values'] : null;
-            out.add((
-              pid: pid,
-              label: label,
-              model: mid,
-              levels: vals is List
-                  ? [for (final v in vals) if (v is String) v]
-                  : const <String>[],
-            ));
-          }
-        }
+      // 目录解析与模型弹层同源（modelSelectionRawOptions）：模型清单/
+      // 来源/思考档/图片输入事实/接入类型取法一致。
+      final out = <
+        ({
+          String pid,
+          String label,
+          String model,
+          List<String> levels,
+          bool vision,
+          ConfigOptionValue option,
+        })
+      >[];
+      for (final m in modelSelectionRawOptions(view)) {
+        final pid = '${m['modelProviderId']}';
+        final model = '${m['name']}';
+        final levels = m['modelThoughtLevels'];
+        final option = ConfigOptionValue.fromMap(m);
+        out.add((
+          pid: pid,
+          label: providerShortLabel(option),
+          model: model,
+          levels: levels is List
+              ? [for (final v in levels) if (v is String) v]
+              : const <String>[],
+          vision: shouldShowModelVisionBadge(
+            model,
+            m['modelSupportsImage'] as bool?,
+            accessType: m['modelAccessType'] as String?,
+            accessMode: m['modelAccessMode'] as String?,
+          ),
+          option: option,
+        ));
       }
       if (mounted) setState(() => _catalog = out);
     } on Object {
@@ -455,77 +482,228 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
   void _pickModel() {
     final catalog = _catalog;
     if (catalog == null) return;
-    // 按短标签分组保序。
+    // 与输入框/子代理/工作流三处弹层完全同源：按 providerId 分组 + 套餐徽标 +
+    // 同品牌多套餐碰撞消歧 + 可折叠组头（默认展开当前选中组或首组）。
     final groups =
-        <String, List<({String pid, String label, String model, List<String> levels})>>{};
+        <
+          String,
+          List<
+            ({
+              String pid,
+              String label,
+              String model,
+              List<String> levels,
+              bool vision,
+              ConfigOptionValue option,
+            })
+          >
+        >{};
     for (final c in catalog) {
-      groups.putIfAbsent(c.label, () => []).add(c);
+      groups.putIfAbsent(providerGroupKey(c.option), () => []).add(c);
     }
+    final groupMeta = <String, ({String label, String badge})>{};
+    for (final e in groups.entries) {
+      groupMeta[e.key] = (
+        label: providerShortLabel(e.value.first.option),
+        badge: planBadgeOf(e.value.first.option),
+      );
+    }
+    final collisions = <String, int>{};
+    for (final m in groupMeta.values) {
+      final k = '${m.label}|${m.badge}';
+      collisions[k] = (collisions[k] ?? 0) + 1;
+    }
+    if (collisions.values.any((n) => n > 1)) {
+      final seenCk = <String, int>{};
+      for (final k in groups.keys.toList()) {
+        final meta = groupMeta[k]!;
+        final ck = '${meta.label}|${meta.badge}';
+        if ((collisions[ck] ?? 0) > 1) {
+          final nth = (seenCk[ck] ?? 0) + 1;
+          seenCk[ck] = nth;
+          groupMeta[k] = (
+            label: '${meta.label}·${groupDisambigSuffix(k, nth)}',
+            badge: meta.badge,
+          );
+        }
+      }
+    }
+    final planKeys = groups.keys
+        .where((k) => isPlanProvider(groups[k]!.first.option))
+        .toList()
+      ..sort((a, b) => groupMeta[a]!.label.compareTo(groupMeta[b]!.label));
+    final otherKeys = groups.keys
+        .where((k) => !isPlanProvider(groups[k]!.first.option))
+        .toList();
+    final ordered = [
+      for (final k in [...planKeys, ...otherKeys]) MapEntry(k, groups[k]!),
+    ];
+    final selectedGroup = ordered
+        .where(
+          (g) => g.value.any(
+            (item) => _selProvider == item.pid && _selModel == item.model,
+          ),
+        )
+        .map((g) => g.key)
+        .firstOrNull;
+    final defaultOpen = ordered.isEmpty
+        ? null
+        : selectedGroup ?? ordered.first.key;
+    final collapsedByGroup = <String, bool>{};
+    bool isCollapsed(String key) =>
+        collapsedByGroup[key] ?? (key != defaultOpen);
+
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.65,
-          ),
-          child: ListView(
-            key: const ValueKey('automation-model-picker'),
-            // （视觉走查）：弹层此前吃满 0.65×屏高约束，短目录
-            // （5 行）底部空 202dp。shrinkWrap=true 让内容自收（maxHeight
-            // 上限保留=长目录照常滚，physics 不变）。
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-            children: [
-              for (final g in groups.entries) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 10, 8, 4),
-                  child: Text(
-                    g.key,
-                    style: TextStyle(
-                      fontSize: AppType.uiCaption,
-                      fontWeight: FontWeight.w600,
-                      color: context.colors.foregroundSubtle,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final c = sheetContext.colors;
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.65,
+              ),
+              child: ListView(
+                key: const ValueKey('automation-model-picker'),
+                // （视觉走查）：弹层此前吃满 0.65×屏高约束，短目录
+                // （5 行）底部空 202dp。shrinkWrap=true 让内容自收（maxHeight
+                // 上限保留=长目录照常滚，physics 不变）。
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                children: [
+                  for (final g in ordered) ...[
+                    InkWell(
+                      key: ValueKey('automation-model-group-${g.key}'),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      onTap: () => setSheetState(() {
+                        collapsedByGroup[g.key] = !isCollapsed(g.key);
+                      }),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 10, 8, 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isCollapsed(g.key)
+                                  ? Icons.expand_more
+                                  : Icons.expand_less,
+                              size: 18,
+                              color: c.foregroundSubtle,
+                            ),
+                            const SizedBox(width: 2),
+                            Flexible(
+                              child: Text(
+                                groupMeta[g.key]!.label,
+                                translate: false,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: AppType.uiCaption,
+                                  fontWeight: FontWeight.w600,
+                                  color: c.foregroundSubtle,
+                                ),
+                              ),
+                            ),
+                            if (groupMeta[g.key]!.badge.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: c.brandAccent.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.sm,
+                                  ),
+                                ),
+                                child: Text(
+                                  groupMeta[g.key]!.badge,
+                                  style: TextStyle(
+                                    fontSize: AppType.uiXs,
+                                    color: c.brandAccentBright,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(width: 6),
+                            Text(
+                              '${g.value.length}',
+                              style: TextStyle(
+                                fontSize: AppType.uiXs,
+                                color: c.foregroundSubtle,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                for (final item in g.value)
-                  ListTile(
-                    key: ValueKey('automation-model-${item.pid}/${item.model}'),
-                    dense: true,
-                    title: Text(
-                      item.model,
-                      translate: false,
-                      style: const TextStyle(fontSize: AppType.uiBase),
-                    ),
-                    trailing:
-                        _selProvider == item.pid && _selModel == item.model
-                        ? Icon(
-                            Icons.check,
-                            size: 18,
-                            color: context.colors.brandAccent,
-                          )
-                        : null,
-                    onTap: () {
-                      Navigator.of(sheetContext).pop();
-                      setState(() {
-                        _modelCleared = false;
-                        _selProvider = item.pid;
-                        _selModel = item.model;
-                        // 新模型的思考档不在其清单内则清空。
-                        if (_selThought != null &&
-                            item.levels.isNotEmpty &&
-                            !item.levels.contains(_selThought)) {
-                          _selThought = null;
-                        }
-                      });
-                    },
-                  ),
-              ],
-            ],
-          ),
-        ),
+                    if (!isCollapsed(g.key))
+                      for (final item in g.value)
+                        ListTile(
+                          key: ValueKey(
+                            'automation-model-${item.pid}/${item.model}',
+                          ),
+                          dense: true,
+                          contentPadding: const EdgeInsets.only(
+                            left: 24,
+                            right: 12,
+                          ),
+                          // 视觉标签紧跟模型名右侧（对齐桌面端）；✓ 独居行尾槽。
+                          title: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  item.model,
+                                  translate: false,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: AppType.uiBase,
+                                  ),
+                                ),
+                              ),
+                              if (item.vision) ...[
+                                const SizedBox(width: 6),
+                                const ModelVisionBadge(),
+                              ],
+                            ],
+                          ),
+                          trailing: SizedBox(
+                            width: 26,
+                            child:
+                                _selProvider == item.pid &&
+                                    _selModel == item.model
+                                ? Icon(
+                                    Icons.check,
+                                    size: 18,
+                                    color: c.brandAccent,
+                                  )
+                                : null,
+                          ),
+                          onTap: () {
+                            Navigator.of(sheetContext).pop();
+                            setState(() {
+                              _modelCleared = false;
+                              _selProvider = item.pid;
+                              _selModel = item.model;
+                              // 新模型的思考档不在其清单内则清空。
+                              if (_selThought != null &&
+                                  item.levels.isNotEmpty &&
+                                  !item.levels.contains(_selThought)) {
+                                _selThought = null;
+                              }
+                            });
+                          },
+                        ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -708,26 +886,29 @@ class _AutomationEditPageState extends State<AutomationEditPage> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      _catalogLoading
-                          ? '正在获取模型目录…'
-                          : _modelCleared || _selModel == null
-                          ? '继承默认'
-                          : '$_selModel'
-                                '${_selThought != null && _selThought!.isNotEmpty ? ' · 思考 $_selThought' : ''}'
-                                '${_selProvider != null ? ' · ${_providerLabel(_selProvider!, '')}' : ''}',
-                      // （视觉走查）：模型值（模型名+思考档+
-                      // 来源三层拼接）此前无 maxLines，长名换行把行高顶破
-                      // 并与右侧「继承默认」按钮挤压。单行省略。
-                      key: const ValueKey('automation-edit-model-value'),
-                      translate: false,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: AppType.uiCaption,
-                        color: _catalog == null
-                            ? context.colors.foregroundSubtle
-                            : context.colors.foreground,
+                    child: ListenableBuilder(
+                      listenable: L10n.changes,
+                      builder: (context, _) => Text(
+                        _catalogLoading
+                            ? tr('正在获取模型目录…')
+                            : _modelCleared || _selModel == null
+                            ? tr('继承默认')
+                            : '$_selModel'
+                                  '${_selThought != null && _selThought!.isNotEmpty ? ' · ${tr('思考')} $_selThought' : ''}'
+                                  '${_selProvider != null ? ' · ${_providerLabel(_selProvider!, '')}' : ''}',
+                        // （视觉走查）：模型值（模型名+思考档+
+                        // 来源三层拼接）此前无 maxLines，长名换行把行高顶破
+                        // 并与右侧「继承默认」按钮挤压。单行省略。
+                        key: const ValueKey('automation-edit-model-value'),
+                        translate: false,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: AppType.uiCaption,
+                          color: _catalog == null
+                              ? context.colors.foregroundSubtle
+                              : context.colors.foreground,
+                        ),
                       ),
                     ),
                   ),

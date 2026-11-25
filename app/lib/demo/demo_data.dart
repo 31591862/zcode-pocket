@@ -22,12 +22,13 @@ Map<String, dynamic> get demoWorkspace => const {
   'workspaceIdentity': demoWorkspaceIdentity,
 };
 
-/// readTree：项目树（两个项目 + 未归类任务区）。
+/// readTree：项目树（两个项目 + 未归类任务区 + 桌面侧栏顺序）。
 Map<String, dynamic> demoReadTree() => {
   'projects': [
     {
       'id': 'pj-app',
       'name': 'toolbox-app',
+      'hostId': 'local',
       'position': 0,
       'roots': [
         {'rootPath': '$demoWorkspacePath/app', 'isPrimary': true},
@@ -36,11 +37,16 @@ Map<String, dynamic> demoReadTree() => {
     {
       'id': 'pj-docs',
       'name': 'toolbox-docs',
+      'hostId': 'local',
       'position': 1,
       'roots': [
         {'rootPath': '$demoWorkspacePath/docs', 'isPrimary': true},
       ],
     },
+  ],
+  'projectOrder': [
+    {'hostId': 'local', 'projectId': 'pj-app'},
+    {'hostId': 'local', 'projectId': 'pj-docs'},
   ],
   'tasks': [
     for (final t in _demoTasks)
@@ -633,6 +639,54 @@ Map<String, Map<String, dynamic>> demoConversationSnapshots() => {
 // ---------------------------------------------------------- 工作流
 
 /// 旗舰会话的工作流 run 目录（挂在 t-menu-fix 上）。
+Map<String, dynamic> demoSavedWorkflows(String scope) => switch (scope) {
+  'global' => {
+    'workflows': [
+      {
+        'name': 'weekly-digest',
+        'description': '汇总本周提交记录与关键变更，生成可读周报',
+        'scope': 'global',
+        'path': '$demoWorkspacePath/workflows/weekly-digest.md',
+      },
+    ],
+    'invalid': const [],
+  },
+  _ => {
+    'workflows': [
+      {
+        'name': 'daily-health-check',
+        'description': '自动跑一次静态分析与核心单测，输出摘要',
+        'scope': 'project',
+        'path': '$demoWorkspacePath/.zcode/workflows/daily-health-check.md',
+      },
+      {
+        'name': 'release-audit',
+        'description': '按指定版本号核查变更日志、权限清单与回归风险',
+        'scope': 'project',
+        'path': '$demoWorkspacePath/.zcode/workflows/release-audit.md',
+        'args': {
+          'version': {
+            'type': 'string',
+            'required': true,
+            'description': '待审查版本号（如 v2.4.0）',
+          },
+          'strict': {
+            'type': 'boolean',
+            'default': true,
+            'description': '启用严格阻塞检查',
+          },
+          'maxFiles': {
+            'type': 'number',
+            'default': 50,
+            'description': '单次扫描最大文件数',
+          },
+        },
+      },
+    ],
+    'invalid': const [],
+  },
+};
+
 Map<String, dynamic> demoWorkflowRuns() => {
   'runs': [
     {
@@ -823,72 +877,93 @@ List<Map<String, dynamic>> _heatmapWeeks(int weeks) {
   ];
 }
 
-/// usage-stats.getEntitlementSnapshot：GLM 编码套餐。
+/// usage-stats.getEntitlementSnapshot：GLM 编码套餐 / Start Plan。
 /// 形状=官方 codingPlanQuotaPresentation 四卡口径：TOKENS_LIMIT 的
 /// unit 是数字码（3=5 小时窗口/token、6=每周），TIME_LIMIT=每月工具
 /// 调用，mcpQuota.aggregate=ZCode MCP；percentage=已用占比。
-Map<String, dynamic> demoEntitlementSnapshot() => {
-  'provider': {'id': 'account:zai-individual-coding-plan'},
-  'quota': {
-    'level': 'coding-plan',
-    'limits': [
-      {
-        'type': 'TOKENS_LIMIT',
-        'unit': 3,
-        'number': 5,
-        'percentage': 42,
-        'usage': 2_000_000,
-        'currentValue': 840_000,
-        'nextResetTime': _msAhead(const Duration(hours: 2)),
+Map<String, dynamic> demoEntitlementSnapshot({
+  String family = 'bigmodel',
+  String planKind = 'individual-coding-plan',
+}) {
+  if (planKind == 'start-plan') {
+    final pct = family == 'zai' ? 31 : 24;
+    return {
+      'provider': {'id': 'account:$family-start-plan'},
+      'quota': {'level': 'start-plan', 'limits': const <dynamic>[]},
+      'remaining': {
+        'isShow': true,
+        'percentage': pct,
+        'usage': 5_000_000,
+        'currentValue': (5_000_000 * pct) ~/ 100,
+        'nextResetTime': _msAhead(const Duration(days: 19)),
       },
-      {
-        'type': 'TOKENS_LIMIT',
-        'unit': 6,
-        'percentage': 61,
-        'usage': 20_000_000,
-        'currentValue': 12_240_000,
-        'periodStart': _msAgo(const Duration(days: 4)),
-        'periodEnd': _msAhead(const Duration(days: 26)),
+      'serverTime': DateTime.now().millisecondsSinceEpoch,
+    };
+  }
+  final isZai = family == 'zai';
+  return {
+    'provider': {'id': 'account:$family-individual-coding-plan'},
+    'quota': {
+      'level': isZai ? 'pro' : 'coding-plan',
+      'limits': [
+        {
+          'type': 'TOKENS_LIMIT',
+          'unit': 3,
+          'number': 5,
+          'percentage': isZai ? 18 : 42,
+          'usage': 2_000_000,
+          'currentValue': isZai ? 360_000 : 840_000,
+          'nextResetTime': _msAhead(const Duration(hours: 2)),
+        },
+        {
+          'type': 'TOKENS_LIMIT',
+          'unit': 6,
+          'percentage': isZai ? 34 : 61,
+          'usage': 20_000_000,
+          'currentValue': isZai ? 6_800_000 : 12_240_000,
+          'periodStart': _msAgo(const Duration(days: 4)),
+          'periodEnd': _msAhead(const Duration(days: 26)),
+          'nextResetTime': _msAhead(const Duration(days: 26)),
+        },
+        {
+          'type': 'TIME_LIMIT',
+          'percentage': isZai ? 12 : 23,
+          'usage': 5_000,
+          'currentValue': isZai ? 600 : 1_150,
+          'nextResetTime': _msAhead(const Duration(days: 26)),
+        },
+      ],
+    },
+    'mcpQuota': {
+      'aggregate': {
+        'percentage': isZai ? 5 : 8,
+        'usage': 10_000,
+        'currentValue': isZai ? 500 : 800,
         'nextResetTime': _msAhead(const Duration(days: 26)),
       },
-      {
-        'type': 'TIME_LIMIT',
-        'percentage': 23,
-        'usage': 5_000,
-        'currentValue': 1_150,
-        'nextResetTime': _msAhead(const Duration(days: 26)),
-      },
-    ],
-  },
-  'mcpQuota': {
-    'aggregate': {
-      'percentage': 8,
-      'usage': 10_000,
-      'currentValue': 800,
+    },
+    'subscription': {
+      'renewTime': _msAhead(const Duration(days: 26)),
+      'expireTime': _msAhead(const Duration(days: 26)),
+      'details': [
+        {
+          'productName': 'GLM-5.3 个人编码套餐（月付）',
+          'billingCycle': 'monthly',
+          'renewTime': _msAhead(const Duration(days: 26)),
+          'expireTime': _msAhead(const Duration(days: 26)),
+        },
+      ],
+    },
+    'remaining': {
+      'isShow': true,
+      'percentage': isZai ? 66 : 39,
+      'usage': 20_000_000,
+      'currentValue': isZai ? 6_800_000 : 12_240_000,
       'nextResetTime': _msAhead(const Duration(days: 26)),
     },
-  },
-  'subscription': {
-    'renewTime': _msAhead(const Duration(days: 26)),
-    'expireTime': _msAhead(const Duration(days: 26)),
-    'details': [
-      {
-        'productName': 'GLM-5.3 个人编码套餐（月付）',
-        'billingCycle': 'monthly',
-        'renewTime': _msAhead(const Duration(days: 26)),
-        'expireTime': _msAhead(const Duration(days: 26)),
-      },
-    ],
-  },
-  'remaining': {
-    'isShow': true,
-    'percentage': 39,
-    'usage': 20_000_000,
-    'currentValue': 12_240_000,
-    'nextResetTime': _msAhead(const Duration(days: 26)),
-  },
-  'serverTime': DateTime.now().millisecondsSinceEpoch,
-};
+    'serverTime': DateTime.now().millisecondsSinceEpoch,
+  };
+}
 
 /// usage-stats.getCodingPlanUsageSnapshot。
 Map<String, dynamic> demoCodingPlanUsageSnapshot(String range) => {
@@ -990,6 +1065,12 @@ Map<String, dynamic> _modelTrend(String range) {
 // ---------------------------------------------------------- 模型目录
 
 /// model-selection.getView：草稿模型目录（个人套餐 + API 双来源）。
+///
+/// 形状对位官方 projectModelSelectionProviderView：config.access 按接入
+/// 类型分形（套餐=zhipu-account+mode；API 渠道=api-key），模型
+/// config.properties.inputFormat 逐项布尔。supportsImage 是「视觉」标签
+/// 的能力事实——演示取值为示意，不声明真实型号能力（套餐下的 glm-5.3
+/// 即使支持图片也按官方展示例外不标）。
 Map<String, dynamic> demoModelSelectionView() => {
   'providers': [
     {
@@ -999,17 +1080,31 @@ Map<String, dynamic> demoModelSelectionView() => {
       'providerId': 'account:bigmodel-individual-coding-plan',
       'providerName': 'BigModel',
       'config': {
-        'access': {'mode': 'individual-coding-plan', 'accountType': 'bigmodel'},
+        'access': {
+          'type': 'zhipu-account',
+          'accountType': 'bigmodel',
+          'mode': 'individual-coding-plan',
+          'entitled': true,
+        },
       },
       'models': [
         for (final m in const [
-          ('glm-5.3', 'GLM-5.3'),
-          ('glm-5.3-air', 'GLM-5.3-Air'),
-          ('glm-5.3-flash', 'GLM-5.3-Flash'),
+          ('glm-5.3', true),
+          ('glm-5.3-air', false),
+          ('glm-5.3-flash', false),
         ])
           {
             'modelId': m.$1,
             'config': {
+              'properties': {
+                'inputFormat': {
+                  'supportsText': true,
+                  'supportsImage': m.$2,
+                  'supportsVideo': false,
+                  'supportsAudio': false,
+                  'supportsPdf': false,
+                },
+              },
               'optionSpecs': {
                 'reasoningLevel': {
                   'values': ['nothink', 'think', 'thinkhard', 'ultrathink'],
@@ -1023,13 +1118,22 @@ Map<String, dynamic> demoModelSelectionView() => {
       'providerId': 'moonshot',
       'providerName': 'Moonshot',
       'config': {
-        'access': {'mode': 'api-key', 'accountType': 'moonshot'},
+        'access': {'type': 'api-key'},
       },
       'models': [
         for (final m in const ['kimi-k2-thinking', 'kimi-k2'])
           {
             'modelId': m,
             'config': {
+              'properties': {
+                'inputFormat': {
+                  'supportsText': true,
+                  'supportsImage': false,
+                  'supportsVideo': false,
+                  'supportsAudio': false,
+                  'supportsPdf': false,
+                },
+              },
               'optionSpecs': {
                 'reasoningLevel': {'values': ['nothink', 'think']},
               },
@@ -1041,13 +1145,22 @@ Map<String, dynamic> demoModelSelectionView() => {
       'providerId': 'opencode-zen',
       'providerName': 'OCG',
       'config': {
-        'access': {'mode': 'api-key', 'accountType': 'opencode'},
+        'access': {'type': 'api-key'},
       },
       'models': [
         for (final m in const ['claude-sonnet-4.5', 'gpt-5.2'])
           {
             'modelId': m,
             'config': {
+              'properties': {
+                'inputFormat': {
+                  'supportsText': true,
+                  'supportsImage': true,
+                  'supportsVideo': false,
+                  'supportsAudio': false,
+                  'supportsPdf': false,
+                },
+              },
               'optionSpecs': {
                 'reasoningLevel': {'values': ['nothink', 'think']},
               },

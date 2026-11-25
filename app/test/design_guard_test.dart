@@ -199,11 +199,15 @@ void main() {
             'modelProviderId': 'account:individual-coding-plan-zai',
             'modelAccessMode': 'individual-coding-plan',
             'modelAccessAccountType': 'zai',
+            'modelAccessType': 'zhipu-account',
+            'modelSupportsImage': true, // 套餐 GLM-5.3：官方展示例外不标
           },
           {
             'value': 'bigmodel-api/glm-5.3',
             'name': 'GLM-5.3',
             'modelProviderId': 'bigmodel-api',
+            'modelAccessType': 'api-key',
+            'modelSupportsImage': true, // 行内「视觉」标签入守卫遍历
           },
         ],
         currentValue: null,
@@ -219,7 +223,12 @@ void main() {
       await showSubagentModelSheet(
         context,
         catalog: const [
-          {'value': 'p/m', 'name': 'Model'},
+          {
+            'value': 'p/m',
+            'name': 'Model',
+            'modelAccessType': 'api-key',
+            'modelSupportsImage': true, // 「视觉」→ Vision 入缺译守卫
+          },
         ],
         currentValue: null,
       );
@@ -513,6 +522,10 @@ class _GuardCatalogApp extends AppState {
             'value': 'prov/guard-$i',
             'name': 'Guard $i',
             'modelProviderId': 'prov',
+            'modelAccessType': 'api-key',
+            // 偶数行带「视觉」标签（纯展示件）：入触控/溢出/1.3 字号
+            // 遍历与英文缺译守卫。
+            'modelSupportsImage': i.isEven,
           },
       ],
     }),

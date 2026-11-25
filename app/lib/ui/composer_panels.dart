@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart' hide Text;
 
+import '../core/l10n.dart' show L10n, tr;
 import '../core/localized_text.dart';
 
 import '../core/theme.dart';
 import '../state/app_state_scope.dart';
 import '../transport/conversation.dart';
 import 'brand_logo.dart';
+import 'model_vision_badge.dart';
 import 'turn_model.dart' show submitConfigValueZh;
 
 /// 输入增强面板（2.6）：斜杠命令（prepareWorkspace 目录）与 @文件
@@ -364,11 +366,25 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
               'modelAccessMode': '${access['mode']}',
             if ('${access['accountType'] ?? ''}'.isNotEmpty)
               'modelAccessAccountType': '${access['accountType']}',
+            if ('${access['type'] ?? ''}'.isNotEmpty)
+              'modelAccessType': '${access['type']}',
           },
         };
       }
     }
     return meta;
+  }
+
+  /// getView → 「providerId/modelId」→ 图片输入事实。会话目录不携带该
+  /// 字段（官方 zcodeSessionSettingsToZCodeConfigOptions 只投影到
+  /// providerLabel）；桌面端同样取宿主级目录标视觉。
+  Map<String, bool> _visionFromView(Map? view) {
+    final vision = <String, bool>{};
+    for (final raw in modelSelectionRawOptions(view)) {
+      final image = raw['modelSupportsImage'];
+      if (image is bool) vision['${raw['value']}'] = image;
+    }
+    return vision;
   }
 
   /// 模型目录条目按 providerId 注入元数据后重建（仅模型分区）。
@@ -381,6 +397,7 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
   List<ConfigOption> _augmentOptions(
     List<ConfigOption> options,
     Map<String, Map<String, String>> meta,
+    Map<String, bool> vision,
   ) {
     if (meta.isEmpty) return options;
     return [
@@ -396,11 +413,23 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
                     // 白名单过滤：getView 里没有的 providerId 丢弃
                     //（hidden 泄漏——offpeak/highspeed 从 registry 直出）。
                     if (meta.containsKey(v.modelProviderId ?? ''))
-                      v.toRaw()..addAll(meta[v.modelProviderId ?? ''] ?? const {}),
+                      v.toRaw()
+                        ..addAll(meta[v.modelProviderId ?? ''] ?? const {})
+                        ..addAll(_visionFieldsOf(v, vision)),
                 ],
               })
             : o,
     ];
+  }
+
+  /// 视觉事实只取目录里对得上的那一条；目录没给（键未命中/字段缺席）
+  /// =不写入，标签不显示（不猜）。
+  Map<String, bool> _visionFieldsOf(
+    ConfigOptionValue v,
+    Map<String, bool> vision,
+  ) {
+    final image = vision['${v.modelProviderId ?? ''}/${modelIdOf(v)}'];
+    return {if (image != null) 'modelSupportsImage': image};
   }
 
   Future<void> _fetch() async {
@@ -441,7 +470,9 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
             .getTaskConfigOptions(widget.sessionId!)
             .catchError((Object _) => const []);
         if (taskOptions is List && taskOptions.isNotEmpty) {
-          final meta = _metaFromView(await metaFuture);
+          final view = await metaFuture;
+          final meta = _metaFromView(view);
+          final vision = _visionFromView(view);
           final augmented = [
             for (final o in taskOptions)
               if (o is ConfigOption) o,
@@ -449,7 +480,7 @@ class _ModelSheetLoaderState extends State<_ModelSheetLoader> {
           _thoughtOptions = _thoughtFrom(taskOptions);
           if (mounted) {
             setState(() {
-              _taskOptions = _augmentOptions(augmented, meta);
+              _taskOptions = _augmentOptions(augmented, meta, vision);
               _loading = false;
             });
           }
@@ -575,6 +606,16 @@ String modelIdOf(ConfigOptionValue v) {
       : value;
 }
 
+/// 目录条目是否显示「视觉」标签（官方 shouldShowModelVisionBadge：
+/// 模型图片输入事实 + 套餐 GLM-5.3 展示例外）。四处模型选择弹层共用，
+/// 不各写一遍。
+bool modelValueShowsVision(ConfigOptionValue v) => shouldShowModelVisionBadge(
+  modelIdOf(v),
+  v.modelSupportsImage,
+  accessType: v.modelAccessType,
+  accessMode: v.modelAccessMode,
+);
+
 /// 1.0.1 验收终修（用户拍板「分组按照桌面端的方式来」）：桌面按
 /// **provider** 分组（Z.AI/BigModel/OCG 各一组），套餐类型是组头徽标
 /// 不是组名——对齐 buildComposerPlanGroups.ts 语义。
@@ -634,7 +675,7 @@ String _groupDisambigSuffix(String pid, int nth) {
     'max': '超大',
     'lite': '轻量',
   };
-  // 去掉 account:/家族前缀后按分隔符切 token，映射已知词。
+  // 去掉 account:/家族前缀后按分隔符切 token，映射已知词并走本地化。
   final body = pid.replaceAll(RegExp(r'^account:'), '');
   final segs = body.split(RegExp(r'[-_]'));
   final words = <String>[];
@@ -643,8 +684,11 @@ String _groupDisambigSuffix(String pid, int nth) {
     if (w != null && !words.contains(w)) words.add(w);
   }
   if (words.isNotEmpty) {
-    final combined = words.join();
-    return combined.length > 6 ? combined.substring(0, 6) : combined;
+    final isEn = L10n.resolvedLocale == 'en-US';
+    final localized = [for (final w in words) tr(w)];
+    final combined = isEn ? localized.join(' ') : localized.join();
+    final maxLen = isEn ? 14 : 6;
+    return combined.length > maxLen ? combined.substring(0, maxLen) : combined;
   }
   // 未知 token：取最后一段非家族词，截断 6 字。
   final familyFree = segs.where((s) => s.isNotEmpty).toList();
@@ -1233,6 +1277,7 @@ class _ModelListState extends State<_ModelList> {
                   Flexible(
                     child: Text(
                       groupMeta[g.key]!.label,
+                      translate: false,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1352,18 +1397,33 @@ class _ModelListRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 6),
+                // 视觉标签紧跟模型名右侧（对齐桌面端 ModelConfigSelect 排布）：
+                // 标签恒按自身宽度占位，挤压时由模型名省略号让位，右侧 ✓ 独居行尾。
                 Expanded(
-                  child: Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: AppType.uiCaption,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: context.colors.foreground,
-                    ),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: AppType.uiCaption,
+                            fontWeight: selected
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: context.colors.foreground,
+                          ),
+                        ),
+                      ),
+                      if (modelValueShowsVision(value)) ...[
+                        const SizedBox(width: 6),
+                        const ModelVisionBadge(),
+                      ],
+                    ],
                   ),
                 ),
+                const SizedBox(width: 6),
                 // 1.0.1 验收终修：分组按 provider（桌面对齐）——组头
                 // 已携带 provider 身份+套餐徽标，行内不再重复来源标签。
                 // 行尾固定 ✓ 槽位（选中/非选中尾列齐平）。
