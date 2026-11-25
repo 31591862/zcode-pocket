@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
-import 'settings_style.dart';
 
 /// 顶部轻提示（2026-11-17 用户拍板）：带动作的提示从顶部弹出（Eta 卡
 /// 风格），替代 SnackBar。
@@ -206,12 +205,11 @@ class _TopNoticeCardState extends State<_TopNoticeCard>
               ignoring: widget.actionLabel == null,
               child: Container(
                 decoration: BoxDecoration(
-                  // 底色对位抽屉「新建任务」按钮（tonalFilledStyle 的
-                  // secondaryContainer：浅=蓝 10%，深=白 10% 灰）——
-                  // 2026-11-23 用户拍板。单点切换：全库 141 处提示
-                  // 零调用改动。
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(16),
+                  // 底色=深色近黑条（2026-11-25 用户参考图拍板，替代
+                  // 之前的 secondaryContainer 浅底）：浅深主题统一深色
+                  // （标准 Toast 观感，深色页面同样协调）。
+                  color: const Color(0xFF232529),
+                  borderRadius: BorderRadius.circular(18),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(
@@ -232,7 +230,8 @@ class _TopNoticeCardState extends State<_TopNoticeCard>
                         Icon(
                           widget.icon,
                           size: 20,
-                          color: widget.iconColor ?? kSettingsIconBlue,
+                          color: widget.iconColor ??
+                              Colors.white.withValues(alpha: 0.92),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -247,6 +246,8 @@ class _TopNoticeCardState extends State<_TopNoticeCard>
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontSize: AppType.uiBase,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
@@ -260,7 +261,10 @@ class _TopNoticeCardState extends State<_TopNoticeCard>
                               action?.call();
                             },
                             style: TextButton.styleFrom(
-                              foregroundColor: context.colors.brandAccent,
+                              foregroundColor: Colors.white,
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
                               visualDensity: VisualDensity.compact,
                             ),
                             child: Text(widget.actionLabel!),
