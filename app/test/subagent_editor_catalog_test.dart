@@ -11,6 +11,8 @@ import 'package:zcode_pocket/transport/conversation.dart';
 import 'package:zcode_pocket/transport/rpc_frame_transport.dart';
 import 'package:zcode_pocket/ui/subagents_page.dart';
 
+import 'vision_badge_fixture.dart';
+
 class _AgentChannel extends ChannelClient {
   _AgentChannel() : super(sendBody: (_) {});
   Map<String, dynamic>? created;
@@ -119,6 +121,32 @@ class _AgentApp extends AppState {
 }
 
 void main() {
+  testWidgets('模型分组弹层「视觉」标签：编辑器入口（目录 toRaw 单源装载）', (tester) async {
+    tester.view.physicalSize = const Size(375, 806);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final app = _AgentApp()..optionsOverride = visionCatalogOptions();
+    await tester.pumpWidget(
+      AppStateScope(
+        app: app,
+        child: MaterialApp(theme: buildAppTheme(), home: const SubagentsPage()),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.byKey(const ValueKey('subagent-new')));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.byKey(const ValueKey('editor-model-picker')));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await expectVisionBadgesInSubagentSheet(tester);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('对抗审查③：空目录（装载窗口期/失败）弹层不崩，仅「继承默认」', (tester) async {
     final app = _AgentApp();
     app.optionsOverride = []; // 目录装载失败/在途的空形态

@@ -1,4 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+
+import '../core/localized_text.dart';
 
 /// Eta 风格设置页共享样式（2026-11-16 视觉试点，参照 Mangi-11/Eta）：
 /// 浅灰底 + 白色无边框圆角卡分组 + 彩色语义图标（蓝/绿/橙三色按类别

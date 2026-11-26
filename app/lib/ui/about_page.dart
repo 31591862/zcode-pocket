@@ -1,13 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
+import '../core/external_quota.dart' show sharedExternalQuotaClient;
 import '../core/localized_text.dart';
+import '../core/official_account_quota.dart' show sharedStartPlanDirectClient;
 import '../core/theme.dart';
+import '../core/whats_new.dart';
+import '../platform/capabilities.dart';
 import '../state/app_state_scope.dart';
 import 'app_widgets.dart';
 import 'markdown_view.dart';
 import 'settings_style.dart';
 import 'top_notice.dart';
+import 'update_flow.dart';
+import 'whats_new_sheet.dart';
 
 /// 关于 ZCode Pocket（2026-11-04 开源说明聚合批）：
 /// 设置-关于组的唯一入口——把原先散落在 README / LICENSE /
@@ -61,6 +69,84 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
         children: [
           _header(context),
+          settingsGroupLabel(context, tr('更新与说明')),
+          settingsGroupCard(context, isDark, [
+            // 上游 1.0.10：本版更新说明（whats_new 系统）。
+            ListTile(
+              key: const ValueKey('about-whats-new'),
+              leading: const Icon(
+                Icons.auto_awesome_outlined,
+                size: 24,
+                color: kSettingsIconBlue,
+              ),
+              title: Text(
+                tr('本版更新说明'),
+                style: const TextStyle(fontSize: AppType.uiBase),
+              ),
+              subtitle: Text(
+                tr('查看 v${kCurrentWhatsNew.version} 新增功能与体验优化'),
+                translate: false,
+                style: TextStyle(
+                  fontSize: AppType.uiCaption,
+                  color: context.colors.foregroundSubtle,
+                ),
+              ),
+              trailing: const Icon(Icons.chevron_right, size: 18),
+              onTap: () => showWhatsNewSheet(context),
+            ),
+            if (ZpCapabilities.supportsSelfUpdate) ...[
+              ListTile(
+                key: const ValueKey('about-check-update'),
+                leading: const Icon(
+                  Icons.system_update_outlined,
+                  size: 24,
+                  color: kSettingsIconGreen,
+                ),
+                title: Text(
+                  tr('软件更新'),
+                  style: const TextStyle(fontSize: AppType.uiBase),
+                ),
+                subtitle: Text(
+                  tr('检查新版本并应用内下载安装（需安装权限）'),
+                  style: TextStyle(
+                    fontSize: AppType.uiCaption,
+                    color: context.colors.foregroundSubtle,
+                  ),
+                ),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () {
+                  if (AppStateScope.maybeOf(context) != null) {
+                    unawaited(checkAndPrompt(context, manual: true));
+                  }
+                },
+              ),
+              if (AppStateScope.maybeOf(context) case final app?)
+                ListenableBuilder(
+                  listenable: app.uiPrefs,
+                  builder: (context, _) => SwitchListTile(
+                    key: const ValueKey('settings-update-in-app'),
+                    secondary: const Icon(
+                      Icons.download_outlined,
+                      size: 24,
+                      color: kSettingsIconOrange,
+                    ),
+                    title: Text(
+                      tr('应用内更新'),
+                      style: const TextStyle(fontSize: AppType.uiBase),
+                    ),
+                    subtitle: Text(
+                      tr('关闭后仅提示新版本，不下载也不申请安装权限'),
+                      style: TextStyle(
+                        fontSize: AppType.uiCaption,
+                        color: context.colors.foregroundSubtle,
+                      ),
+                    ),
+                    value: app.uiPrefs.updateInAppEnabled,
+                    onChanged: (v) => app.uiPrefs.setUpdateInAppEnabled(v),
+                  ),
+                ),
+            ],
+          ]),
           settingsGroupLabel(context, tr('声明')),
           _paragraph(
             context,
@@ -320,7 +406,8 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
   /// 快照 + 通知台账 → SnackBar 反馈。草稿/队列/账号/偏好各有独立存储，
   /// 不在此动作范围内。
   Future<void> _confirmClearCache(BuildContext context) async {
-    final app = AppStateScope.of(context);
+    final app = AppStateScope.maybeOf(context);
+    if (app == null) return;
     final ok = await showConfirmDialog(
       context,
       title: tr('清除本地缓存？'),
@@ -334,6 +421,8 @@ class _AboutZcodePocketPageState extends State<AboutZcodePocketPage> {
     if (!ok) return;
     await app.cacheStore?.clearAll();
     await app.notifyStore?.clearLedger();
+    sharedExternalQuotaClient.clearCache();
+    sharedStartPlanDirectClient.clearCache();
     if (!mounted) return;
     TopNotice.show(message: tr('已清除本地缓存'));
   }

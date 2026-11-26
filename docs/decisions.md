@@ -2,7 +2,7 @@
 
 A short, public-facing summary of the choices that shape ZCode Pocket. It is
 not a full decision log: it records the constraints that keep coming back in
-bug reports and pull requests, so contributors can tell a bug from an intended
+bug reports and contributions, so contributors can tell a bug from an intended
 trade-off.
 
 How this list is maintained: the project keeps a full internal decision log
@@ -182,8 +182,11 @@ dependencies.
 the entry when it is not, and keep optional transcript polishing behind
 user-supplied API keys. Vendor-specific engines are not part of the public
 build.
-**Cost**: recognition quality and availability depend on the device; some
-devices ship no recognition service.
+**Cost**: recognition quality and availability depend on the device. Some
+devices ship no recognition service (the entry stays hidden); a few system
+builds expose one that never returns results to third-party apps, where the
+entry appears but fails after about 10 seconds. The public build ships no
+bundled engine as a fallback.
 
 ## 17. Protocol compatibility is additive and tolerant
 
@@ -225,6 +228,14 @@ text has broken code before.
 **Cost**: public-tree comments are a mix of English and Chinese notes; the
 full reasoning behind a decision is summarized on this page instead of
 sitting inline.
+
+**Update**: the main reason for the split is privacy — the project started
+as a personal one, and the development history contains the maintainer's own
+project and workspace names, usage habits and personal configuration spread
+across too many files to rewrite retroactively. External contributions
+therefore arrive as issues first: bugs are reproduced and fixed in the
+development repository, and pull requests are considered only for features
+confirmed in an issue (see CONTRIBUTING).
 
 ## 20. Incidents are disclosed, not quietly patched
 

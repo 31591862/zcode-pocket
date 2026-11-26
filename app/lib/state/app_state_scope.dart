@@ -10,4 +10,7 @@ class AppStateScope extends InheritedNotifier<AppState> {
 
   static AppState of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppStateScope>()!.notifier!;
+
+  static AppState? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AppStateScope>()?.notifier;
 }

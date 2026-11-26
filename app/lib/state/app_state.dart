@@ -29,8 +29,10 @@ import 'profile_store.dart';
 import 'task_list.dart';
 import 'ui_prefs.dart';
 import '../core/app_lock.dart';
+import '../core/official_account_quota.dart' show sharedStartPlanDirectClient;
 import '../core/system_inset.dart';
 import '../core/l10n.dart' show L10n, tr;
+import '../demo/demo_mode.dart' show demoModeEnabled;
 
 export 'link_phase.dart';
 export 'session_errors.dart';
@@ -50,9 +52,11 @@ class AppState extends ChangeNotifier {
     NotificationService? notifyService,
     NotifyStore? notifyStore,
     AccountStore? accountStore,
+    UiPrefs? uiPrefs,
     this.draftStore,
   }) : store = store ?? ProfileStore(),
        accountStore = accountStore ?? AccountStore(),
+       uiPrefs = uiPrefs ?? UiPrefs(),
        _injectedCache = cacheStore,
        _injectedNotifyService = notifyService,
        _injectedNotifyStore = notifyStore {
@@ -75,9 +79,21 @@ class AppState extends ChangeNotifier {
           if (this.cacheStore != null) this.cacheStore!.removeDevice(sid),
           if (draftStore != null) draftStore!.removeDevice(sid),
           if (sendQueue != null) sendQueue!.removeDevice(sid),
+          this.uiPrefs.clearProjectOrder(sid),
         ]);
       },
+      onAccountCleared: (accountId) {
+        sharedStartPlanDirectClient.clearCache(accountId);
+        unawaited(this.uiPrefs.removeOfficialQuotaCache(accountId));
+      },
     );
+    // 账号集合/当前账号变更（save/setLastUsed/removeAccount）递增
+    // 变更纪元（额度缓存有效性/撤销判定用）。fork 已撤销上游营销卡——
+    // marketing?.onAccountChanged() 接线随撤销移除。
+    this.accountStore.onChanged = (_) {
+      _accountChangeRevision++;
+      notifyListeners();
+    };
   }
 
   late final DeviceStackRegistry _deviceRegistry;
@@ -110,7 +126,15 @@ class AppState extends ChangeNotifier {
   final List<String> log = [];
 
   /// UI 偏好（工具显示开关等，设置页驱动）。
-  final UiPrefs uiPrefs = UiPrefs();
+  final UiPrefs uiPrefs;
+
+  /// 是否抑制版本更新说明弹窗（DemoAppState 覆写为 true，避免无 ZP_DEMO 宏的
+  /// 集成测试如 ios_smoke_test 在升至 1.0.10 后被模态弹层阻塞）。
+  bool get suppressWhatsNew => demoModeEnabled;
+
+  /// 冷启动 `load()` 阶段（任何启动参数注入前）是否实证为全新安装（无电脑无账号
+  /// 且无已读记录），避免 HomeShell 异步竞态或 `account_jwt` 注入导致新装误弹更新说明。
+  bool freshInstallAtLoad = false;
 
   /// 测试自动化入口（app.dart 注入）：读 Android intent extra 的配对参数
   /// （am start --es pairing_url ...），模拟器回归免 UI 输入。生产注入的
@@ -200,6 +224,8 @@ class AppState extends ChangeNotifier {
     // 改写 lastUsed 前捕获，供拆栈侧判定（详 registry 注释）。
     final lastUsedBefore = await accountStore.lastUsedAccountId;
     await accountStore.removeAccount(accountId);
+    sharedStartPlanDirectClient.clearCache(accountId);
+    unawaited(uiPrefs.removeOfficialQuotaCache(accountId));
     try {
       await _deviceRegistry.disposeStacksForAccount(
         accountId,
@@ -212,6 +238,41 @@ class AppState extends ChangeNotifier {
     // 乙：绕过 _onStackChanged 的话常驻通知（审批提醒 FGS）不会
     // 刷新——拆完全部栈后仍显示"已连接 · N 个任务运行中"。补一次。
     _updateForegroundText();
+  }
+
+  /// 账号集合变更递增版本号（save/removeAccount/setLastUsed 递增），
+  /// 供多账号视图感知非活跃账号增删。
+  int _accountChangeRevision = 0;
+  int get accountChangeRevision => _accountChangeRevision;
+
+  /// 当前活跃电脑绑定的账号 id（V2 账号模式）；非 V2/未连接为 null。
+  String? get activeAccountId {
+    final p = activeProfile;
+    return p is AccountV2Profile ? p.accountId : null;
+  }
+
+  /// 查找指定账号下已在线且 bridge 就绪的任意一台电脑连接（只读查询，
+  /// 绝不新建或唤醒后台连接——严守多账号电量红线）。
+  BridgeSession? onlineBridgeForAccount(String accountId) {
+    final trimmed = accountId.trim();
+    if (trimmed.isEmpty) return null;
+    final activeProf = activeProfile;
+    if (activeProf is AccountV2Profile &&
+        activeProf.accountId == trimmed &&
+        bridge != null &&
+        phase == LinkPhase.online) {
+      return bridge;
+    }
+    for (final stack in _stacks.values) {
+      final p = stack.profile;
+      if (p is AccountV2Profile &&
+          p.accountId == trimmed &&
+          stack.bridge != null &&
+          stack.computeStatus() == LinkPhase.online) {
+        return stack.bridge;
+      }
+    }
+    return null;
   }
 
   /// 登录成功后的接回编排（反馈②：删号重登只写凭据不接回=永久
@@ -276,8 +337,9 @@ class AppState extends ChangeNotifier {
     // 分支是死代码，误导读者以为存在"无 sid 但有活跃栈"的状态）。
     if (sid == null) return const [];
     final entries = _active?.sidebarEntries() ?? const [];
+    final version = _active?.projectsVersion ?? 0;
     final order = uiPrefs.projectOrder(sid);
-    final key = _sidebarSignature(sid, entries, order);
+    final key = _sidebarSignature(sid, version, entries, order);
     final cached = _sidebarProjectsCache;
     if (cached != null && key == _sidebarProjectsCacheKey) return cached;
     final next = applyProjectOrder(entries, order);
@@ -288,10 +350,13 @@ class AppState extends ChangeNotifier {
 
   static String _sidebarSignature(
     String sid,
+    int projectsVersion,
     List<Map<String, dynamic>> entries,
     List<String>? order,
   ) {
     final buf = StringBuffer(sid)
+      ..write('@')
+      ..write(projectsVersion)
       ..write('#')
       ..write(entries.length);
     for (final e in entries) {
@@ -312,11 +377,33 @@ class AppState extends ChangeNotifier {
     return buf.toString();
   }
 
+  /// 活跃电脑是否设置了手机本机自定义项目顺序（false=默认跟随桌面顺序）。
+  bool get hasCustomProjectOrder {
+    final sid = _activeSid;
+    if (sid == null) return false;
+    final order = uiPrefs.projectOrder(sid);
+    return order != null && order.isNotEmpty;
+  }
+
   /// 写入活跃电脑的项目顺序（真实项目 id 序；「任务」伪项目恒在尾）。
   Future<void> setProjectOrder(List<String> ids) async {
     final sid = _activeSid;
     if (sid == null) return;
-    await uiPrefs.setProjectOrder(sid, ids);
+    final ok = await uiPrefs.setProjectOrder(sid, ids);
+    if (!ok) {
+      throw StateError('加密存储写入失败，请重试');
+    }
+    notifyListeners();
+  }
+
+  /// 清除活跃电脑的本机自定义项目顺序，恢复跟随桌面端侧栏顺序。
+  Future<void> clearProjectOrder() async {
+    final sid = _activeSid;
+    if (sid == null) return;
+    final ok = await uiPrefs.clearProjectOrder(sid);
+    if (!ok) {
+      throw StateError('加密存储写入失败，请重试');
+    }
     notifyListeners();
   }
 
@@ -916,12 +1003,6 @@ class AppState extends ChangeNotifier {
   /// 异步从 AccountStore 取，缓存于 [_accountLabelCache]。
   String? get activeAccountLabel => _accountLabelCache;
 
-  /// 活跃账号完整 id（2026-11-17 批：抽屉电脑卡"ID xxx"行；与显示名
-  /// 同一轮刷新缓存，清空/代际逻辑同 activeAccountLabel）。
-  String? get activeAccountId => _activeAccountIdCache;
-
-  String? _activeAccountIdCache;
-
   String? _accountLabelCache;
 
   /// 缓存判键（sid + accountId）：同键且不在飞时零成本短路，避免每个
@@ -942,9 +1023,8 @@ class AppState extends ChangeNotifier {
       _accountLabelKey = null;
       _accountLabelLoading = false;
       _accountLabelGeneration++;
-      if (_accountLabelCache != null || _activeAccountIdCache != null) {
+      if (_accountLabelCache != null) {
         _accountLabelCache = null;
-        _activeAccountIdCache = null;
         notifyListeners();
       }
       return;
@@ -956,21 +1036,17 @@ class AppState extends ChangeNotifier {
     _accountLabelLoading = true;
     unawaited(() async {
       String? label;
-      String? accountIdResolved;
       try {
         final accounts = await accountStore.listAccounts();
         final match = accounts.where((a) => a.id == accountId).firstOrNull;
         label = match?.displayName ?? (accounts.isEmpty ? null : '账号已删除');
-        accountIdResolved = match?.id;
       } catch (_) {
         label = null;
       }
       if (_disposed || generation != _accountLabelGeneration) return;
       _accountLabelLoading = false;
-      if (_accountLabelCache != label ||
-          _activeAccountIdCache != accountIdResolved) {
+      if (_accountLabelCache != label) {
         _accountLabelCache = label;
-        _activeAccountIdCache = accountIdResolved;
         notifyListeners();
       }
     }());
@@ -1069,10 +1145,12 @@ class AppState extends ChangeNotifier {
         }
       }
     }
+    var profilesReadOk = false;
     try {
       final r = await store.listProfilesDetailed();
       profiles = r.profiles;
       corruptedProfiles = r.skipped;
+      profilesReadOk = true;
     } catch (e) {
       _log('profile store read failed: $e');
       profiles = const [];
@@ -1081,8 +1159,12 @@ class AppState extends ChangeNotifier {
     // 多账号迁移（2026-10-25，multi-account-plan）：存量 V2 档案无
     // accountId——恰有一个账号时全部绑到它（旧模型只有全局单账号，历史
     // 档案必属该账号）。多账号/零账号时留空=连接退最近使用。
+    var accountsReadOk = false;
+    var hasAccountsAtLoad = false;
     try {
       final accounts = await accountStore.listAccounts();
+      accountsReadOk = true;
+      hasAccountsAtLoad = accounts.isNotEmpty;
       if (accounts.length == 1) {
         final sole = accounts.first.id;
         var changed = false;
@@ -1101,6 +1183,14 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       _log('account bind migration failed (contained): $e');
     }
+    // 在任何测试缝（seedJwt/testUrl）或交互配对之前判定是否全新安装：
+    // 仅当档案与账号均读取成功且皆空、无已读版本记录时认定全新安装。
+    freshInstallAtLoad =
+        profilesReadOk &&
+        accountsReadOk &&
+        profiles.isEmpty &&
+        !hasAccountsAtLoad &&
+        uiPrefs.lastSeenWhatsNewVersion == null;
     loaded = true;
     // 自动化配对（intent extra 优先于档案恢复）
     final launchArgs = await testLaunchArgsReader?.call();
@@ -1768,6 +1858,139 @@ class AppState extends ChangeNotifier {
     final conv = _conv;
     if (conv == null) throw StateError('no active computer');
     return conv.stopSubagent(sessionId, taskId, executionId);
+  }
+
+  /// 枚举当前工作区/全局的已保存工作流（官方 listSavedWorkflows）。
+  Future<dynamic> listSavedWorkflows({String scope = 'project'}) async {
+    final conv = _conv;
+    if (conv == null) throw StateError('no active computer');
+    return conv.listSavedWorkflows(scope: scope);
+  }
+
+  bool _launchingSavedWorkflow = false;
+
+  /// 一键启动已保存工作流（官方 useSavedWorkflowLauncher.ts 编排镜像）：
+  /// 在当前活跃工作区新建空会话 → 发送 startSavedWorkflow → accepted/duplicate
+  /// 返回新会话与 runId；被拒或抛错时立即 deleteSession 回收空会话，绝不遗留空卡。
+  Future<
+    ({
+      bool ok,
+      String? sessionId,
+      String? runId,
+      String? errorCode,
+      String? errorMessage,
+    })
+  >
+  launchSavedWorkflow({
+    required String name,
+    required String scope,
+    Map<String, dynamic> args = const {},
+  }) async {
+    if (_launchingSavedWorkflow) {
+      return (
+        ok: false,
+        sessionId: null,
+        runId: null,
+        errorCode: 'launch_in_flight',
+        errorMessage: null,
+      );
+    }
+    final stack = _active;
+    final conv = _conv;
+    final ws = stack?.activeWorkspace;
+    if (stack == null || conv == null || ws == null) {
+      return (
+        ok: false,
+        sessionId: null,
+        runId: null,
+        errorCode: 'no_active_workspace',
+        errorMessage: null,
+      );
+    }
+    final workspaceId = workspaceKeyOf(ws);
+    if (workspaceId == null || workspaceId.isEmpty) {
+      return (
+        ok: false,
+        sessionId: null,
+        runId: null,
+        errorCode: 'no_active_workspace',
+        errorMessage: null,
+      );
+    }
+    // 对齐 ComputerStack.createSession 的 projectId 归属不变量：仅当桥本身
+    // 带 projectIntent 或工作区路径直配某项目根时才携带 projectId，避免传
+    // activeProjectId 撞 project.cwd-not-in-roots。
+    final activeBridge = stack.bridge;
+    final resolvedProjectId = activeBridge?.taskIntent != null
+        ? createSessionProjectId(activeBridge?.projectIntent)
+        : createSessionProjectId(activeBridge?.projectIntent) ??
+              rootMatchedProjectId(workspaceId, stack.projects);
+
+    _launchingSavedWorkflow = true;
+    String? createdSessionId;
+    Future<void> recycleSession(String sid) async {
+      final liveConv = stack.conversation ?? conv;
+      try {
+        await liveConv.deleteSessionCommand(sid);
+        stack.reloadTaskIndex();
+      } catch (e) {
+        _log('[saved-workflow] recycle empty session failed ($sid): $e');
+      }
+    }
+
+    try {
+      createdSessionId = await conv.createSession(
+        workspaceId,
+        projectId: resolvedProjectId,
+      );
+      final ack = await conv.startSavedWorkflow(
+        createdSessionId,
+        name: name,
+        scope: scope,
+        args: args,
+      );
+      final map = ack is Map ? ack.cast<String, dynamic>() : null;
+      final status = map?['status'];
+      final result = map?['result'];
+      final acceptedResult =
+          (status == 'accepted' || status == 'duplicate') &&
+          result is Map &&
+          result['type'] == 'startSavedWorkflow';
+      if (acceptedResult) {
+        final runId = '${result['runId'] ?? ''}'.trim();
+        stack.reloadTaskIndex();
+        return (
+          ok: true,
+          sessionId: createdSessionId,
+          runId: runId.isEmpty ? null : runId,
+          errorCode: null,
+          errorMessage: null,
+        );
+      }
+      await recycleSession(createdSessionId);
+      return (
+        ok: false,
+        sessionId: null,
+        runId: null,
+        errorCode: '${map?['reasonCode'] ?? status ?? 'generic'}',
+        errorMessage: map?['message'] is String
+            ? map!['message'] as String
+            : null,
+      );
+    } catch (e) {
+      if (createdSessionId != null) {
+        await recycleSession(createdSessionId);
+      }
+      return (
+        ok: false,
+        sessionId: null,
+        runId: null,
+        errorCode: 'exception',
+        errorMessage: '$e',
+      );
+    } finally {
+      _launchingSavedWorkflow = false;
+    }
   }
 
   /// 批C（workflow-control-1）：恢复被打断的工作流 run（详见 transport

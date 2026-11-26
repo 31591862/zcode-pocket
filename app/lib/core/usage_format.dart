@@ -132,7 +132,24 @@ String formatResetTime(Object? millis) {
 String? formatPlanName({String? level, String? productName}) {
   final l = level?.trim() ?? '';
   if (l.isNotEmpty) {
-    return 'GLM Coding ${l[0].toUpperCase()}${l.substring(1).toLowerCase()}';
+    final collapsed = l.replaceAll(RegExp(r'[-_\s]+'), ' ').trim();
+    final norm = collapsed.toLowerCase();
+    if (norm == 'coding plan' || norm == 'codingplan') {
+      return 'GLM Coding Plan';
+    }
+    if (norm == 'start' || norm == 'start plan' || norm == 'startplan') {
+      return 'Start Plan';
+    }
+    final stripped = norm.startsWith('glm coding ')
+        ? collapsed.substring('glm coding '.length).trim()
+        : collapsed;
+    if (stripped.isEmpty) return 'GLM Coding Plan';
+    final words = stripped
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .map((w) => '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+        .join(' ');
+    return 'GLM Coding $words';
   }
   final p = productName?.trim() ?? '';
   return p.isEmpty ? null : p;

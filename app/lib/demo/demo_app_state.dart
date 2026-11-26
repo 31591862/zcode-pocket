@@ -1,18 +1,76 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../state/account_store.dart';
 import '../state/app_state.dart';
 import '../state/cache_policy.dart';
 import '../state/conversation_registry.dart';
 import '../state/task_catalog.dart';
 import '../state/task_list.dart';
+import '../state/ui_prefs.dart';
 import '../transport/companion_client.dart';
 import '../transport/conversation.dart';
+import '../transport/project_tree.dart';
 import '../transport/z_transport.dart';
 import 'demo_bridge.dart';
 import 'demo_data.dart';
 import 'demo_script.dart';
+
+/// 演示模式专用纯内存安全存储：严守零磁盘/零系统钥匙串/零真实账号凭据触碰红线。
+class _DemoMemoryStorage extends FlutterSecureStorage {
+  _DemoMemoryStorage()
+    : super(
+        iOptions: const IOSOptions(
+          accessibility: KeychainAccessibility.first_unlock_this_device,
+        ),
+      );
+
+  final Map<String, String> _data = {};
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => _data[key];
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (value == null) {
+      _data.remove(key);
+    } else {
+      _data[key] = value;
+    }
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    _data.remove(key);
+  }
+}
 
 /// 演示模式的 [AppState]：不调用 [AppState.load]、不触碰 secure
 /// storage / relay / 真实网络——由 [DemoScript] 驱动**真实的**
@@ -23,9 +81,15 @@ import 'demo_script.dart';
 /// 门面成员显式覆写为演示实现；生产基类的其余成员在无栈状态下
 /// 均为空值/no-op 兜底，不会被演示路径触达。
 class DemoAppState extends AppState {
-  DemoAppState() {
+  DemoAppState() : this._(_DemoMemoryStorage());
+
+  DemoAppState._(_DemoMemoryStorage memStorage)
+    : super(
+        accountStore: AccountStore(storage: memStorage),
+        uiPrefs: UiPrefs(storage: memStorage),
+      ) {
     loaded = true;
-    // 偏好内存就绪（早前批次）：默认值即最终值、零存储触碰
+    // 偏好内存就绪（早前批次）：默认值即最终值、零真实存储触碰
     // ——AppLockGate 冷启动门闩由此放行。此前 asserts 环境（集成测试）
     // 曾因 gate 不兜底拉起 load() 而 demo 又跳过 load → 全树永久占位。
     uiPrefs.markMemoryReady();
@@ -247,8 +311,28 @@ class DemoAppState extends AppState {
   @override
   String get readTreeStatus => _catalog.readTreeStatus;
 
+  List<String>? _demoProjectOrder;
+
   @override
-  List<Map<String, dynamic>> get sidebarProjects => _catalog.sidebarEntries();
+  List<Map<String, dynamic>> get sidebarProjects {
+    final raw = _catalog.sidebarEntries();
+    return applyProjectOrder(raw, _demoProjectOrder);
+  }
+
+  @override
+  bool get hasCustomProjectOrder => (_demoProjectOrder ?? const []).isNotEmpty;
+
+  @override
+  Future<void> setProjectOrder(List<String> ids) async {
+    _demoProjectOrder = List<String>.unmodifiable(ids);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> clearProjectOrder() async {
+    _demoProjectOrder = null;
+    notifyListeners();
+  }
 
   @override
   String? get activeProjectId => _catalog.activeProjectId;
@@ -538,6 +622,54 @@ class DemoAppState extends AppState {
   // ----------------------------------------------------- 工作流门面
 
   @override
+  Future<dynamic> listSavedWorkflows({String scope = 'project'}) =>
+      _conv.listSavedWorkflows(scope: scope);
+
+  @override
+  Future<
+    ({
+      bool ok,
+      String? sessionId,
+      String? runId,
+      String? errorCode,
+      String? errorMessage,
+    })
+  >
+  launchSavedWorkflow({
+    required String name,
+    required String scope,
+    Map<String, dynamic> args = const {},
+  }) async {
+    try {
+      final sid = await _conv.createSession(demoWorkspacePath);
+      final ack = await _conv.startSavedWorkflow(
+        sid,
+        name: name,
+        scope: scope,
+        args: args,
+      );
+      final map = ack is Map ? ack.cast<String, dynamic>() : null;
+      final res = map?['result'];
+      final runId = res is Map ? '${res['runId'] ?? ''}' : '';
+      return (
+        ok: true,
+        sessionId: sid,
+        runId: runId.isEmpty ? null : runId,
+        errorCode: null,
+        errorMessage: null,
+      );
+    } catch (e) {
+      return (
+        ok: false,
+        sessionId: null,
+        runId: null,
+        errorCode: 'exception',
+        errorMessage: '$e',
+      );
+    }
+  }
+
+  @override
   Future<dynamic> workflowRuns(String sessionId, {int? limit}) =>
       _conv.workflowRuns(sessionId, limit: limit);
 
@@ -574,6 +706,13 @@ class DemoAppState extends AppState {
     offset: offset,
     limit: limit,
   );
+
+  @override
+  bool get suppressWhatsNew => true;
+
+  @override
+  BridgeSession? onlineBridgeForAccount(String accountId) =>
+      accountId.trim() == demoAccountId ? _bridge : null;
 
   @override
   Future<Map<String, dynamic>> createWorkspace(String name) async => {

@@ -65,22 +65,30 @@ https://github.com/user-attachments/assets/4e81ba59-6d69-4316-a5fc-67955c261c47
 
 - Multi-computer / multi-account management (parallel online, isolated
   profiles, computer nicknames, read-only task snapshots of other computers)
-- Task home: all tasks grouped by time/project, project ordering, pin,
-  archive, batch actions
+- Task home: all tasks grouped by time/project, project ordering (follows
+  the desktop sidebar by default), pin, archive, batch actions
 - Conversations: streaming output, tool-call display, approvals, subagent
   list & drill-down, context compaction, in-conversation full-text search,
   notification deep links
 - Projects / branches: workspace project tree, branch picker for new chats
 - Input: persistent drafts (isolated per computer/account/workspace/
   conversation), offline send queue, attachments, screenshot annotation,
-  voice input (system recognizer)
-- Workflows: run catalog and artifact viewing (text/HTML preview)
+  voice input (system recognizer; device-dependent — see "Voice input")
+- Workflows: run catalog, artifact viewing (text/HTML preview; images and
+  PDFs in-app after "Collect artifacts"), starting saved workflows from the
+  task home
 - Usage: subscription usage, heatmap (total / per-model), daily and
-  per-model breakdowns and trends
+  per-model breakdowns and trends; a home-screen usage quick sheet across
+  accounts, with optional external plan quota queries (Kimi Coding,
+  OpenCode Go, GLM Coding Plan, Xiaomi MiMo Token Plan, Ollama Cloud,
+  Command Code) using your own API keys
+- Model pickers: grouped by provider / plan, with a "vision" badge on
+  models that accept image input
 - Appearance: light/dark themes, Chinese/English UI, foldable-unfolded and
   wide-screen dual pane, font scaling
 - About page: unofficial disclaimer, service-terms notice, privacy notes,
-  project license and third-party notices (bundled offline)
+  project license and third-party notices (bundled offline), and the
+  "What's new" notes shown after an update
 
 ## Differences from upstream
 
@@ -190,6 +198,7 @@ desktop **3.16+**):
 
 | Desktop version | Status |
 |---|---|
+| 4.0.0 | Assessed against official sources and the installer package: zero breaking changes, no adaptation needed; verified on device |
 | 3.19.1 | Assessed against the official installer package: zero breaking changes, no adaptation needed; verified on device |
 | 3.19.0 | Assessed against the official installer package: zero breaking changes, no adaptation needed; verified on device |
 | 3.18.2 | Assessed against the official installer package and sources: zero breaking changes, no adaptation needed; verified on device |
@@ -287,11 +296,15 @@ excludes them.
 
 ### Voice input
 
-Speech recognition uses the standard system service (Android
-SpeechRecognizer) — no keys or extra setup required. Devices with a
-recognition service work out of the box; the entry hides itself when none is
-available. Optional transcript polishing supports Zhipu / DeepSeek / Kimi
-with your own API keys in settings.
+Speech recognition uses the standard Android system service
+(`SpeechRecognizer`) — no keys or extra setup required. Whether it works
+depends on the device: it is directly usable on devices that ship a working
+recognition service (typically devices with Google speech services), and
+the entry hides itself when the device reports none. A few system builds
+report a recognition service but never return results to third-party apps;
+there the entry is shown but fails after about 10 seconds. Optional
+transcript polishing supports Zhipu / DeepSeek / Kimi with your own API keys
+in settings.
 
 ## Background & battery
 
@@ -333,8 +346,10 @@ and its download domains, or a public mirror) to check for and download
 updates. Downloads are verified against the officially published
 SHA-256 before anything is installed. In-app installation requires the
 system "allow this app to install apps" grant, requested only when you
-tap "Update now". Beyond this, the app connects to no third-party
-services.
+tap "Update now". Beyond that, the app talks to a third-party service only
+when you configure it yourself: external plan quota queries go directly to
+the providers you add (with your own API keys), and optional transcript
+polishing goes to the LLM provider you chose in settings.
 
 ## Known limitations
 

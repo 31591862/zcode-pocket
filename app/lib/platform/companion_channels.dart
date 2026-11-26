@@ -85,6 +85,14 @@ const kCompanionChannels = <CompanionChannel>[
     iosNote: '已交付：NSBundle（CFBundleShortVersionString/CFBundleVersion）；后增 excludeFromiCloudBackup（目录整树出 iCloud 备份，Android 由 allowBackup=false 全局排除无对位）',
   ),
   CompanionChannel(
+    name: 'companion/media_save',
+    androidOwner: 'MediaSavePlugin.kt',
+    iosPlan: CompanionIosPlan.swift,
+    iosNote: '待实现：PHPhotoLibrary 保存到相册（需 '
+        'NSPhotoLibraryAddUsageDescription）；Dart 侧仅 Android 调用，'
+        '其他平台回退系统分享面板',
+  ),
+  CompanionChannel(
     name: 'companion/timezone',
     androidOwner: 'MainActivity.kt',
     iosPlan: CompanionIosPlan.swift,

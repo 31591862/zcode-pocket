@@ -32,6 +32,7 @@ class DeviceStackRegistry {
     required void Function() onStackChanged,
     required Future<void> Function(DeviceProfile profile) onPersistProfile,
     Future<void> Function(String deviceSid)? onRemoveDeviceData,
+    void Function(String accountId)? onAccountCleared,
     DeviceStackFactory? stackFactory,
   }) : _cacheProvider = cacheProvider,
        _notifyCoordinatorProvider = notifyCoordinatorProvider,
@@ -41,6 +42,7 @@ class DeviceStackRegistry {
        _onStackChanged = onStackChanged,
        _onPersistProfile = onPersistProfile,
        _onRemoveDeviceData = onRemoveDeviceData,
+       _onAccountCleared = onAccountCleared,
        _stackFactory = stackFactory;
 
   final ProfileStore store;
@@ -53,6 +55,7 @@ class DeviceStackRegistry {
   final void Function() _onStackChanged;
   final Future<void> Function(DeviceProfile profile) _onPersistProfile;
   final Future<void> Function(String deviceSid)? _onRemoveDeviceData;
+  final void Function(String accountId)? _onAccountCleared;
   final DeviceStackFactory? _stackFactory;
 
   List<DeviceProfile> profiles = const [];
@@ -636,6 +639,7 @@ class DeviceStackRegistry {
             failedLastUsed;
         if (failedAccount != null) {
           await accountStore.clearAccount(failedAccount);
+          _onAccountCleared?.call(failedAccount);
         }
         bool matchesAccount(DeviceProfile p) =>
             failedAccount != null &&

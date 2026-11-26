@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -326,7 +327,10 @@ class AccountStore {
       displayName: displayName,
       setActive: setActive,
     ),
-  );
+  ).then((id) {
+    _notifyChanged();
+    return id;
+  });
 
   Future<String> _saveRaw({
     required String jwt,
@@ -373,7 +377,8 @@ class AccountStore {
 
   /// 删除一个账号（其凭据键一并清；不动电脑档案——绑定处置归调用方）。
   Future<void> removeAccount(String accountId) =>
-      _serialized(() => _removeAccountRaw(accountId));
+      _serialized(() => _removeAccountRaw(accountId))
+          .then((_) => _notifyChanged());
 
   Future<void> _removeAccountRaw(String accountId) async {
     await _ensureMigrated();
@@ -391,7 +396,19 @@ class AccountStore {
 
   /// 设为最近使用账号（账号管理「设为当前」；配对/设备列表跟随）。
   Future<void> setLastUsed(String accountId) =>
-      _serialized(() => _setLastUsedRaw(accountId));
+      _serialized(() => _setLastUsedRaw(accountId))
+          .then((_) => _notifyChanged());
+
+  /// 账号集合/当前账号变更回调（上游 1.0.10：AppState 接线递增变更纪元，
+  /// 供用量速览/多账号视图失效缓存；设为 null 移除）。save/removeAccount/
+  /// setLastUsed 触发。调用方不得在回调里同步做重活。
+  void Function(String? currentAccountId)? onChanged;
+
+  void _notifyChanged() {
+    final cb = onChanged;
+    if (cb == null) return;
+    unawaited(lastUsedAccountId.then(cb, onError: (_) => cb(null)));
+  }
 
   Future<void> _setLastUsedRaw(String accountId) async {
     await _ensureMigrated();

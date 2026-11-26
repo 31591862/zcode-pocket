@@ -28,11 +28,26 @@ void main() {
   testWidgets('关于页展示版本与声明/隐私说明', (tester) async {
     await _pumpAbout(tester);
     expect(find.text('1.0.0'), findsOneWidget);
+    // 1.0.10 起页首新增「更新与说明」组，声明/隐私段落到首屏之外
+    //（ListView 懒构建）——断言前逐段滚到可见。
+    Future<void> reveal(Finder f) async {
+      await tester.scrollUntilVisible(
+        f,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pump();
+    }
+
+    await reveal(find.textContaining('社区驱动的第三方客户端'));
     expect(find.textContaining('社区驱动的第三方客户端'), findsOneWidget);
+    await reveal(find.textContaining('官方服务条款'));
     expect(find.textContaining('官方服务条款'), findsOneWidget);
+    await reveal(find.textContaining('无遥测'));
     expect(find.textContaining('无遥测'), findsOneWidget);
     // 明文缓存披露 + 清除入口与许可行同屏区——
     // 新增内容把许可行挤出首屏（懒构建），断言前先滚到可见。
+    await reveal(find.textContaining('明文 JSON'));
     expect(find.textContaining('明文 JSON'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('项目许可证（Apache 2.0）'),
@@ -80,7 +95,18 @@ void main() {
     addTearDown(() => L10n.setTestLocale('zh-CN'));
     await _pumpAbout(tester);
     expect(find.text('About ZCode Pocket'), findsOneWidget);
+    // 更新与说明组置顶后，声明/隐私分组落到首屏之外——先滚到可见。
+    await tester.scrollUntilVisible(
+      find.text('Notices'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Notices'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Privacy'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Privacy'), findsOneWidget);
     // 锁屏说明入页后许可行落到首屏之外（ListView 懒构建）——先滚到可见。
     await tester.scrollUntilVisible(

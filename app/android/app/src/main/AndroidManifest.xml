@@ -64,6 +64,9 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/update_file_paths"/>
         </provider>
+        <!-- resizeableActivity 显式 true（2026-11-25）：targetSdk ≥ 24 时默认
+             即为 true，这里按厂商小窗/分屏适配建议显式声明；多窗口内的
+             方向仍由 Dart 侧方向闸决定。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -73,6 +76,7 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:screenOrientation="portrait"
+            android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize">
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user

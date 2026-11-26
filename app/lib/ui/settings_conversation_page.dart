@@ -27,8 +27,15 @@ class SettingsConversationPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: settingsPageBg(Theme.of(context).brightness),
       appBar: AppBar(
-        title: const Text('对话', style: TextStyle(fontSize: AppType.uiLg)),
+        title: const Text(
+          '对话与首页',
+          style: TextStyle(fontSize: AppType.uiLg),
+        ),
         backgroundColor: settingsPageBg(Theme.of(context).brightness),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: context.colors.border),
+        ),
       ),
       body: ListenableBuilder(
         listenable: app.uiPrefs,
@@ -192,6 +199,28 @@ class SettingsConversationPage extends StatelessWidget {
                     if (v != null) await app.changeFollowupMode(v);
                   },
                 ),
+              ),
+            ]),
+            settingsGroupLabel(context, '首页'),
+            settingsGroupCard(context, isDark, [
+              // 上游 1.0.10：首页显示其他电脑任务迁入本页。
+              SwitchListTile(
+                key: const ValueKey('settings-show-other-computers'),
+                secondary: const Icon(
+                  Icons.devices_other_outlined,
+                  size: 24,
+                  color: kSettingsIconBlue,
+                ),
+                title: const Text(
+                  '首页显示其他电脑任务',
+                  style: TextStyle(fontSize: AppType.uiBase),
+                ),
+                subtitle: const Text(
+                  '来自本地缓存快照（可能过期，会标注缓存时间）；不额外连接电脑',
+                  style: TextStyle(fontSize: AppType.uiCaption),
+                ),
+                value: app.uiPrefs.showOtherComputers,
+                onChanged: (v) => app.uiPrefs.setShowOtherComputers(v),
               ),
             ]),
           ],

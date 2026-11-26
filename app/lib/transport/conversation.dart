@@ -761,6 +761,47 @@ class ConversationTransport {
     'executionId': executionId,
   });
 
+  /// 枚举已保存工作流（官方 zcode-agent.listSavedWorkflows，
+  /// zcodeAgent.ts:849；scope='project' 扫当前工作区 .zcode/workflows/，
+  /// scope='global' 扫桌面 ~/.zcode/workflows/）。旧 CLI 返回 -32602。
+  Future<dynamic> listSavedWorkflows({
+    String scope = 'project',
+    Duration timeout = const Duration(seconds: 20),
+  }) => session.channels.call(
+    Channels.zcodeAgent,
+    'listSavedWorkflows',
+    [
+      {...this.scope, 'scope': scope},
+    ],
+    timeout: timeout,
+  );
+
+  /// 在新建空会话中直接启动已保存工作流（官方 command.ts:373
+  /// startSavedWorkflow；不带 baseRevision，无实参不传 args 键）。
+  Future<dynamic> startSavedWorkflow(
+    String sessionId, {
+    required String name,
+    String? scope,
+    Map<String, dynamic>? args,
+    Duration timeout = const Duration(seconds: 30),
+  }) => sendCommand(
+    sessionId,
+    'startSavedWorkflow',
+    {
+      'name': name,
+      if (scope != null && scope.isNotEmpty) 'scope': scope,
+      if (args != null && args.isNotEmpty) 'args': args,
+    },
+    timeout: timeout,
+  );
+
+  /// 回收空会话（官方 command.ts:382 deleteSession：startSavedWorkflow
+  /// 启动被拒或异常时收回刚建的空会话，满足「失败在会话存在之前」不变式）。
+  Future<dynamic> deleteSessionCommand(
+    String sessionId, {
+    Duration timeout = const Duration(seconds: 15),
+  }) => sendCommand(sessionId, 'deleteSession', const {}, timeout: timeout);
+
   /// 恢复被打断的工作流 run（workflow-control-1 批C：官方 command.ts:359-365
   /// {workId, name?}——workId≡runId（与 cancelBackgroundWork 同一身份等式），
   /// 可恢复集=cancelled∪failed+Interrupted 由服务端裁决（run 摘要 resumable
@@ -1640,48 +1681,7 @@ class ConversationTransport {
 
   /// getView → ConfigOption 形状（模型面板直用；value=providerId/modelId）。
   Future<List<ConfigOption>> modelSelectionOptions() async {
-    final view = await modelSelectionView();
-    final providers = view?['providers'];
-    final rawOptions = <Map>[];
-    if (providers is List) {
-      for (final p in providers) {
-        if (p is! Map) continue;
-        final pid = '${p['providerId'] ?? ''}';
-        // 2026-11-05 反馈④：provider 级 config.access 此前被整段丢弃
-        //——套餐分组依赖它（官方 getView 本就返回，
-        // serializeRegistryProviderConfig 序列化）。
-        final pConfig = p['config'];
-        final pAccess = pConfig is Map ? pConfig['access'] : null;
-        final models = p['models'];
-        if (models is List) {
-          for (final m in models) {
-            if (m is! Map) continue;
-            final mid = '${m['modelId'] ?? ''}';
-            if (pid.isEmpty || mid.isEmpty) continue;
-            final config = m['config'];
-            final optionSpecs = config is Map ? config['optionSpecs'] : null;
-            final reasoning = optionSpecs is Map
-                ? optionSpecs['reasoningLevel']
-                : null;
-            final levels = reasoning is Map ? reasoning['values'] : null;
-            rawOptions.add({
-              'value': '$pid/$mid',
-              'name': mid,
-              'modelProviderId': pid,
-              if ('${p['providerName'] ?? p['name'] ?? ''}'.isNotEmpty)
-                'modelProviderName': '${p['providerName'] ?? p['name']}',
-              if (pAccess is Map) ...{
-                if ('${pAccess['mode'] ?? ''}'.isNotEmpty)
-                  'modelAccessMode': '${pAccess['mode']}',
-                if ('${pAccess['accountType'] ?? ''}'.isNotEmpty)
-                  'modelAccessAccountType': '${pAccess['accountType']}',
-              },
-              if (levels is List) 'modelThoughtLevels': levels,
-            });
-          }
-        }
-      }
-    }
+    final rawOptions = modelSelectionRawOptions(await modelSelectionView());
     if (rawOptions.isEmpty) return const [];
     return [
       ConfigOption._({
@@ -2712,6 +2712,17 @@ class ConfigOptionValue {
   final String? modelAccessMode;
   final String? modelAccessAccountType;
 
+  /// 同一来源的 access.type（api-key / zhipu-coding-plan-api-key /
+  /// zhipu-account）——「视觉」标签的官方展示例外（套餐下的 GLM-5.3 不
+  /// 标）与 modelAccessMode 成对判定。
+  final String? modelAccessType;
+
+  /// 模型图片输入能力事实（getView models[].config.properties.inputFormat
+  /// .supportsImage，官方 serializeRegistryModelConfig 必带）：null=目录
+  /// 不可用或字段缺席（不标），true/false=目录事实。只承载事实；是否
+  /// 显示「视觉」标签由 shouldShowModelVisionBadge 判定。
+  final bool? modelSupportsImage;
+
   ConfigOptionValue._(Map raw)
     : value = '${raw['value'] ?? ''}',
       name = '${raw['name'] ?? raw['value'] ?? ''}',
@@ -2720,6 +2731,8 @@ class ConfigOptionValue {
       modelProviderId = raw['modelProviderId'] as String?,
       modelAccessMode = raw['modelAccessMode'] as String?,
       modelAccessAccountType = raw['modelAccessAccountType'] as String?,
+      modelAccessType = raw['modelAccessType'] as String?,
+      modelSupportsImage = raw['modelSupportsImage'] as bool?,
       modelThoughtLevels = [
         if (raw['modelThoughtLevels'] is List)
           for (final l in raw['modelThoughtLevels'] as List) '$l',
@@ -2736,8 +2749,79 @@ class ConfigOptionValue {
     if (modelAccessMode != null) 'modelAccessMode': modelAccessMode,
     if (modelAccessAccountType != null)
       'modelAccessAccountType': modelAccessAccountType,
+    if (modelAccessType != null) 'modelAccessType': modelAccessType,
+    if (modelSupportsImage != null) 'modelSupportsImage': modelSupportsImage,
+    if (modelAccessType != null) 'modelAccessType': modelAccessType,
+    if (modelSupportsImage != null) 'modelSupportsImage': modelSupportsImage,
     if (modelThoughtLevels.isNotEmpty) 'modelThoughtLevels': modelThoughtLevels,
   };
+}
+
+/// 模型 config → 图片输入能力事实（官方 buildRegistryModelSelectGroups 读
+/// config.properties?.inputFormat?.supportsImage）。字段缺席或非布尔=null
+///（目录没给事实，调用方不标）。
+bool? modelSupportsImageOf(Map? config) {
+  final properties = config?['properties'];
+  final inputFormat = properties is Map ? properties['inputFormat'] : null;
+  final supportsImage = inputFormat is Map ? inputFormat['supportsImage'] : null;
+  return supportsImage is bool ? supportsImage : null;
+}
+
+/// 官方 model-selection.getView 响应 → 模型目录条目原始 map
+/// （modelSelectionOptions 的纯解析体，无通道依赖）。
+///
+/// 形状对位官方 projectModelSelectionProviderView：providers[].providerId /
+/// providerName / config.access{type, mode, accountType} /
+/// models[].modelId / config.optionSpecs.reasoningLevel.values /
+/// config.properties.inputFormat.supportsImage。value=providerId/modelId
+/// （与官方 formatModelPickerValue 同形）。
+List<Map<String, Object?>> modelSelectionRawOptions(Map? view) {
+  final rawOptions = <Map<String, Object?>>[];
+  final providers = view?['providers'];
+  if (providers is List) {
+    for (final p in providers) {
+      if (p is! Map) continue;
+      final pid = '${p['providerId'] ?? ''}';
+      final pConfig = p['config'];
+      final pAccess = pConfig is Map ? pConfig['access'] : null;
+      final models = p['models'];
+      if (models is List) {
+        for (final m in models) {
+          if (m is! Map) continue;
+          final mid = '${m['modelId'] ?? ''}';
+          if (pid.isEmpty || mid.isEmpty) continue;
+          final config = m['config'];
+          final optionSpecs = config is Map ? config['optionSpecs'] : null;
+          final reasoning = optionSpecs is Map
+              ? optionSpecs['reasoningLevel']
+              : null;
+          final levels = reasoning is Map ? reasoning['values'] : null;
+          final supportsImage = modelSupportsImageOf(config);
+          final raw = <String, Object?>{
+            'value': '$pid/$mid',
+            'name': mid,
+            'modelProviderId': pid,
+            if ('${p['providerName'] ?? p['name'] ?? ''}'.isNotEmpty)
+              'modelProviderName': '${p['providerName'] ?? p['name']}',
+            if (pAccess is Map) ...{
+              if ('${pAccess['mode'] ?? ''}'.isNotEmpty)
+                'modelAccessMode': '${pAccess['mode']}',
+              if ('${pAccess['accountType'] ?? ''}'.isNotEmpty)
+                'modelAccessAccountType': '${pAccess['accountType']}',
+              if ('${pAccess['type'] ?? ''}'.isNotEmpty)
+                'modelAccessType': '${pAccess['type']}',
+            },
+            if (levels is List) 'modelThoughtLevels': levels,
+          };
+          if (supportsImage != null) {
+            raw['modelSupportsImage'] = supportsImage;
+          }
+          rawOptions.add(raw);
+        }
+      }
+    }
+  }
+  return rawOptions;
 }
 
 class SlashCommand {

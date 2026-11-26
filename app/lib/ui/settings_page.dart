@@ -1,17 +1,13 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../core/localized_text.dart';
 import '../core/theme.dart';
-import '../platform/capabilities.dart';
 import '../state/app_state_scope.dart';
 import 'about_page.dart';
 import 'device_migration_page.dart';
 import 'settings_accounts_page.dart';
 import 'settings_security_page.dart';
-import 'update_flow.dart';
 import 'settings_conversation_page.dart';
 import 'settings_notifications_page.dart';
 import 'settings_voice_page.dart';
@@ -213,17 +209,18 @@ class _SettingsPageState extends State<SettingsPage> {
             _groupLabel(context, '偏好'),
             _groupCard(context, isDark, [
               ListTile(
+                key: const ValueKey('settings-conversation'),
                 leading: const Icon(
                   Icons.forum_outlined,
                   size: 24,
                   color: _iconBlue,
                 ),
                 title: const Text(
-                  '对话',
+                  '对话与首页',
                   style: TextStyle(fontSize: AppType.uiBase),
                 ),
                 subtitle: const Text(
-                  '工具活动的显示与运行中新消息的处理方式',
+                  '对话行为与首页显示（工具活动、新消息处理、其他电脑任务）',
                   style: TextStyle(fontSize: AppType.uiCaption),
                 ),
                 trailing: const Icon(Icons.chevron_right, size: 18),
@@ -276,26 +273,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ]),
             _groupLabel(context, '功能'),
             _groupCard(context, isDark, [
-              // multi-account-ux-1 批4（2026-11-04 拍板）：多电脑任务聚合
-              // 开关（默认关）——纯读本地缓存快照，不建连接不订阅。
-              SwitchListTile(
-                key: const ValueKey('settings-show-other-computers'),
-                secondary: const Icon(
-                  Icons.devices_other_outlined,
-                  size: 24,
-                  color: _iconOrange,
-                ),
-                title: const Text(
-                  '首页显示其他电脑任务',
-                  style: TextStyle(fontSize: AppType.uiBase),
-                ),
-                subtitle: const Text(
-                  '来自本地缓存快照（可能过期，会标注缓存时间）；不额外连接电脑',
-                  style: TextStyle(fontSize: AppType.uiCaption),
-                ),
-                value: app.uiPrefs.showOtherComputers,
-                onChanged: (v) => app.uiPrefs.setShowOtherComputers(v),
-              ),
               ListTile(
                 leading: const Icon(
                   Icons.manage_accounts_outlined,
@@ -354,46 +331,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 onTap: () => Navigator.of(context)
                     .push(MaterialPageRoute(builder: (_) => const UsagePage())),
               ),
-              // 应用内更新（in-app-update-1）：入口行（检查更新+开关收在
-              // 二级动作——开关单独一行，避免一级页过长）。iOS 无侧装更新
-              // （结构性，supportsSelfUpdate）两行整体隐藏（早前批次）。
-              if (ZpCapabilities.supportsSelfUpdate) ...[
-                ListTile(
-                  leading: const Icon(
-                    Icons.system_update_outlined,
-                    size: 24,
-                    color: _iconBlue,
-                  ),
-                  title: const Text(
-                    '软件更新',
-                    style: TextStyle(fontSize: AppType.uiBase),
-                  ),
-                  subtitle: const Text(
-                    '检查新版本并应用内下载安装（需安装权限）',
-                    style: TextStyle(fontSize: AppType.uiCaption),
-                  ),
-                  trailing: const Icon(Icons.chevron_right, size: 18),
-                  onTap: () => unawaited(checkAndPrompt(context, manual: true)),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('settings-update-in-app'),
-                  secondary: const Icon(
-                    Icons.download_outlined,
-                    size: 24,
-                    color: _iconGreen,
-                  ),
-                  title: const Text(
-                    '应用内更新',
-                    style: TextStyle(fontSize: AppType.uiBase),
-                  ),
-                  subtitle: const Text(
-                    '关闭后仅提示新版本，不下载也不申请安装权限',
-                    style: TextStyle(fontSize: AppType.uiCaption),
-                  ),
-                  value: app.uiPrefs.updateInAppEnabled,
-                  onChanged: (v) => app.uiPrefs.setUpdateInAppEnabled(v),
-                ),
-              ],
             ]),
             _groupLabel(context, '安全'),
             _groupCard(context, isDark, [

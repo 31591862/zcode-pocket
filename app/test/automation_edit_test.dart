@@ -6,6 +6,7 @@
 // 生效）。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcode_pocket/core/l10n.dart';
 import 'package:zcode_pocket/core/localized_text.dart' as lt;
 import 'package:zcode_pocket/core/theme.dart';
 import 'package:zcode_pocket/state/app_state.dart';
@@ -15,6 +16,8 @@ import 'package:zcode_pocket/transport/companion_client.dart';
 import 'package:zcode_pocket/transport/conversation.dart';
 import 'package:zcode_pocket/transport/rpc_frame_transport.dart';
 import 'package:zcode_pocket/ui/automation_page.dart';
+
+import 'real_font_snapshot.dart';
 
 class _EditChannel extends ChannelClient {
   _EditChannel() : super(sendBody: (_) {});
@@ -154,12 +157,15 @@ class _EditApp extends AppState {
   };
 }
 
-Widget _host(AppState app) => AppStateScope(
+Widget _host(AppState app, {ThemeData? theme}) => AppStateScope(
   app: app,
-  child: MaterialApp(theme: buildAppTheme(), home: const AutomationPage()),
+  child: MaterialApp(theme: theme ?? buildAppTheme(), home: const AutomationPage()),
 );
 
 void main() {
+  // 真字体渲染采集（字体不可得的机器=跳过，仅跑断言）。
+  setUpAll(loadRealFonts);
+
   testWidgets('整卡点击进编辑：改标题+档位保存 → updateAutomation 全载荷 + 刷新', (
     tester,
   ) async {
@@ -476,6 +482,163 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // 模型弹层「视觉」标签（官方桌面模型菜单对位）：目录事实→行内标签；
+  // 套餐接入下的 glm-5.3 按官方展示例外不标；标签列不随选中行的 ✓ 横移。
+  testWidgets('模型弹层「视觉」标签：目录事实→行内标签；套餐 GLM-5.3 例外；选中行同列', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 806);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    const planPid = 'account:bigmodel-individual-coding-plan';
+    const apiPid = 'opencode-zen';
+    // 官方 getView wire 形态（access 按接入类型分形 +
+    // properties.inputFormat）。
+    Map<String, dynamic> model(String id, bool image) => {
+      'modelId': id,
+      'config': {
+        'enabled': true,
+        'properties': {
+          'contextWindow': 200000,
+          'inputFormat': {
+            'supportsText': true,
+            'supportsImage': image,
+            'supportsVideo': false,
+            'supportsAudio': false,
+            'supportsPdf': false,
+          },
+        },
+        'optionSpecs': {
+          'reasoningLevel': {'values': ['low', 'high']},
+        },
+      },
+    };
+    final channel = _EditChannel()
+      ..listOverride = [
+        {
+          'automationId': 'a1',
+          'title': '巡检',
+          'prompt': '跑一遍构建',
+          'cronExpr': '30 9 * * *',
+          'enabled': true,
+          'recurring': true,
+          'lifecycleStatus': 'active',
+          'workspacePath': 'G:/Demo App',
+          'workspaceIdentity': 'ws1',
+          'scheduleRule': {
+            'unit': 'daily',
+            'interval': 1,
+            'hour': 9,
+            'minute': 30,
+          },
+          'modelSelection': {'providerId': planPid, 'modelId': 'glm-5.3-flash'},
+        },
+      ]
+      ..viewOverride = {
+        'revision': 3,
+        'providers': [
+          {
+            'providerId': planPid,
+            'providerName': 'BigModel',
+            'config': {
+              'access': {
+                'type': 'zhipu-account',
+                'accountType': 'bigmodel',
+                'mode': 'individual-coding-plan',
+                'entitled': true,
+              },
+            },
+            'models': [
+              model('glm-5.3', true),
+              model('glm-5.3-flash', true),
+              model('glm-5.3-air', false),
+            ],
+          },
+          {
+            'providerId': apiPid,
+            'providerName': 'OCG',
+            'config': {
+              'access': {'type': 'api-key'},
+            },
+            'models': [
+              model('claude-sonnet-4.5', true),
+              model('glm-5.3', true),
+              model('deepseek-v3', false),
+            ],
+          },
+        ],
+      };
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: realFontShotKey,
+        child: _host(_EditApp(channel), theme: reviewTheme(Brightness.light)),
+      ),
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(
+      find.byKey(const ValueKey('automation-card-tap-a1')).first,
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.byKey(const ValueKey('automation-edit-model')));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    Finder row(String pid, String model) =>
+        find.byKey(ValueKey('automation-model-$pid/$model'));
+    Finder badgeIn(String pid, String model) => find.descendant(
+      of: row(pid, model),
+      matching: find.text('视觉'),
+    );
+    expect(badgeIn(planPid, 'glm-5.3'), findsNothing,
+        reason: '官方展示例外：套餐接入下的 glm-5.3 不标');
+    expect(badgeIn(planPid, 'glm-5.3-flash'), findsOneWidget);
+    expect(badgeIn(planPid, 'glm-5.3-air'), findsNothing);
+    // 非当前选中组默认折叠，点开 API 组头后可见其下模型与视觉标签。
+    expect(row(apiPid, 'glm-5.3'), findsNothing);
+    await tester.tap(find.byKey(ValueKey('automation-model-group-$apiPid')));
+    await tester.pumpAndSettle();
+    expect(badgeIn(apiPid, 'claude-sonnet-4.5'), findsOneWidget);
+    expect(badgeIn(apiPid, 'glm-5.3'), findsOneWidget,
+        reason: '例外只限套餐接入——API 渠道的 glm-5.3 照标');
+    expect(badgeIn(apiPid, 'deepseek-v3'), findsNothing);
+    expect(find.text('视觉'), findsNWidgets(3));
+
+    // 标签紧跟模型名右侧（对齐桌面端），不推到最右侧；选中行 ✓ 独居行尾且与标签留间距。
+    for (final pair in [
+      (planPid, 'glm-5.3-flash'),
+      (apiPid, 'glm-5.3'),
+    ]) {
+      final nameFinder = find.descendant(
+        of: row(pair.$1, pair.$2),
+        matching: find.text(pair.$2),
+      );
+      final gapFromName =
+          tester.getTopLeft(badgeIn(pair.$1, pair.$2)).dx -
+          tester.getTopRight(nameFinder).dx;
+      expect(gapFromName, greaterThanOrEqualTo(9.0));
+      expect(gapFromName, lessThanOrEqualTo(14.0));
+    }
+    final check = find.descendant(
+      of: row(planPid, 'glm-5.3-flash'),
+      matching: find.byIcon(Icons.check),
+    );
+    expect(check, findsOneWidget);
+    final badgeRight = tester.getTopRight(badgeIn(planPid, 'glm-5.3-flash')).dx;
+    final checkLeft = tester
+        .renderObject<RenderBox>(check)
+        .localToGlobal(Offset.zero)
+        .dx;
+    expect(checkLeft - (badgeRight + 5), greaterThanOrEqualTo(6),
+        reason: '选中行 ✓ 位于最右，与标签不贴合');
+    expect(tester.takeException(), isNull);
+    await snapWithRealFonts(tester, 'model-vision-automation-light-zh');
+  });
+
   // （视觉走查）：模型值行（模型名+思考档+来源三层拼接）
   // 无 maxLines——长名换行顶破行高并挤压右侧按钮。修=单行省略。
   testWidgets('模型值 Text 单行省略（maxLines=1）', (tester) async {
@@ -726,5 +889,78 @@ void main() {
     expect(rule['hour'], 10);
     expect(rule.keys.contains('monthDays'), isFalse,
         reason: 'weekday 模式不伪造 monthDays');
+  });
+
+  testWidgets('回归：多同品牌套餐按 providerId 独立分组 + 英文模式消歧后缀与状态行零中文泄漏', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 806);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final channel = _EditChannel()
+      ..viewOverride = {
+        'providers': [
+          {
+            'providerId': 'account:bigmodel-individual-coding-plan',
+            'providerName': 'BigModel',
+            'access': {'type': 'plan', 'mode': 'individual'},
+            'models': [
+              {'modelId': 'glm-5.3'},
+            ],
+          },
+          {
+            'providerId': 'account:bigmodel-offpeak-idle-plan',
+            'providerName': 'BigModel',
+            'access': {'type': 'plan', 'mode': 'off-peak'},
+            'models': [
+              {'modelId': 'glm-5.3'},
+            ],
+          },
+        ],
+      };
+
+    await tester.pumpWidget(_host(_EditApp(channel)));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(
+      find.byKey(const ValueKey('automation-card-tap-a1')).first,
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    // 切英文校验模型默认态值行无中文泄漏
+    L10n.setTestLocale('en-US');
+    L10n.collectMissing = true;
+    addTearDown(L10n.resetForTest);
+    await tester.pumpAndSettle();
+    final modelRow = find.byKey(const ValueKey('automation-edit-model'));
+    await tester.drag(find.byType(ListView).last, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(find.text('Inherit default'), findsOneWidget);
+
+    await tester.tap(modelRow);
+    await tester.pumpAndSettle();
+    // 两个 BigModel 套餐必须按 providerId 拆成两个独立分组，不再混组
+    expect(
+      find.byKey(
+        const ValueKey(
+          'automation-model-group-account:bigmodel-individual-coding-plan',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey(
+          'automation-model-group-account:bigmodel-offpeak-idle-plan',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('闲时'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }

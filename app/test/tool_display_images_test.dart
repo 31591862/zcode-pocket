@@ -154,9 +154,10 @@ void main() {
     expect(thumb, findsOneWidget, reason: 'display 图片应渲染为缩略图');
 
     await tester.tap(thumb);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('关闭'), findsOneWidget, reason: '点击缩略图弹出大图对话框');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('image-viewer')), findsOneWidget,
+        reason: '点击缩略图弹出全屏查看器');
+    expect(find.byKey(const ValueKey('image-viewer-close')), findsOneWidget);
     expect(find.byType(InteractiveViewer), findsOneWidget);
   });
 

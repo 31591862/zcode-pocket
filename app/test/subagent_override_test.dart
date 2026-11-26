@@ -10,6 +10,8 @@ import 'package:zcode_pocket/transport/conversation.dart';
 import 'package:zcode_pocket/transport/rpc_frame_transport.dart';
 import 'package:zcode_pocket/ui/subagents_page.dart';
 
+import 'vision_badge_fixture.dart';
+
 /// 内置/插件子智能体的「模型/思考档覆盖」：官方语义=只读档案不开放全
 /// 字段编辑，开放行内模型/effort 覆盖（SubagentsSection
 /// supportsModelOverride 对位；写用户级 agents-state，null=清除）。
@@ -195,6 +197,13 @@ class _OverrideApp extends AppState {
   ];
 }
 
+/// 「视觉」标签用例：目录条目带图片输入事实与接入类型（页面 _loadCatalog
+/// 经 toRaw 单源装载，字段到达弹层不靠逐处手抄）。
+class _VisionOverrideApp extends _OverrideApp {
+  @override
+  Future<List<dynamic>> modelSelectionOptions() async => visionCatalogOptions();
+}
+
 Future<void> _pump(WidgetTester tester, _OverrideApp app) async {
   await tester.pumpWidget(
     AppStateScope(
@@ -260,6 +269,38 @@ Future<void> _pick(
 }
 
 void main() {
+  testWidgets('模型分组弹层「视觉」标签：行内覆盖入口（目录 toRaw 单源装载）；关闭不改选择', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(375, 806);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final app = _VisionOverrideApp();
+    await _pump(tester, app);
+    final channel = (app.bridge as _OverrideBridge).channel;
+
+    await _expandRow(
+      tester,
+      const ValueKey('subagent-builtin-general-purpose'),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('override-model-builtin-general-purpose')),
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await expectVisionBadgesInSubagentSheet(tester);
+
+    // 点遮罩关闭：不改选择、零下发（只看标签不动选择）。
+    await tester.tapAt(const Offset(5, 5));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('选择模型'), findsNothing, reason: '弹层已关闭');
+    expect(channel.calls, isEmpty, reason: '关闭弹层不得下发覆盖');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('内置行行内选模型即改即存：setBuiltInModelOverride + chip 文字即状态', (
     tester,
   ) async {

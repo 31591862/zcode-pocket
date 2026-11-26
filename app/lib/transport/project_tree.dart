@@ -29,17 +29,49 @@ String? workspaceKeyOf(Map workspace) {
   return null;
 }
 
-/// readTree 结果的宽松解析（原样 Map 列表，含已删项目/任务聚合）。
-({List<Map<String, dynamic>> projects, List<Map<String, dynamic>> tasks})
+/// 桌面侧栏下发的项目排序键（官方 WebRemoteProjectTree.projectOrder，
+/// 3.19.x/4.0.0 webRemoteProjectTreeActivity.ts:26）。
+typedef DesktopProjectOrderKey = ({String hostId, String projectId});
+
+/// readTree 结果的宽松解析（原样 Map 列表，含已删项目/任务聚合与桌面
+/// 侧栏实际显示顺序 projectOrder）。
+({
+  List<Map<String, dynamic>> projects,
+  List<Map<String, dynamic>> tasks,
+  List<DesktopProjectOrderKey> projectOrder,
+})
 parseProjectTree(dynamic result) {
-  if (result is! Map) return (projects: const [], tasks: const []);
+  if (result is! Map) {
+    return (projects: const [], tasks: const [], projectOrder: const []);
+  }
   List<Map<String, dynamic>> asList(dynamic raw) => [
         for (final e in (raw is List ? raw : const []).whereType<Map>())
           e.cast<String, dynamic>(),
       ];
+  final order = <DesktopProjectOrderKey>[];
+  final rawOrder = result['projectOrder'];
+  if (rawOrder is List) {
+    final seen = <String>{};
+    for (final item in rawOrder) {
+      if (order.length >= 5000) break;
+      if (item is! Map) continue;
+      final hostId = item['hostId'];
+      final projectId = item['projectId'];
+      if (hostId is! String ||
+          projectId is! String ||
+          hostId.isEmpty ||
+          projectId.isEmpty) {
+        continue;
+      }
+      final dedupKey = '$hostId\u0000$projectId';
+      if (!seen.add(dedupKey)) continue;
+      order.add((hostId: hostId, projectId: projectId));
+    }
+  }
   return (
     projects: asList(result['projects']),
     tasks: asList(result['tasks']),
+    projectOrder: order,
   );
 }
 
@@ -230,6 +262,55 @@ Map<String, dynamic> conversationsPseudoProject() => const {
       'id': conversationsPseudoProjectId,
       'name': '任务',
     };
+
+/// 应用桌面侧栏实际排序（官方 3.19+/4.0.0 readTree.projectOrder）：
+/// 先按 (hostId, projectId) 精确匹配（缺省 hostId 按 'local' 对齐官方）；
+/// 若未命中且 desktopOrder 中该 projectId 唯一出现则按 projectId 兜底；
+/// 未在桌面顺序中的新项目保持原序追加尾部，「任务」伪项目恒排最后。
+/// desktopOrder 为空（老版桌面或未上报）=原序不动。纯函数供单测。
+List<Map<String, dynamic>> applyDesktopProjectOrder(
+  List<Map<String, dynamic>> entries,
+  List<DesktopProjectOrderKey> desktopOrder,
+) {
+  if (desktopOrder.isEmpty || entries.isEmpty) return entries;
+  final exactRank = <String, int>{};
+  final idCounts = <String, int>{};
+  final idRank = <String, int>{};
+  for (var i = 0; i < desktopOrder.length; i++) {
+    final k = desktopOrder[i];
+    exactRank['${k.hostId}\u0000${k.projectId}'] = i;
+    idCounts[k.projectId] = (idCounts[k.projectId] ?? 0) + 1;
+    idRank.putIfAbsent(k.projectId, () => i);
+  }
+  int? rankOf(Map<String, dynamic> e) {
+    final id = '${e['id'] ?? ''}'.trim();
+    if (id.isEmpty) return null;
+    final rawHost = '${e['hostId'] ?? ''}'.trim();
+    final host = rawHost.isEmpty ? 'local' : rawHost;
+    final exact = exactRank['$host\u0000$id'];
+    if (exact != null) return exact;
+    if (rawHost.isEmpty && idCounts[id] == 1) return idRank[id];
+    return null;
+  }
+
+  final pseudo = <Map<String, dynamic>>[];
+  final known = <(int, Map<String, dynamic>)>[];
+  final rest = <Map<String, dynamic>>[];
+  for (final e in entries) {
+    if ('${e['id'] ?? ''}' == conversationsPseudoProjectId) {
+      pseudo.add(e);
+    } else {
+      final r = rankOf(e);
+      if (r != null) {
+        known.add((r, e));
+      } else {
+        rest.add(e);
+      }
+    }
+  }
+  known.sort((a, b) => a.$1.compareTo(b.$1));
+  return [for (final k in known) k.$2, ...rest, ...pseudo];
+}
 
 /// 应用本地项目排序（2026-10-26 拍板③，官方 preferences.reorder 同
 /// 语义=客户端本地偏好）：[order] 为用户自定义的项目 id 序；命中的按
